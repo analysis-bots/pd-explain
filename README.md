@@ -8,16 +8,17 @@ A library  that create explation for dataframes manipulations, using pandas data
 
 ## Installation
 
-Install pd-explain with pip by https or ssh
+Install pd-explain with pip or by git ssh
 
 ```bash
-  pip install git+https://github.com/edenIsakov/pd-explain.git@master
-  pip install git+ssh://git@github.com/edenIsakov/pd-explain.git
+  pip install pd-explain
+  
+  pip install git+ssh://git@github.com/analysis-bots/pd-explain.git
 ```
 
 For cloning this project use
 ```bash
-git clone https://github.com/edenIsakov/pd-explain.git
+git clone git@github.com:analysis-bots/pd-explain.git
 
 cd pd_explain
 
@@ -40,9 +41,9 @@ df = pd_explain.to_explainable(df)
 
 ## Demo
 
-[Full example Notebook](https://github.com/edenIsakov/pd-explain/blob/master/src/Bank%20Churners%20Pitch.ipynb)
+[Full example Notebook](https://github.com/analysis-bots/pd-explain/blob/main/Examples/Notebooks/Bank%20Churners%20Pitch.ipynb)
 
-[Demo Spotify example](https://github.com/analysis-bots/pd-explain/blob/master/src/Demo.ipynb)
+[Demo Spotify example](https://github.com/analysis-bots/pd-explain/blob/main/Examples/Notebooks/Demo.ipynb)
 
 ![Demo Spotify example](./assets/explain_demo.gif)
 

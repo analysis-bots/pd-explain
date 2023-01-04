@@ -1,0 +1,8 @@
+wheel
+pandas~=1.4.2
+numpy~=1.20.3
+python-dotenv>=0.20.0
+singleton-decorator
+matplotlib>=3.5.1
+setuptools>=60.2.0
+fedex_generator@git+ssh://git@github.com/analysis-bots/FEDEx_Generator.git#egg=fedex_generator

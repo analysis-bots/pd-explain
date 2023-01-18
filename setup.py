@@ -43,7 +43,8 @@ setup(
         'matplotlib',
         'fedex_generator',
         'sphinx_rtd_theme',
-        'sphinx'
+        'sphinx',
+        'nbsphinx'
     ]
 
 )

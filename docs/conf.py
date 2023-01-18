@@ -10,7 +10,6 @@ import sys
 
 sys.path.insert(0, os.path.abspath('../src'))
 autodoc_mock_imports = ['pandas', 'numpy']
-import pd_explain
 
 project = 'pd_Explain'
 copyright = '2023, Eden Isakov, DR Amit Somech'

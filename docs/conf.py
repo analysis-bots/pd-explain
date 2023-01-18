@@ -9,7 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath('../src'))
-
+autodoc_mock_imports = ['pandas', 'numpy']
 import pd_explain
 
 project = 'pd_Explain'
@@ -50,5 +50,5 @@ html_static_path = ['_static']
 # -- Options for EPUB output
 epub_show_urls = 'footnote'
 
-autodoc_mock_imports = ['pandas', 'numpy']
+
 

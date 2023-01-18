@@ -21,3 +21,4 @@ how to :ref:`installation` the project.
    :caption: Contents:
 
    usage/quickstart
+   api

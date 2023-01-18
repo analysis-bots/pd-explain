@@ -41,7 +41,7 @@ setup(
         'python-dotenv',
         'singleton-decorator',
         'matplotlib',
-        'fedex_generator@git+ssh://git@github.com/analysis-bots/FEDEx_Generator.git#egg=fedex_generator',
+        'fedex_generator',
     ]
 
 )

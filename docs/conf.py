@@ -23,11 +23,6 @@ extensions = [
     'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
     'nbsphinx',
-    'readthedocs_ext.readthedocs',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.todo',
-    'sphinx_toolbox.more_autodoc',
-    'sphinx.ext.autodoc'
 ]
 
 intersphinx_mapping = {

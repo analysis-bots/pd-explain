@@ -7,7 +7,7 @@ Welcome to pd_Explain's documentation!
 ======================================
 **pd_explain**  is a Python library that create explanation for dataframes manipulations,
 using pandas dataframes and explanations based on
-`ExplainED: Explanations for EDA Notebooks <https://github.com/TAU-DB/ExplainED>`_
+`ExplainED: Explanations for EDA Notebooks <https://github.com/TAU-DB/FEDEx>`_
 
 Check out the :doc:`usage/quickstart` section for further information, including
 how to :ref:`installation` the project.

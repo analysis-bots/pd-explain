@@ -5,6 +5,8 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+import os
+import sys
 
 project = 'pd_Explain'
 copyright = '2023, Eden Isakov, DR Amit Somech'
@@ -20,7 +22,12 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
-    'nbsphinx'
+    'nbsphinx',
+    'readthedocs_ext.readthedocs',
+    'sphinx.ext.viewcode',
+    'sphinx.ext.todo',
+    'sphinx_toolbox.more_autodoc',
+    'sphinx.ext.autodoc'
 ]
 
 intersphinx_mapping = {
@@ -43,3 +50,5 @@ html_static_path = ['_static']
 
 # -- Options for EPUB output
 epub_show_urls = 'footnote'
+
+sys.path.insert(0, os.path.abspath('../src/pd_explain'))

@@ -38,7 +38,7 @@ For example:
 Alternatively you can create your own dataframe
 and convert it using ``pd_explain.to_explainable``
 
-.. autofunction:: utils.to_explainable
+.. autofunction:: pd_explain.to_explainable
 
 The ``df`` parameter should be a dataframe
 

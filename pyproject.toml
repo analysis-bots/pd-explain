@@ -1,3 +1,8 @@
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "pd_explain"
+authors = [{name = "Eden Isakov", email = "eden@pd_explain"}]
+dynamic = ["version", "description"]

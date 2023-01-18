@@ -11,7 +11,7 @@ A library  that create explanation for dataframes manipulations, using pandas da
 Install pd-explain with pip or by git ssh
 
 ```bash
-  pip install pd-explain
+  pip install pd-explain --upgrade --upgrade-strategy eager
   
   pip install git+ssh://git@github.com/analysis-bots/pd-explain.git
 ```

@@ -45,5 +45,3 @@ html_static_path = ['_static']
 
 # -- Options for EPUB output
 epub_show_urls = 'footnote'
-
-sys.path.insert(0, os.path.abspath('../src/pd_explain'))

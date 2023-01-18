@@ -38,10 +38,7 @@ For example:
 Alternatively you can create your own dataframe
 and convert it using ``pd_explain.to_explainable``
 
-.. autoclass:: pd_explain.ExpDataFrame
-     .. method:: explain(self, schema: dict = None, attributes: List = None, top_k: int = 1,
-                figs_in_row: int = 2, show_scores: bool = False, title: str = None)
-
+.. py:class:: ExpDataFrame(pd.DataFrame)
 The ``df`` parameter should be a dataframe
 
 For example:

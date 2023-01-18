@@ -38,7 +38,9 @@ For example:
 Alternatively you can create your own dataframe
 and convert it using ``pd_explain.to_explainable``
 
-.. py:class:: ExpDataFrame(pd.DataFrame)
+.. automodapi:: pd_explain.ExpDataFrame
+
+
 The ``df`` parameter should be a dataframe
 
 For example:

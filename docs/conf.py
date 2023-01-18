@@ -26,7 +26,11 @@ extensions = [
     'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
     'nbsphinx',
+    'sphinx_automodapi.automodapi'
+    'sphinx_automodapi.smart_resolver'
 ]
+
+numpydoc_show_class_members = False
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3/', None),

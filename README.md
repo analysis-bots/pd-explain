@@ -1,8 +1,8 @@
 
 # Explain pd
 
-A library  that create explation for dataframes manipulations, using pandas dataframes and explations based on [ExplainED: Explanations for EDA Notebooks
-](https://github.com/TAU-DB/ExplainED)
+A library  that create explanation for dataframes manipulations, using pandas dataframes and explanations based on [ExplainED: Explanations for EDA Notebooks
+](https://github.com/TAU-DB/FEDEx)
 
 
 

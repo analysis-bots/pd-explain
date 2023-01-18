@@ -42,6 +42,8 @@ setup(
         'singleton-decorator',
         'matplotlib',
         'fedex_generator',
+        'sphinx_rtd_theme',
+        'sphinx'
     ]
 
 )

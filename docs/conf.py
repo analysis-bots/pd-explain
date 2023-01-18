@@ -8,7 +8,7 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../src'))
 
 project = 'pd_Explain'
 copyright = '2023, Eden Isakov, DR Amit Somech'

@@ -22,7 +22,6 @@ class ExpDataFrame(pd.DataFrame):
     """
     Explain dataframe, Inherit from pandas DataFrame.
     """
-
     def __init__(
             self,
             data=None,
@@ -34,7 +33,6 @@ class ExpDataFrame(pd.DataFrame):
         """
         Initialize explain dataframe
         Two-dimensional, size-mutable, potentially heterogeneous tabular data.
-
         Data structure also contains labeled axes (rows and columns).
         Arithmetic operations align on both row and column labels.
         Can be thought of as a dict-like container for Series objects. The primary pandas data structure.
@@ -59,8 +57,8 @@ class ExpDataFrame(pd.DataFrame):
     def __getitem__(self, key):
         """
         Get item from dataframe, save the item key
-        :param key: key to the item in dataframe
 
+        :param key: key to the item in dataframe
         :return: item from dataframe
         """
 
@@ -73,6 +71,7 @@ class ExpDataFrame(pd.DataFrame):
     def copy(self, deep=True):
         """
         Make a copy of this object’s indices and data.
+
         :param deep: Make a deep copy, including a copy of the data and the indices.
                      With deep=False neither the indices nor the data are copied.
         :return: explain dataframe copy
@@ -102,8 +101,7 @@ class ExpDataFrame(pd.DataFrame):
         :param columns: Alternative to specifying axis (labels, axis=1 is equivalent to columns=labels).
         :param level: For MultiIndex, level from which the labels will be removed.
         :param inplace: If False, return a copy. Otherwise, do operation inplace and return None.
-        :param errors: If ‘ignore’, suppress error and only existing labels are dropped.
-
+        :param errors: If ‘ignore’, suppress error and only existing labels are dropped
         :return: Explain DataFrame without the removed index or column labels or None if inplace=True.
         """
         return ExpDataFrame(super().drop(labels, axis, index, columns, level, inplace, errors))
@@ -135,7 +133,6 @@ class ExpDataFrame(pd.DataFrame):
         :param errors: If ‘raise’, raise a KeyError when a dict-like mapper, index,
                        or columns contains labels that are not present in the Index being transformed.
                        If ‘ignore’, existing keys will be renamed and extra keys will be ignored.
-
         :return: Explain DataFrame with the renamed axis labels or None if inplace=True.
         """
         return ExpDataFrame(super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
@@ -171,7 +168,6 @@ class ExpDataFrame(pd.DataFrame):
         :param axis: Axis to sample. Accepts axis number or name.
                      Default is stat axis for given data type (0 for Series and DataFrames).
         :param ignore_index: If True, the resulting index will be labeled 0, 1, …, n - 1.
-
         :return: A new object of same type as caller containing n items randomly sampled from the caller object.
         """
         return super().sample(n, frac, replace, weights, random_state, axis, ignore_index)
@@ -205,7 +201,6 @@ class ExpDataFrame(pd.DataFrame):
                        * ‘raise’ : allow exceptions to be raised.
                        * ‘ignore’ : suppress exceptions. On error return original object.
         :param try_cast: Try to cast the result back to the input type (if possible).
-
         :return: Same type as caller or None if inplace=True.
         """
         result_df = super().where(cond, other, inplace, axis, level, errors, try_cast)
@@ -258,7 +253,6 @@ class ExpDataFrame(pd.DataFrame):
                          If False: show all values for categorical groupers.
         :param dropna: If True, and if group keys contain NA values, NA values together with row/column will be dropped.
                        If False, NA values will also be treated as the key in groups.
-
         :return:Explain DataFrameGroupBy object that contains information about the groups.
         """
         try:
@@ -284,6 +278,7 @@ class ExpDataFrame(pd.DataFrame):
     def _getitem_bool_array(self, key):
         """
         Get filtered dataframe
+
         :param key: item key
         :return: Explain dataframe with filter operation
         """
@@ -315,6 +310,7 @@ class ExpDataFrame(pd.DataFrame):
             validate=None
     ):
         """
+        merge two dataframs
 
         :param right: Object to merge with.
         :param how: Type of merge to be performed.
@@ -330,8 +326,8 @@ class ExpDataFrame(pd.DataFrame):
                         Can also be an array or list of arrays of the length of the left DataFrame.
                         These arrays are treated as if they are columns.
         :param right_on: Column or index level names to join on in the left DataFrame.
-                        Can also be an array or list of arrays of the length of the right DataFrame.
-                        These arrays are treated as if they are columns.
+                         Can also be an array or list of arrays of the length of the right DataFrame.
+                         These arrays are treated as if they are columns.
         :param left_index: Use the index from the left DataFrame as the join key(s).
                            If it is a MultiIndex, the number of keys in the other DataFrame
                            (either the index or a number of columns) must match the number of levels.
@@ -341,9 +337,7 @@ class ExpDataFrame(pd.DataFrame):
         :param suffixes: A length-2 sequence where each element is optionally a string indicating the suffix
                          to add to overlapping column names in left and right respectively.
                          Pass a value of None instead of a string to indicate that the column name from left or right
-                          should be left as-is, with no suffix. At least one of the values must not be None.
-
-
+                         should be left as-is, with no suffix. At least one of the values must not be None.
         :param copy: If False, avoid copy if possible.
         :param indicator: If True, adds a column to the output DataFrame called “_merge” with information on the source
                           of each row. The column can be given a different name by providing a string argument.
@@ -389,14 +383,15 @@ class ExpDataFrame(pd.DataFrame):
             sort: bool = False,
     ) -> ExpDataFrame:
         """
+        Join to dataframes
 
         :param other: Index should be similar to one of the columns in this one. If a Series is passed,
                       its name attribute must be set, and that will be used as the column name in the
                       resulting joined DataFrame.
         :param on: Column or index level name(s) in the caller to join on the index in other,
                    otherwise joins index-on-index. If multiple values given, the other DataFrame must have a MultiIndex.
-                    Can pass an array as the join key if it is not already contained in the calling DataFrame.
-                    Like an Excel VLOOKUP operation.
+                   Can pass an array as the join key if it is not already contained in the calling DataFrame.
+                   Like an Excel VLOOKUP operation.
         :param how: How to handle the operation of the two objects.
                     * left: use calling frame’s index (or column if on is specified)
                     * right: use other’s index.
@@ -409,7 +404,6 @@ class ExpDataFrame(pd.DataFrame):
         :param rsuffix: Suffix to use from right frame’s overlapping columns.
         :param sort: Order result DataFrame lexicographically by the join key.
                      If False, the order of the join key depends on the join type (how keyword).
-
         :return: A Explain DataFrame of the two merged objects with join operation filed.
         """
         try:
@@ -459,6 +453,7 @@ class ExpDataFrame(pd.DataFrame):
     def __repr__(self):
         """
         repr object
+
         :return: super repr
         """
         return super().__repr__()
@@ -467,14 +462,13 @@ class ExpDataFrame(pd.DataFrame):
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None):
         """
         Generate explanation to series base on the operation lead to this series result
+
         :param schema: result columns, can change columns name and ignored columns
         :param attributes: list of specific columns to consider in the explanation
         :param top_k: number of explanations
         :param figs_in_row: number of explanations figs in one row
         :param show_scores: show scores on explanation
         :param title: explanation title
-
-
         :return: explanation figures
         """
         if attributes is None:

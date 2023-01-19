@@ -14,7 +14,7 @@ To use pd_explain, first install it using pip:
 
 
 import pd_explain
-----------------
+----------------------
 you have to import pd_explain after importing pandas to use explanations
 
 .. code-block:: python
@@ -23,7 +23,7 @@ you have to import pd_explain after importing pandas to use explanations
     import pd_explain
 
 Create dataframe
-----------------
+--------------------
 
 To read dataframe from csv (or any file use pd read functions),
 you can use the ``pd.red_csv()`` function:
@@ -38,7 +38,6 @@ For example:
 Alternatively you can create your own dataframe
 and convert it using ``pd_explain.to_explainable``
 
-.. automodapi:: pd_explain.ExpDataFrame
 
 
 The ``df`` parameter should be a dataframe

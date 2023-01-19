@@ -12,14 +12,12 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
     """
     Explain group_by dataframe
     """
-
     def aggregate(self, func=None, *args, engine=None, engine_kwargs=None, **kwargs):
         """
         Aggregate using one or more operations over the specified axis.
 
         :param func: Function to use for aggregating the data.
                      If a function, must either work when passed a DataFrame or when passed to DataFrame.apply.
-
                      Accepted combinations are:
                      * function
                      * string function name
@@ -34,8 +32,8 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         :param engine: * 'cython' : Runs the function through C-extensions from cython.
                        * 'numba' : Runs the function through JIT compiled code from numba.
                        * None : Defaults to 'cython' or globally setting compute.use_numba
-        :param engine_kwargs:
-        :param kwargs:
+        :param engine_kwargs: engine_kwargs
+        :param kwargs: kwargs
         :return: Explain Groupby Dataframe
         """
         from pd_explain.explainable_data_frame import ExpDataFrame
@@ -59,6 +57,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
     def __getitem__(self, key) -> DataFrameGroupBy | SeriesGroupBy:
         """
         Get item from dataframe
+
         :param key: item key
         :return: item as ExplainDataFrameGroupBy or ExplainSeriesGroupBy
         """
@@ -86,7 +85,6 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         Return DataFrame with counts of unique elements in each position.
 
         :param dropna: Don’t include NaN in the counts.
-
         :return: DataFrame
         """
         return super().nunique(dropna)
@@ -201,12 +199,10 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         Add operation groupby to the result object.
 
         :param ddof: Degrees of freedom.
-        :param engine:
-                        * 'cython' : Runs the operation through C-extensions from cython.
-                        * 'numba' : Runs the operation through JIT compiled code from numba.
-                        * None : Defaults to 'cython' or globally setting compute.use_numba
-        :param engine_kwargs:
-                              * For 'cython' engine, there are no accepted engine_kwargs
+        :param engine: * 'cython' : Runs the operation through C-extensions from cython.
+                       * 'numba' : Runs the operation through JIT compiled code from numba.
+                       * None : Defaults to 'cython' or globally setting compute.use_numba
+        :param engine_kwargs: * For 'cython' engine, there are no accepted engine_kwargs
                               * For 'numba' engine, the engine can accept nopython, nogil and parallel dictionary keys.
                                 The values must either be True or False.
                                 The default engine_kwargs for the 'numba' engine is
@@ -241,10 +237,9 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         Add operation groupby to the result object.
 
         :param ddof: Degrees of freedom.
-        :param engine:
-                        * 'cython' : Runs the operation through C-extensions from cython.
-                        * 'numba' : Runs the operation through JIT compiled code from numba.
-                        * None : Defaults to 'cython' or globally setting compute.use_numba
+        :param engine: * 'cython' : Runs the operation through C-extensions from cython.
+                       * 'numba' : Runs the operation through JIT compiled code from numba.
+                       * None : Defaults to 'cython' or globally setting compute.use_numba
         :param engine_kwargs:
                               * For 'cython' engine, there are no accepted engine_kwargs
                               * For 'numba' engine, the engine can accept nopython, nogil and parallel dictionary keys.
@@ -332,10 +327,9 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
                              If None, will attempt to use everything, then use only numeric data.
         :param min_count: The required number of valid values to perform the operation.
                           If fewer than min_count non-NA values are present the result will be NA.
-        :param engine:
-                        * 'cython' : Runs the operation through C-extensions from cython.
-                        * 'numba' : Runs the operation through JIT compiled code from numba.
-                        * None : Defaults to 'cython' or globally setting compute.use_numba
+        :param engine: * 'cython' : Runs the operation through C-extensions from cython.
+                       * 'numba' : Runs the operation through JIT compiled code from numba.
+                       * None : Defaults to 'cython' or globally setting compute.use_numba
         :param engine_kwargs:
                               * For 'cython' engine, there are no accepted engine_kwargs
                               * For 'numba' engine, the engine can accept nopython, nogil and parallel dictionary keys.

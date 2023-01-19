@@ -8,8 +8,8 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath('../src'))
-autodoc_mock_imports = ['pandas', 'numpy']
+# sys.path.insert(0, os.path.abspath('../src/pd_explain'))
+autodoc_mock_imports = ['pandas', 'numpy~=1.20.3']
 
 project = 'pd_Explain'
 copyright = '2023, Eden Isakov, DR Amit Somech'
@@ -20,14 +20,15 @@ release = '0.0.9'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    'sphinx.ext.duration',
-    'sphinx.ext.doctest',
-    'sphinx.ext.autodoc',
-    'sphinx.ext.autosummary',
-    'sphinx.ext.intersphinx',
+    # 'sphinx.ext.napoleon',
+    # 'sphinx.ext.duration',
+    # 'sphinx.ext.doctest',
+    # 'sphinx.ext.autodoc',
+    # 'sphinx.ext.autosummary',
+    # 'sphinx.ext.intersphinx',
     'nbsphinx',
-    'sphinx_automodapi.automodapi'
-    'sphinx_automodapi.smart_resolver'
+    'sphinx_rtd_theme',
+    'autoapi.extension'
 ]
 
 numpydoc_show_class_members = False
@@ -51,7 +52,15 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 
 # -- Options for EPUB output
-epub_show_urls = 'footnote'
+# epub_show_urls = 'footnote'
 
+# Autoapi conf
+autoapi_dirs = [
+    '../src/pd_explain/'
+]
 
+autoapi_options = [
+    'members', 'undoc-members'
+]
 
+autoapi_ignore = ['*/consts.py']

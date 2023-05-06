@@ -463,8 +463,13 @@ class ExpDataFrame(pd.DataFrame):
         """
         return super().__repr__()
 
+    def present_deleted_correlated(self, figs_in_row: int = 2): #####
+        return self.operation.present_deleted_correlated(figs_in_row = figs_in_row)
+        
+        
+        
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1,
-                figs_in_row: int = 2, show_scores: bool = False, title: str = None):
+                figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7):
         """
         Generate explanation to series base on the operation lead to this series result
         :param schema: result columns, can change columns name and ignored columns
@@ -484,4 +489,4 @@ class ExpDataFrame(pd.DataFrame):
             schema = {}
 
         return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k,
-                                      figs_in_row=figs_in_row, show_scores=show_scores, title=title)
+                                      figs_in_row=figs_in_row, show_scores=show_scores, title=title, corr_TH=corr_TH)

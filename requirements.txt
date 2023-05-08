@@ -5,7 +5,8 @@ python-dotenv>=0.20.0
 singleton-decorator
 matplotlib>=3.5.1
 setuptools>=60.2.0
-git+ssh://git@github.com/analysis-botsdflkghjfghdjhgjfks/FEDEx_Generator.git#egg=fedex_generator
+git+ssh://git@github.com/analysis-botsdflkghjfghdjhgjfks/FdsadEDEasdsax_Gasdsaenerator.git#egg=fedex_generator
+
 
 
 

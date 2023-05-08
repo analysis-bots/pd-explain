@@ -3,7 +3,7 @@ import calendar
 
 import numpy as np
 import pandas as pd
-from fedex_generator.Measures.Bins import UserBin
+from explain_ed.Measures.Bins import UserBin, Bins
 
 SEASONS = ['Winter', 'Spring', 'Summer', 'Autumn']
 

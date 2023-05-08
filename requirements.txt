@@ -6,3 +6,4 @@ singleton-decorator
 matplotlib>=3.5.1
 setuptools>=60.2.0
 fedex_generator @ git+ssh://git@github.com/analysis-bots/FEDEx_Generator@main
+

@@ -36,8 +36,8 @@ setup(
     },
     install_requires=[
         'wheel',
-        'pandas~=1.4.2',
-        'numpy~=1.20.3',
+        'pandas>=1.4.2',
+        'numpy>=1.20.3',
         'python-dotenv',
         'singleton-decorator',
         'matplotlib',

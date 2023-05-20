@@ -36,12 +36,12 @@ setup(
     },
     install_requires=[
         'wheel',
-        'pandas~=1.4.2',
-        'numpy~=1.20.3',
+        'pandas>=1.4.2',
+        'numpy>=1.20.3',
         'python-dotenv',
         'singleton-decorator',
         'matplotlib',
-        'fedex_generator@git+ssh://git@github.com/analysis-bots/FEDEx_Generator.git#egg=fedex_generator',
+        'fedex-generator>=0.0.5',
     ]
 
 )

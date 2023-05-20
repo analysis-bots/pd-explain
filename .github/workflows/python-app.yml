@@ -2,7 +2,9 @@
 name: Publish ${package_name} to PyPI / GitHub
 
 on:
-  push
+  push:
+    tags:
+      - "v*"
   
 jobs:
 

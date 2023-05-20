@@ -8,4 +8,4 @@ from pd_explain.explainable_group_by_dataframe import ExpDataFrameGroupBy
 from pd_explain.explainable_group_by_series import ExpSeriesGroupBy
 from pd_explain.utils import to_explainable
 
-__version__ = '0.0.9'
+__version__ = '0.0.11'

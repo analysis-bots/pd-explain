@@ -43,7 +43,7 @@ df = pd_explain.to_explainable(df)
 
 [Full example Notebook](https://github.com/analysis-bots/pd-explain/blob/main/Examples/Notebooks/Bank%20Churners%20Pitch.ipynb)
 
-[Demo Spotify example](https://github.com/analysis-bots/pd-explain/blob/main/Examples/Notebooks/Demo.ipynb)
+[Demo Spotify example](https://github.com/analysis-bots/pd-explain/blob/main/Examples/Notebooks/PD-explain%20DEMO.ipynb)
 
 ![Demo Spotify example](./assets/pdexplain_demo.gif)
 

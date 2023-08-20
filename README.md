@@ -45,7 +45,7 @@ df = pd_explain.to_explainable(df)
 
 [Demo Spotify example](https://github.com/analysis-bots/pd-explain/blob/main/Examples/Notebooks/Demo.ipynb)
 
-![Demo Spotify example](./assets/explain_demo.gif)
+![Demo Spotify example](./assets/pdexplain_demo.mp4)
 
 ## Documentation
 

@@ -24,26 +24,11 @@ cd pd_explain
 
 pip install -r requirements.txt
 ```
-## Usage
-You can use explain dataframe like this
-
-```python
-import pandas as pd
-import pd_explain
-
-pd.read_...() # All read functions create explainable dataframe
-
-d = {'col1': [1, 2], 'col2': [3, 4]}
-df = pd.DataFrame(data=d)
-df = pd_explain.to_explainable(df)
-```
-
 
 ## Demo
 
-[Full example Notebook](https://github.com/analysis-bots/pd-explain/blob/main/Examples/Notebooks/Bank%20Churners%20Pitch.ipynb)
-
 [Demo Spotify example](https://github.com/analysis-bots/pd-explain/blob/main/Examples/Notebooks/PD-explain%20DEMO.ipynb)
+
 
 ![Demo Spotify example](./assets/pdexplain_demo.gif)
 

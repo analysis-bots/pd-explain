@@ -41,7 +41,7 @@ setup(
         'python-dotenv',
         'singleton-decorator',
         'matplotlib',
-        'fedex-generator>=0.0.5',
+        'fedex-generator>=0.0.7',
     ]
 
 )

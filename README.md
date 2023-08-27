@@ -1,8 +1,10 @@
 
-# Explain pd
+# PD-EXPLAIN
 
-A library  that create explation for dataframes manipulations, using pandas dataframes and explations based on [ExplainED: Explanations for EDA Notebooks
-](https://github.com/TAU-DB/ExplainED)
+PD-EXPLAIN is a Python library that wraps Pandas, allowing users to obtain explanations and additional insights on their analytical operations.
+PD-EXPLAIN is under active development, currently featuring the [FEDEX](https://www.vldb.org/pvldb/vol15/p3854-gilad.pdf) system, which detects interesting segments in dataframes resulted from filter, join, union and group-by operations. 
+
+
 
 
 
@@ -37,7 +39,8 @@ pip install -r requirements.txt
 [Documentation](https://stirring-medovik-ba9b36.netlify.app/src/pd_explain.html)
 
 
-## Articles
+## Citation Information
+
 
 - [ExplainED: Explanations for EDA Notebooks](http://www.vldb.org/pvldb/vol13/p2917-deutch.pdf)
 

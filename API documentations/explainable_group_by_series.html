@@ -1677,18 +1677,4 @@ If fewer than min_count non-NA values are present the result will be NA.</li>
                             </div>
                 </section>
     </main>
-<script>
-    /* Periodically check with the pdoc server if there have been any changes. */
-    let mtime_generated = "1692120498.8",
-        url = new URL(window.location);
-    url.searchParams.set("mtime", 1);
-    window.setInterval(function () {
-        fetch(url.toString())
-            .then(response => response.text())
-            .then(mtime => {
-                if (mtime_generated !== mtime)
-                    location.reload();
-            });
-    }, 1000);
-</script>
 </body></html>

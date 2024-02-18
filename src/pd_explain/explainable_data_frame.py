@@ -208,7 +208,7 @@ class ExpDataFrame(pd.DataFrame):
 
         :return: Same type as caller or None if inplace=True.
         """
-        result_df = super().where(cond, other, inplace, axis, level, errors, try_cast)
+        result_df = ExpDataFrame(super().where(cond))#, other, inplace, axis, level, errors, try_cast)
         try:
             if self.filter_items:
                 result_df.operation = Filter(source_df=self,

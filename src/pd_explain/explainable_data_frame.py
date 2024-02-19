@@ -274,20 +274,21 @@ class ExpDataFrame(pd.DataFrame):
             group_attributes = GroupBy.get_one_to_many_attributes(self, [by] if isinstance(by, str) else by)
             tmp = pd.core.groupby.generic.DataFrameGroupBy
             pd.core.groupby.generic.DataFrameGroupBy = ExpDataFrameGroupBy
-            g = super().groupby(group_attributes, axis, level, as_index, sort,
-                                group_keys, squeeze, observed, dropna)
+            g = super().groupby(by=group_attributes, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
             g.group_attributes = by
             g.source_name = utils.get_calling_params_name(self)
 
-            g.original = super().groupby(by, axis, level, as_index, sort,
-                                         group_keys, squeeze, observed, dropna)
+            g.original = super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
 
             pd.core.groupby.generic.DataFrameGroupBy = tmp
             return g
 
         except Exception as error:
             print(f'Error {error} with operation group by explanation')
-            return super().groupby(by, axis, level, as_index, sort, group_keys, squeeze, observed, dropna)
+            return super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
 
     def _getitem_bool_array(self, key):
         """

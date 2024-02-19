@@ -27,8 +27,9 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                  mutated: bool = False,
                  dropna: bool = True,
                  ):
-        super().__init__(obj, keys, axis, level, grouper, exclusions, selection, as_index, sort,
-                         group_keys, squeeze, observed, mutated)
+        super().__init__(obj=obj, keys=keys, axis=axis, level=level, grouper=grouper, exclusions=exclusions, selection=selection, as_index=as_index
+                         , sort=sort,
+                         group_keys=group_keys, observed=observed)
 
     def count(self):
         """

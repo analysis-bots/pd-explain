@@ -114,7 +114,7 @@ class ExpDataFrame(pd.DataFrame):
 
         :return: Explain DataFrame without the removed index or column labels or None if inplace=True.
         """
-        return ExpDataFrame(super().drop(labels, axis, index, columns, level, inplace, errors))
+        return ExpDataFrame(super().drop(labels=labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace, errors=errors))
 
     def rename(self,
                mapper: Renamer | None = None,

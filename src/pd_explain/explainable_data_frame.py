@@ -10,7 +10,8 @@ from pandas._libs.lib import no_default
 import sys
  
 # adding Folder_2/subfolder to the system path
-sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator/src/')
+#sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator/src/')
+sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
@@ -22,7 +23,8 @@ from typing import (
     List,
 )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
-sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
+#sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
+sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.explainable_series import ExpSeries
 
 

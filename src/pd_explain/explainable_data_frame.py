@@ -114,7 +114,7 @@ class ExpDataFrame(pd.DataFrame):
 
         :return: Explain DataFrame without the removed index or column labels or None if inplace=True.
         """
-        return ExpDataFrame(super().drop(labels, axis, index, columns, level, inplace, errors))
+        return ExpDataFrame(super().drop(labels=labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace, errors=errors))
 
     def rename(self,
                mapper: Renamer | None = None,
@@ -274,20 +274,21 @@ class ExpDataFrame(pd.DataFrame):
             group_attributes = GroupBy.get_one_to_many_attributes(self, [by] if isinstance(by, str) else by)
             tmp = pd.core.groupby.generic.DataFrameGroupBy
             pd.core.groupby.generic.DataFrameGroupBy = ExpDataFrameGroupBy
-            g = super().groupby(group_attributes, axis, level, as_index, sort,
-                                group_keys, squeeze, observed, dropna)
+            g = super().groupby(by=group_attributes, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
             g.group_attributes = by
             g.source_name = utils.get_calling_params_name(self)
 
-            g.original = super().groupby(by, axis, level, as_index, sort,
-                                         group_keys, squeeze, observed, dropna)
+            g.original = super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
 
             pd.core.groupby.generic.DataFrameGroupBy = tmp
             return g
 
         except Exception as error:
             print(f'Error {error} with operation group by explanation')
-            return super().groupby(by, axis, level, as_index, sort, group_keys, squeeze, observed, dropna)
+            return super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
 
     def _getitem_bool_array(self, key):
         """
@@ -476,7 +477,7 @@ class ExpDataFrame(pd.DataFrame):
         
         
         
-    def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1,
+    def explain(self, schema: dict = None, attributes: List = None, top_k: int = None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7):
         """
         Generate explanation to series base on the operation lead to this series result
@@ -492,6 +493,11 @@ class ExpDataFrame(pd.DataFrame):
         """
         if attributes is None:
             attributes = []
+            if top_k is None:
+                top_k=1
+        else:
+            if top_k is None:
+                top_k=len(attributes)
 
         if schema is None:
             schema = {}

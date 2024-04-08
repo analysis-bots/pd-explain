@@ -43,9 +43,9 @@ pip install -r requirements.txt
 
 
 ## Citation Information
+TBD
 
 
-- [ExplainED: Explanations for EDA Notebooks](http://www.vldb.org/pvldb/vol13/p2917-deutch.pdf)
 
 ## Authors
 

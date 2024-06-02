@@ -80,7 +80,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.mean(numeric_only, engine, engine_kwargs)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['mean']},

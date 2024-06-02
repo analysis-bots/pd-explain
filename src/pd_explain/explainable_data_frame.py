@@ -10,8 +10,8 @@ from pandas._libs.lib import no_default
 import sys
  
 # adding Folder_2/subfolder to the system path
-#sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator/src/')
-sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
+sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator-1/src/')
+# sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
@@ -23,8 +23,8 @@ from typing import (
     List,
 )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
-#sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
-sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
+sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
+# sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.explainable_series import ExpSeries
 
 
@@ -78,7 +78,9 @@ class ExpDataFrame(pd.DataFrame):
             if self.filter_items is None:
                 self.filter_items = []
             self.filter_items.append(key)
-        return super().__getitem__(key)
+        to_return = super().__getitem__(key)
+        # to_return.source_df = self.operation.source_df
+        return to_return
 
     def copy(self, deep=True):
         """
@@ -280,7 +282,7 @@ class ExpDataFrame(pd.DataFrame):
                                    , observed=observed, dropna=dropna)
             g.group_attributes = by
             g.source_name = utils.get_calling_params_name(self)
-
+            g.operation = GroupBy(source_df=self, group_attributes=by, result_df=g, source_scheme=None, agg_dict=None)
             g.original = super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
                                    , observed=observed, dropna=dropna)
 
@@ -289,6 +291,10 @@ class ExpDataFrame(pd.DataFrame):
 
         except Exception as error:
             print(f'Error {error} with operation group by explanation')
+            g = super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
+            # g.group_attributes = by
+            # g.operation = GroupBy(source_df=self, group_attributes=by, result_df=g)
             return super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
                                    , observed=observed, dropna=dropna)
 
@@ -479,7 +485,7 @@ class ExpDataFrame(pd.DataFrame):
         
         
         
-    def explain(self, schema: dict = None, attributes: List = None, top_k: int = None,
+    def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7):
         """
         Generate explanation to series base on the operation lead to this series result

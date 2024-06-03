@@ -1,8 +1,11 @@
 
 # PD-EXPLAIN
 
-PD-EXPLAIN is a Python library that wraps Pandas, allowing users to obtain explanations and additional insights on their analytical operations.
-PD-EXPLAIN is under active development, currently featuring the [FEDEX](https://www.vldb.org/pvldb/vol15/p3854-gilad.pdf) system, which detects interesting segments in dataframes resulted from filter, join, union and group-by operations. 
+PD-EXPLAIN is a Python library that wraps Pandas, allowing users to obtain multiple type of query explanations over Pandas DataFrames. 
+PD-EXPLAIN is under active development, currently featuring deviation-based explanations (for filter, join, and set operations), and explanations for high-variance group-by-and-aggregate operations. Both explainers utilizes the [FEDEX](https://www.vldb.org/pvldb/vol15/p3854-gilad.pdf) system.
+
+* We will soon support outlier explanations based on the [SCORPION](https://sirrice.github.io/files/papers/scorpion-vldb13.pdf) systems, and Boolean-query explanations based on [this paper](https://arxiv.org/abs/2112.08874).
+
 
 
 
@@ -40,9 +43,9 @@ pip install -r requirements.txt
 
 
 ## Citation Information
+TBD
 
 
-- [ExplainED: Explanations for EDA Notebooks](http://www.vldb.org/pvldb/vol13/p2917-deutch.pdf)
 
 ## Authors
 

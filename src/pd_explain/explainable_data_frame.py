@@ -275,7 +275,8 @@ class ExpDataFrame(pd.DataFrame):
         """
         try:
             from pd_explain.explainable_group_by_dataframe import ExpDataFrameGroupBy
-            group_attributes = GroupBy.get_one_to_many_attributes(self, [by] if isinstance(by, str) else by)
+            # group_attributes = GroupBy.get_one_to_many_attributes(self, [by] if isinstance(by, str) else by)
+            group_attributes = by
             tmp = pd.core.groupby.generic.DataFrameGroupBy
             pd.core.groupby.generic.DataFrameGroupBy = ExpDataFrameGroupBy
             g = super().groupby(by=group_attributes, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys

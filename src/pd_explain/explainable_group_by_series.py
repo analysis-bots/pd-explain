@@ -44,9 +44,9 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.count()
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
-                                                group_attributes=None,
+                                                group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['count']},
                                                 result_df=result.to_frame(),
                                                 source_name=self.source_name)

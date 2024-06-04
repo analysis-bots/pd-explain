@@ -3,6 +3,15 @@ import numpy as np
 import pandas as pd
 from matplotlib.axis import Axis
 from pandas._libs.lib import no_default
+
+
+
+# importing sys
+import sys
+ 
+# adding Folder_2/subfolder to the system path
+sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator-1/src/')
+# sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
@@ -14,7 +23,8 @@ from typing import (
     List,
 )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
-
+sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
+# sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.explainable_series import ExpSeries
 
 
@@ -68,7 +78,9 @@ class ExpDataFrame(pd.DataFrame):
             if self.filter_items is None:
                 self.filter_items = []
             self.filter_items.append(key)
-        return super().__getitem__(key)
+        to_return = super().__getitem__(key)
+        # to_return.source_df = self.operation.source_df
+        return to_return
 
     def copy(self, deep=True):
         """
@@ -106,7 +118,7 @@ class ExpDataFrame(pd.DataFrame):
 
         :return: Explain DataFrame without the removed index or column labels or None if inplace=True.
         """
-        return ExpDataFrame(super().drop(labels, axis, index, columns, level, inplace, errors))
+        return ExpDataFrame(super().drop(labels=labels, axis=axis, index=index, columns=columns, level=level, inplace=inplace, errors=errors))
 
     def rename(self,
                mapper: Renamer | None = None,
@@ -208,7 +220,7 @@ class ExpDataFrame(pd.DataFrame):
 
         :return: Same type as caller or None if inplace=True.
         """
-        result_df = super().where(cond, other, inplace, axis, level, errors, try_cast)
+        result_df = ExpDataFrame(super().where(cond))#, other, inplace, axis, level, errors, try_cast)
         try:
             if self.filter_items:
                 result_df.operation = Filter(source_df=self,
@@ -263,23 +275,29 @@ class ExpDataFrame(pd.DataFrame):
         """
         try:
             from pd_explain.explainable_group_by_dataframe import ExpDataFrameGroupBy
-            group_attributes = GroupBy.get_one_to_many_attributes(self, [by] if isinstance(by, str) else by)
+            # group_attributes = GroupBy.get_one_to_many_attributes(self, [by] if isinstance(by, str) else by)
+            group_attributes = by
             tmp = pd.core.groupby.generic.DataFrameGroupBy
             pd.core.groupby.generic.DataFrameGroupBy = ExpDataFrameGroupBy
-            g = super().groupby(group_attributes, axis, level, as_index, sort,
-                                group_keys, squeeze, observed, dropna)
+            g = super().groupby(by=group_attributes, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
             g.group_attributes = by
             g.source_name = utils.get_calling_params_name(self)
-
-            g.original = super().groupby(by, axis, level, as_index, sort,
-                                         group_keys, squeeze, observed, dropna)
+            g.operation = GroupBy(source_df=self, group_attributes=by, result_df=g, source_scheme=None, agg_dict=None)
+            g.original = super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
 
             pd.core.groupby.generic.DataFrameGroupBy = tmp
             return g
 
         except Exception as error:
             print(f'Error {error} with operation group by explanation')
-            return super().groupby(by, axis, level, as_index, sort, group_keys, squeeze, observed, dropna)
+            g = super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
+            # g.group_attributes = by
+            # g.operation = GroupBy(source_df=self, group_attributes=by, result_df=g)
+            return super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+                                   , observed=observed, dropna=dropna)
 
     def _getitem_bool_array(self, key):
         """
@@ -468,7 +486,7 @@ class ExpDataFrame(pd.DataFrame):
         
         
         
-    def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1,
+    def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7):
         """
         Generate explanation to series base on the operation lead to this series result
@@ -484,6 +502,11 @@ class ExpDataFrame(pd.DataFrame):
         """
         if attributes is None:
             attributes = []
+            if top_k is None:
+                top_k=1
+        else:
+            if top_k is None:
+                top_k=len(attributes)
 
         if schema is None:
             schema = {}

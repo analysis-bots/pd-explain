@@ -27,8 +27,9 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                  mutated: bool = False,
                  dropna: bool = True,
                  ):
-        super().__init__(obj, keys, axis, level, grouper, exclusions, selection, as_index, sort,
-                         group_keys, squeeze, observed, mutated)
+        super().__init__(obj=obj, keys=keys, axis=axis, level=level, grouper=grouper, exclusions=exclusions, selection=selection, as_index=as_index
+                         , sort=sort,
+                         group_keys=group_keys, observed=observed)
 
     def count(self):
         """
@@ -43,9 +44,9 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.count()
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
-                                                group_attributes=None,
+                                                group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['count']},
                                                 result_df=result.to_frame(),
                                                 source_name=self.source_name)
@@ -79,7 +80,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.mean(numeric_only, engine, engine_kwargs)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['mean']},

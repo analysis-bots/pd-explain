@@ -73,6 +73,8 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'source_name'):
             item.source_name = self.source_name
+        if hasattr(self, 'operation'):
+            item.operation = self.operation
 
         if hasattr(self, 'original'):
             item.original = self.original.__getitem__(key)
@@ -144,6 +146,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             result = ExpDataFrame(super().mean(numeric_only, engine, engine_kwargs))
             agg_attr = result.name if hasattr(result, 'name') else 'All'
             result.name = '_'.join([agg_attr, 'mean'])
+            # result.operation = self.operation
 
             if hasattr(self, 'original'):
                 original_result = self.original.mean(numeric_only, engine, engine_kwargs)
@@ -158,7 +161,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         except Exception as error:
             print(error)
             result = super().mean()
-
+        # result.source_df = self.source_df
         return result
 
     def median(self, numeric_only: bool | lib.NoDefault = lib.no_default):

@@ -103,7 +103,7 @@ class ExpSeries(pd.Series):
         ax.get_xticklabels()[-1].set_color('tab:green')
 
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1, figs_in_row: int = 2, explainer='fedex',
-                target=None, dir=None,
+                target=None, dir=None, control=None,
                 show_scores: bool = False, title: str = None):
         """
         Generate explanation to series base on the operation lead to this series result
@@ -130,5 +130,5 @@ class ExpSeries(pd.Series):
         if schema is None:
             schema = {}
 
-        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, explainer=explainer, target=target, dir=dir,
+        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, explainer=explainer, target=target, dir=dir, control=control,
                                       figs_in_row=figs_in_row, show_scores=show_scores, title=title)

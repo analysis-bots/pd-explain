@@ -486,7 +486,7 @@ class ExpDataFrame(pd.DataFrame):
         
         
         
-    def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
+    def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None, dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7):
         """
         Generate explanation to series base on the operation lead to this series result

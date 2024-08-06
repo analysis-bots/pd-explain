@@ -10,11 +10,13 @@ from pandas._libs.lib import no_default
 import sys
  
 # adding Folder_2/subfolder to the system path
+
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator-1/src/')
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
+from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
 from typing import (
     Hashable,
@@ -444,6 +446,68 @@ class ExpDataFrame(pd.DataFrame):
             result_df = ExpDataFrame(super().join(right_df, on, how, lsuffix, rsuffix, sort))
             result_df.operation = Join(self, right_df, None, on, result_df, left_name, right_name)
             return result_df
+
+        except Exception as error:
+            print(f'Error {error} with operation merge explanation')
+            return ExpDataFrame(super().join(other, on, how, lsuffix, rsuffix, sort))
+        
+    def b_join(
+            self,
+            other: ExpDataFrame | ExpSeries,
+            on: IndexLabel | None = None,
+            how: str = "left",
+            lsuffix: str = "",
+            rsuffix: str = "",
+            sort: bool = False,
+            explain = False,
+            consider = 'left',
+            top_k = 1
+    ) :
+        """
+
+        :param other: Index should be similar to one of the columns in this one. If a Series is passed,
+                      its name attribute must be set, and that will be used as the column name in the
+                      resulting joined DataFrame.
+        :param on: Column or index level name(s) in the caller to join on the index in other,
+                   otherwise joins index-on-index. If multiple values given, the other DataFrame must have a MultiIndex.
+                    Can pass an array as the join key if it is not already contained in the calling DataFrame.
+                    Like an Excel VLOOKUP operation.
+        :param how: How to handle the operation of the two objects.
+                    * left: use calling frame’s index (or column if on is specified)
+                    * right: use other’s index.
+                    * outer: form union of calling frame’s index (or column if on is specified) with other’s index,
+                             and sort it. lexicographically.
+                    * inner: form intersection of calling frame’s index (or column if on is specified) with other’s
+                             index, preserving the order of the calling’s one.
+                    * cross: creates the cartesian product from both frames, preserves the order of the left keys.
+        :param lsuffix: Suffix to use from left frame’s overlapping columns.
+        :param rsuffix: Suffix to use from right frame’s overlapping columns.
+        :param sort: Order result DataFrame lexicographically by the join key.
+                     If False, the order of the join key depends on the join type (how keyword).
+
+        :return: A Explain DataFrame of the two merged objects with join operation filed.
+        """
+        try:
+            left_name = utils.get_calling_params_name(self)
+            right_name = utils.get_calling_params_name(other)
+            self = self.reset_index()
+            self.df_name = left_name
+            other.df_name = right_name
+            right_df = ExpDataFrame(other.copy())
+            right_df.df_name = right_name
+            # ignore_columns = [attribute for attribute in on] if on is not None else []
+            # ignore_columns.append('index')
+            
+
+            # self.columns = [col if col in ignore_columns else left_name + "_" + col
+            #                 for col in self]
+            # right_df.columns = [col if col in ignore_columns else right_name + "_" + col
+            #                     for col in right_df]
+            operation = BJoin(self, right_df, None, on, None, left_name, right_name)
+            # result_df.operation = BJoin(self, right_df, None, on, result_df, left_name, right_name)
+            if(explain):
+                operation.explain(consider=consider, top_k=top_k)
+            return operation.result
 
         except Exception as error:
             print(f'Error {error} with operation merge explanation')

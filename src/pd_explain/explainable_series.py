@@ -5,6 +5,9 @@ from typing import List
 import pandas as pd
 from pandas._typing import Dtype
 import matplotlib.pyplot as plt
+from fedex_generator.Operations.BJoin import BJoin
+from fedex_generator.commons import utils
+
 import numpy as np
 
 df_loc = 'C:/Users/itaye/Desktop/pdexplain/pd-explain/Examples/Datasets/spotify_all.csv'
@@ -47,6 +50,61 @@ class ExpSeries(pd.Series):
             return abs(self.std_int(df_ex.groupby(g_att)[g_agg].mean(), target) - self.std_int(df_agg, target))
         except:
             return 0
+        
+
+    def b_join(
+            self,
+            other,
+            on=None,
+            how: str = "left",
+            lsuffix: str = "",
+            rsuffix: str = "",
+            sort: bool = False,
+    ):
+        """
+
+        :param other: Index should be similar to one of the columns in this one. If a Series is passed,
+                      its name attribute must be set, and that will be used as the column name in the
+                      resulting joined DataFrame.
+        :param on: Column or index level name(s) in the caller to join on the index in other,
+                   otherwise joins index-on-index. If multiple values given, the other DataFrame must have a MultiIndex.
+                    Can pass an array as the join key if it is not already contained in the calling DataFrame.
+                    Like an Excel VLOOKUP operation.
+        :param how: How to handle the operation of the two objects.
+                    * left: use calling frame’s index (or column if on is specified)
+                    * right: use other’s index.
+                    * outer: form union of calling frame’s index (or column if on is specified) with other’s index,
+                             and sort it. lexicographically.
+                    * inner: form intersection of calling frame’s index (or column if on is specified) with other’s
+                             index, preserving the order of the calling’s one.
+                    * cross: creates the cartesian product from both frames, preserves the order of the left keys.
+        :param lsuffix: Suffix to use from left frame’s overlapping columns.
+        :param rsuffix: Suffix to use from right frame’s overlapping columns.
+        :param sort: Order result DataFrame lexicographically by the join key.
+                     If False, the order of the join key depends on the join type (how keyword).
+
+        :return: A Explain DataFrame of the two merged objects with join operation filed.
+        """
+        from pd_explain.explainable_data_frame import ExpDataFrame
+        try:
+            left_name = utils.get_calling_params_name(self)
+            right_name = utils.get_calling_params_name(other)
+            right_df = other.copy()
+            ignore_columns = [attribute for attribute in on] if on is not None else []
+            ignore_columns.append('index')
+            self = self.reset_index()
+            self.columns = [col if col in ignore_columns else left_name + "_" + col
+                            for col in self]
+            right_df.columns = [col if col in ignore_columns else right_name + "_" + col
+                                for col in right_df]
+            result_df = ExpDataFrame(super().join(right_df, on, how, lsuffix, rsuffix, sort))
+            result_df.operation = BJoin(ExpDataFrame(self), right_df, None, on, result_df, left_name, right_name)
+            return result_df
+
+        except Exception as error:
+            print(f'Error {error} with operation merge explanation')
+            return ExpDataFrame(super().join(other, on, how, lsuffix, rsuffix, sort))
+
     def explain_outlier(self, df_agg, df_in, g_att, g_agg, target):
         attrs = df_in.select_dtypes(include='number').columns.tolist()[:10]
         attrs = [a for a in attrs if a not in [g_att, g_agg]]

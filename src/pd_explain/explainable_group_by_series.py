@@ -363,3 +363,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
             return original_result
 
         return result
+    def drop_duplicates(
+            self,
+    ) -> ExpDataFrame | None:
+        return ExpDataFrame(super().drop_duplicates())

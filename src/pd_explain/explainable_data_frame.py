@@ -81,6 +81,9 @@ class ExpDataFrame(pd.DataFrame):
                 self.filter_items = []
             self.filter_items.append(key)
         to_return = super().__getitem__(key)
+        t = str(type(to_return))
+        if str(type(to_return)) == "<class 'pandas.core.frame.DataFrame'>":
+            return ExpDataFrame(to_return)
         # to_return.source_df = self.operation.source_df
         return to_return
 
@@ -403,7 +406,7 @@ class ExpDataFrame(pd.DataFrame):
             self,
             other: ExpDataFrame | ExpSeries,
             on: IndexLabel | None = None,
-            how: str = "left",
+            how: str = "inner",
             lsuffix: str = "",
             rsuffix: str = "",
             sort: bool = False,
@@ -435,21 +438,30 @@ class ExpDataFrame(pd.DataFrame):
         try:
             left_name = utils.get_calling_params_name(self)
             right_name = utils.get_calling_params_name(other)
-            right_df = other.copy()
-            ignore_columns = [attribute for attribute in on] if on is not None else []
-            ignore_columns.append('index')
             self = self.reset_index()
-            self.columns = [col if col in ignore_columns else left_name + "_" + col
-                            for col in self]
-            right_df.columns = [col if col in ignore_columns else right_name + "_" + col
-                                for col in right_df]
-            result_df = ExpDataFrame(super().join(right_df, on, how, lsuffix, rsuffix, sort))
+            self.df_name = left_name
+            other.df_name = right_name
+            right_df = ExpDataFrame(other.copy())
+            right_df.df_name = right_name
+
+
+            # ignore_columns = [attribute for attribute in on] if on is not None else []
+            # ignore_columns.append('index')
+            # self.columns = [col if col in ignore_columns else left_name + "_" + col
+                            # for col in self]
+            # right_df.columns = [col if col in ignore_columns else right_name + "_" + col
+                                # for col in right_df]
+            result_df = ExpDataFrame(pd.merge(self, right_df, on=on, how=how))
+            # result_df = ExpDataFrame(super().join(right_df, on, how, lsuffix, rsuffix, sort))
             result_df.operation = Join(self, right_df, None, on, result_df, left_name, right_name)
+
             return result_df
 
         except Exception as error:
             print(f'Error {error} with operation merge explanation')
-            return ExpDataFrame(super().join(other, on, how, lsuffix, rsuffix, sort))
+            return ExpDataFrame(pd.merge(self, right_df, on=on, how=how))
+            
+            # return ExpDataFrame(super().join(other, on, how, lsuffix, rsuffix, sort))
         
     def b_join(
             self,
@@ -536,8 +548,13 @@ class ExpDataFrame(pd.DataFrame):
                         If None then the index name is repeated.
         :return: Explain DataFrame with the new index or None if inplace=True.
         """
-        return ExpDataFrame(super().reset_index())
+        return ExpDataFrame(super().reset_index(drop=drop))
 
+
+    def drop_duplicates(
+            self,
+    ) -> ExpDataFrame | None:
+        return ExpDataFrame(super().drop_duplicates())
     def __repr__(self):
         """
         repr object
@@ -575,5 +592,5 @@ class ExpDataFrame(pd.DataFrame):
         if schema is None:
             schema = {}
 
-        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k,figs_in_row=figs_in_row, show_scores=show_scores, title=title, corr_TH=corr_TH)
+        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k,figs_in_row=figs_in_row, show_scores=show_scores, title=title, corr_TH=corr_TH, explainer=explainer)
 

@@ -416,6 +416,10 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             return original_result
 
         return result
+    def drop_duplicates(
+            self,
+    ) -> ExpDataFrame | None:
+        return ExpDataFrame(super().drop_duplicates())
 
     def max(self, numeric_only: bool = False, min_count: int = -1):
         """

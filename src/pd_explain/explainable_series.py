@@ -159,7 +159,10 @@ class ExpSeries(pd.Series):
         bar2[x2.index(target)].set_edgecolor('tab:green')
         bar2[x2.index(target)].set_linewidth(2)
         ax.get_xticklabels()[-1].set_color('tab:green')
-
+    def drop_duplicates(
+            self,
+    ):
+        return ExpSeries(super().drop_duplicates())
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1, figs_in_row: int = 2, explainer='fedex',
                 target=None, dir=None, control=None, hold_out=[],
                 show_scores: bool = False, title: str = None):

@@ -406,6 +406,8 @@ class ExpDataFrame(pd.DataFrame):
             self,
             other: ExpDataFrame | ExpSeries,
             on: IndexLabel | None = None,
+            left_on = None,
+            right_on = None,
             how: str = "inner",
             lsuffix: str = "",
             rsuffix: str = "",
@@ -451,7 +453,7 @@ class ExpDataFrame(pd.DataFrame):
                             # for col in self]
             # right_df.columns = [col if col in ignore_columns else right_name + "_" + col
                                 # for col in right_df]
-            result_df = ExpDataFrame(pd.merge(self, right_df, on=on, how=how))
+            result_df = ExpDataFrame(pd.merge(self, right_df, on=on, left_on=left_on, right_on=right_on, how=how))
             # result_df = ExpDataFrame(super().join(right_df, on, how, lsuffix, rsuffix, sort))
             result_df.operation = Join(self, right_df, None, on, result_df, left_name, right_name)
 
@@ -568,7 +570,7 @@ class ExpDataFrame(pd.DataFrame):
         
         
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None, dir=None,
-                figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7):
+                figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7, consider='right', value=None, attr=None):
         """
         Generate explanation to series base on the operation lead to this series result
         :param schema: result columns, can change columns name and ignored columns
@@ -592,5 +594,5 @@ class ExpDataFrame(pd.DataFrame):
         if schema is None:
             schema = {}
 
-        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k,figs_in_row=figs_in_row, show_scores=show_scores, title=title, corr_TH=corr_TH, explainer=explainer)
+        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k,figs_in_row=figs_in_row, show_scores=show_scores, title=title, corr_TH=corr_TH, explainer=explainer, consider=consider, cont=value, attr=attr)
 

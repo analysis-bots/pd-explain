@@ -593,6 +593,9 @@ class ExpDataFrame(pd.DataFrame):
 
         if schema is None:
             schema = {}
+        if self.operation is None:
+            print('no operation was found.')
+            return
 
         return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k,figs_in_row=figs_in_row, show_scores=show_scores, title=title, corr_TH=corr_TH, explainer=explainer, consider=consider, cont=value, attr=attr)
 

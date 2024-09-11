@@ -84,8 +84,10 @@ class ExpDataFrame(pd.DataFrame):
         t = str(type(to_return))
         if str(type(to_return)) == "<class 'pandas.core.frame.DataFrame'>":
             return ExpDataFrame(to_return)
+        if t == "<class 'pd_explain.explainable_data_frame.ExpDataFrame'>":
+            return to_return
         # to_return.source_df = self.operation.source_df
-        return to_return
+        return ExpSeries(to_return)
 
     def copy(self, deep=True):
         """

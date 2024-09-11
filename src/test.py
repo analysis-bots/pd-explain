@@ -12,6 +12,10 @@ import pd_explain
 songs_df = (pd.read_csv(r"C:\Users\itaye\Desktop\pdexplain\pd-explain\Examples\Datasets\spotify_all.csv"))
 # t = type(songs_df[['decade']])
 popular_songs_df = songs_df[songs_df['popularity'] > 70]
+t = type(popular_songs_df['popularity'])
+popular_songs_df['popularity'].explain()
+
+pass
 # popular_songs_df.explain()
 
 # new_songs = songs_df[songs_df['decade']>1970]
@@ -44,16 +48,16 @@ popular_songs_df = songs_df[songs_df['popularity'] > 70]
 
 
 #####################################################################################
-artist = 'Metro Boomin'
-def is_by_artist(row):
-    list = [a[1:-1] for a in row['artists'][1:-1].split(', ')]
-    return True if artist in list else False
-songs_df[f'Is By {artist}'] = songs_df.apply(is_by_artist, axis=1)
-songs_df[f'Is By {artist}'].value_counts()
-relevant = songs_df[songs_df[f'Is By {artist}'] == True]
-artist_featuring = songs_df[(songs_df[f'Is By {artist}'] == True)][['main_artist']].drop_duplicates().reset_index(drop=True)
-all = artist_featuring.join(relevant, on='main_artist', how='inner')
-all.explain(explainer='shapley', contribution='mean', attr='popularity', consider='left', top_k=3)
+# artist = 'Metro Boomin'
+# def is_by_artist(row):
+#     list = [a[1:-1] for a in row['artists'][1:-1].split(', ')]
+#     return True if artist in list else False
+# songs_df[f'Is By {artist}'] = songs_df.apply(is_by_artist, axis=1)
+# songs_df[f'Is By {artist}'].value_counts()
+# relevant = songs_df[songs_df[f'Is By {artist}'] == True]
+# artist_featuring = songs_df[(songs_df[f'Is By {artist}'] == True)][['main_artist']].drop_duplicates().reset_index(drop=True)
+# all = artist_featuring.join(relevant, on='main_artist', how='inner')
+# all.explain(explainer='shapley', contribution='mean', attr='popularity', consider='left', top_k=3)
 # drake_popular_decades.explain(explainer='shapley', top_k=2)# pop_by_artist = pop_by_artist[pop_by_artist.values > 60] 
 
 # acoustic = spotify_frequent[spotify_frequent['acousticness'] > 0.95]

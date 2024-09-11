@@ -190,6 +190,8 @@ class ExpSeries(pd.Series):
 
         if schema is None:
             schema = {}
-
+        if self.operation is None:
+            print('no operation was found.')
+            return
         return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, explainer=explainer, target=target, dir=dir, control=control, hold_out=hold_out,
                                       figs_in_row=figs_in_row, show_scores=show_scores, title=title)

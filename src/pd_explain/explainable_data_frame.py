@@ -32,7 +32,7 @@ from pd_explain.explainable_series import ExpSeries
 
 class ExpDataFrame(pd.DataFrame):
     """
-    Explain dataframe, Inherit from pandas DataFrame.
+    Explainable dataframe, extents Pandas DataFrame adding state management and explain() function.
     """
 
     def __init__(

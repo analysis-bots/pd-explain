@@ -40,7 +40,7 @@ pip install -r requirements.txt
 
 ## Documentation
 
-[Documentation](https://stirring-medovik-ba9b36.netlify.app/src/pd_explain.html)
+[Documentation](https://pd-explain-documentation.readthedocs.io/en/main/index.html)
 
 
 ## Citation Information

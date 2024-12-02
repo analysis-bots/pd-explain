@@ -12,6 +12,7 @@ import sys
 # adding Folder_2/subfolder to the system path
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator-1/src/')
+sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/FEDEx_Generator/src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
@@ -26,6 +27,7 @@ from typing import (
 )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
+sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/pd-explain/src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.explainable_series import ExpSeries
 
@@ -67,6 +69,16 @@ class ExpDataFrame(pd.DataFrame):
         self.operation = None
         self.explanation = None
         self.filter_items = None
+
+
+
+    @property
+    def _constructor(self):
+        return ExpDataFrame
+
+    @property
+    def _constructor_sliced(self):
+        return ExpSeries
 
     def __getitem__(self, key):
         """
@@ -157,8 +169,54 @@ class ExpDataFrame(pd.DataFrame):
 
         :return: Explain DataFrame with the renamed axis labels or None if inplace=True.
         """
-        return ExpDataFrame(super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                             copy=copy, inplace=inplace, level=level, errors=errors))
+        if inplace:
+            # When doing an inplace rename, we need to update the source dataframe of the operation.
+            # Otherwise, the operation may use the old dataframes or cause an error.
+            # Please note that this causes a recursive call, as the source_df should also be an ExpDataFrame.
+            if self.operation is not None:
+                self.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
+                                                copy=copy, inplace=inplace, level=level, errors=errors)
+                # If we change the name of the attribute the operation is performed on, we need to update the operation.
+                if columns is not None and self.operation.attribute in columns:
+                    self.operation.attribute = columns[self.operation.attribute]
+                elif mapper is not None and self.operation.attribute in mapper:
+                    self.operation.attribute = mapper[self.operation.attribute]
+                elif index is not None and self.operation.attribute in index:
+                    self.operation.attribute = index[self.operation.attribute]
+            # Perform the renaming, and save the result to a variable so we can return it later.
+            super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
+                                             copy=copy, inplace=inplace, level=level, errors=errors)
+            res = self
+        else:
+            # If the operation is not inplace, we can just return the new dataframe.
+            # However, we need to make sure to update the operation of the new dataframe, as otherwise we may get a
+            # no operation found error.
+            res = super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
+                                                    copy=copy, inplace=inplace, level=level, errors=errors)
+            if self.operation is not None:
+                res.operation = self.operation
+                res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
+                                                    copy=copy, inplace=inplace, level=level, errors=errors)
+                res.operation.result_df = res
+
+        # Finally, update the attribute name in the operation if it was renamed.
+        if self.operation is not None:
+            if columns is not None and self.operation.attribute in columns:
+                self.operation.attribute = columns[self.operation.attribute]
+            # In the case of a mapper, we only care about making the update to the operation if it affects the columns.
+            elif mapper is not None and axis == 'columns':
+                # If the mapper is of the form {old_name: new_name}, we need to update the attribute name if it was
+                # renamed.
+                if (isinstance(mapper, dict) or isinstance(mapper, pd.Series)) and self.operation.attribute in mapper:
+                    self.operation.attribute = mapper[self.operation.attribute]
+                # Otherwise, if the mapper is a function, we need to call the function on the attribute name.
+                elif callable(mapper):
+                    self.operation.attribute = mapper(self.operation.attribute)
+
+
+        # Then return the result.
+        return res
+
 
     def sample(
             self,

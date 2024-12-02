@@ -135,6 +135,10 @@ class ExpDataFrame(pd.DataFrame):
         :return: Explain DataFrame without the removed index or column labels or None if inplace=True.
         """
         if inplace:
+            # Perform the dropping, and set res to None as we are doing the operation inplace.
+            super(ExpDataFrame, self).drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
+                                           inplace=inplace, errors=errors)
+            res = None
             # When doing an inplace drop, we need to update the source dataframe of the operation.
             # Otherwise, the operation may use the old dataframes or cause an error.
             # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
@@ -143,11 +147,7 @@ class ExpDataFrame(pd.DataFrame):
                 if self.operation.source_df is not None:
                     self.operation.source_df.drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
                                                   inplace=inplace, errors=errors)
-            # Perform the dropping, and save the result to a variable so we can return it later.
-            super(ExpDataFrame, self).drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
-                                           inplace=inplace, errors=errors)
-            self.operation.result_df = self
-            res = self
+                self.operation.result_df = self
 
         else:
             # If the operation is not inplace, we can just return the new dataframe.
@@ -198,6 +198,10 @@ class ExpDataFrame(pd.DataFrame):
         :return: Explain DataFrame with the renamed axis labels or None if inplace=True.
         """
         if inplace:
+            # Perform the renaming, and set res to None as we are doing the operation inplace.
+            super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
+                                             copy=copy, inplace=inplace, level=level, errors=errors)
+            res = None
             # When doing an inplace rename, we need to update the source dataframe of the operation.
             # Otherwise, the operation may use the old dataframes or cause an error.
             # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
@@ -207,10 +211,8 @@ class ExpDataFrame(pd.DataFrame):
                     self.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                                     copy=copy, inplace=inplace, level=level, errors=errors)
             # Perform the renaming, and save the result to a variable so we can return it later.
-            super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                             copy=copy, inplace=inplace, level=level, errors=errors)
-            self.operation.result_df = self
-            res = self
+
+                self.operation.result_df = self
         else:
             # If the operation is not inplace, we can just return the new dataframe.
             # However, we need to make sure to update the operation of the new dataframe, as otherwise we may get a

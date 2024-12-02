@@ -172,20 +172,16 @@ class ExpDataFrame(pd.DataFrame):
         if inplace:
             # When doing an inplace rename, we need to update the source dataframe of the operation.
             # Otherwise, the operation may use the old dataframes or cause an error.
-            # Please note that this causes a recursive call, as the source_df should also be an ExpDataFrame.
+            # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
             if self.operation is not None:
-                self.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                copy=copy, inplace=inplace, level=level, errors=errors)
-                # If we change the name of the attribute the operation is performed on, we need to update the operation.
-                if columns is not None and self.operation.attribute in columns:
-                    self.operation.attribute = columns[self.operation.attribute]
-                elif mapper is not None and self.operation.attribute in mapper:
-                    self.operation.attribute = mapper[self.operation.attribute]
-                elif index is not None and self.operation.attribute in index:
-                    self.operation.attribute = index[self.operation.attribute]
+                # GroupBy operations can have an empty source_df
+                if self.operation.source_df is not None:
+                    self.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
+                                                    copy=copy, inplace=inplace, level=level, errors=errors)
             # Perform the renaming, and save the result to a variable so we can return it later.
             super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                              copy=copy, inplace=inplace, level=level, errors=errors)
+            self.operation.result_df = self
             res = self
         else:
             # If the operation is not inplace, we can just return the new dataframe.
@@ -195,23 +191,47 @@ class ExpDataFrame(pd.DataFrame):
                                                     copy=copy, inplace=inplace, level=level, errors=errors)
             if self.operation is not None:
                 res.operation = self.operation
-                res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                    copy=copy, inplace=inplace, level=level, errors=errors)
+                # GroupBy operations can have an empty source_df
+                if self.operation.source_df is not None:
+                    res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
+                                                        copy=copy, inplace=inplace, level=level, errors=errors)
                 res.operation.result_df = res
 
         # Finally, update the attribute name in the operation if it was renamed.
         if self.operation is not None:
-            if columns is not None and self.operation.attribute in columns:
-                self.operation.attribute = columns[self.operation.attribute]
-            # In the case of a mapper, we only care about making the update to the operation if it affects the columns.
-            elif mapper is not None and axis == 'columns':
-                # If the mapper is of the form {old_name: new_name}, we need to update the attribute name if it was
-                # renamed.
-                if (isinstance(mapper, dict) or isinstance(mapper, pd.Series)) and self.operation.attribute in mapper:
-                    self.operation.attribute = mapper[self.operation.attribute]
-                # Otherwise, if the mapper is a function, we need to call the function on the attribute name.
-                elif callable(mapper):
-                    self.operation.attribute = mapper(self.operation.attribute)
+            # Filter and join operations have an attribute field that needs to be updated.
+            if hasattr(self.operation, 'attribute'):
+                if columns is not None and self.operation.attribute in columns:
+                    self.operation.attribute = columns[self.operation.attribute]
+                # In the case of a mapper, we only care about making the update to the operation if it affects the columns.
+                elif mapper is not None and axis == 'columns':
+                    # If the mapper is of the form {old_name: new_name}, we need to update the attribute name if it was
+                    # renamed.
+                    if hasattr(mapper, '__getitem__') and self.operation.attribute in mapper:
+                        self.operation.attribute = mapper[self.operation.attribute]
+                    # Otherwise, if the mapper is a function, we need to call the function on the attribute name.
+                    elif callable(mapper):
+                        self.operation.attribute = mapper(self.operation.attribute)
+            # GroupBy operations have a group_attributes field that needs to be updated.
+            elif hasattr(self.operation, 'group_attributes'):
+                # Extract the group attributes, and figure out if any of them were renamed.
+                group_attributes = self.operation.group_attributes if len(self.operation.group_attributes) > 1 else [self.operation.group_attributes]
+                shared_attributes = set(self.operation.group_attributes) & set(columns)
+
+                # If the group attributes were renamed, we need to update the group_attributes field.
+                if columns is not None and len(shared_attributes) > 0:
+                    self.operation.group_attributes = [columns[attr] if attr in shared_attributes else attr for attr in group_attributes]
+
+                # If there is a mapper, we need to update attributes that were renamed.
+                elif mapper is not None and axis == 'columns':
+                    # If the mapper is of the form {old_name: new_name}, we need to update the attribute name if it was
+                    # renamed.
+                    if hasattr(mapper, '__getitem__'):
+                        self.operation.group_attributes = [mapper[attr] if attr in mapper else attr for attr in group_attributes]
+                    # Otherwise, if the mapper is a function, we need to call the function on the attribute name.
+                    elif callable(mapper):
+                        self.operation.group_attributes = [mapper(attr) for attr in group_attributes]
+
 
 
         # Then return the result.

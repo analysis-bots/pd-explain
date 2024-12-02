@@ -2,6 +2,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from matplotlib.axis import Axis
+from pandas import DataFrame
 from pandas._libs.lib import no_default
 
 # importing sys
@@ -21,7 +22,7 @@ from typing import (
     Hashable,
     Sequence,
     Union,
-    List,
+    List, Callable,
 )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
 
@@ -69,13 +70,20 @@ class ExpDataFrame(pd.DataFrame):
         self.explanation = None
         self.filter_items = None
 
+    # We overwrite the constructor to ensure that an ExpDataFrame is returned when a new DataFrame is created.
+    # This is necessary so that methods not overridden in this class, like iloc, return an ExpDataFrame.
     @property
-    def _constructor(self):
-        return ExpDataFrame
+    def _constructor(self) -> Callable[..., DataFrame]:
 
-    @property
-    def _constructor_sliced(self):
-        return ExpSeries
+        # We define a new constructor that returns an ExpDataFrame, with the same properties as the original dataframe.
+        def _c(*args, **kwargs):
+            df = ExpDataFrame(*args, **kwargs)
+            df.operation = self.operation
+            df.explanation = self.explanation
+            df.filter_items = self.filter_items
+            return df
+
+        return _c
 
     def __getitem__(self, key):
         """

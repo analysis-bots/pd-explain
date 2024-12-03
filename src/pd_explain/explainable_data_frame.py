@@ -151,10 +151,30 @@ class ExpDataFrame(pd.DataFrame):
             # Otherwise, the operation may use the old dataframes or cause an error.
             # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
             if self.operation is not None:
-                # GroupBy operations can have an empty source_df
-                if self.operation.source_df is not None:
+                # Filter and GroupBy operations have a source_df field that needs to be updated.
+                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
                     self.operation.source_df.drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
                                                   inplace=inplace, errors=errors)
+                # Join operations have a left_df and right_df field that needs to be updated.
+                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
+                    # The reason for the try-except block is that the drop operation may fail if the labels are not in
+                    # the dataframe. This is because we don't know which dataframe the label the user dropped is in.
+                    # Therefore, we need to try dropping the label in both dataframes and simply ignore the error
+                    # from the dataframe that doesn't contain the label, or we can try and write a more complex logic
+                    # to figure out which dataframe the label is in. I have chosen the simpler, former solution.
+                    # If the user drops a label that is not in either dataframe, the operation will fail above, when
+                    # the drop is called on self.
+                    try:
+                        self.operation.left_df.drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
+                                                    inplace=inplace, errors=errors)
+                    except KeyError:
+                        pass
+                    try:
+                        self.operation.right_df.drop(labels=labels, axis=axis, index=index, columns=columns,
+                                                     level=level,
+                                                     inplace=inplace, errors=errors)
+                    except KeyError:
+                        pass
                 self.operation.result_df = self
 
         else:
@@ -165,12 +185,29 @@ class ExpDataFrame(pd.DataFrame):
                                                  inplace=inplace, errors=errors)
             if self.operation is not None:
                 res.operation = self.operation
-                # GroupBy operations can have an empty source_df
-                if self.operation.source_df is not None:
+                # Filter and GroupBy operations have a source_df field that needs to be updated.
+                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
                     res.operation.source_df = res.operation.source_df.drop(labels=labels, axis=axis, index=index,
                                                                            columns=columns, level=level,
                                                                            inplace=inplace,
                                                                            errors=errors)
+                # Join operations have a left_df and right_df field that needs to be updated.
+                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
+                    # See the comment above, in the inplace block, for an explanation of the try-except block.
+                    try:
+                        res.operation.left_df = res.operation.left_df.drop(labels=labels, axis=axis, index=index,
+                                                                           columns=columns, level=level,
+                                                                           inplace=inplace,
+                                                                           errors=errors)
+                    except KeyError:
+                        pass
+                    try:
+                        res.operation.right_df = res.operation.right_df.drop(labels=labels, axis=axis, index=index,
+                                                                             columns=columns, level=level,
+                                                                             inplace=inplace,
+                                                                             errors=errors)
+                    except KeyError:
+                        pass
                 res.operation.result_df = res
 
         return res
@@ -223,7 +260,7 @@ class ExpDataFrame(pd.DataFrame):
                     self.operation.left_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                                   copy=copy, inplace=inplace, level=level, errors=errors)
                     self.operation.right_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                    copy=copy, inplace=inplace, level=level, errors=errors)
+                                                   copy=copy, inplace=inplace, level=level, errors=errors)
 
                 self.operation.result_df = self
         else:
@@ -243,11 +280,13 @@ class ExpDataFrame(pd.DataFrame):
                 # Join operations have a left_df and right_df field that needs to be updated.
                 elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
                     res.operation.left_df = res.operation.left_df.rename(mapper=mapper, index=index, columns=columns,
-                                                                       axis=axis, copy=copy, inplace=inplace, level=level,
-                                                                       errors=errors)
-                    res.operation.right_df = res.operation.right_df.rename(mapper=mapper, index=index, columns=columns,
-                                                                         axis=axis, copy=copy, inplace=inplace, level=level,
+                                                                         axis=axis, copy=copy, inplace=inplace,
+                                                                         level=level,
                                                                          errors=errors)
+                    res.operation.right_df = res.operation.right_df.rename(mapper=mapper, index=index, columns=columns,
+                                                                           axis=axis, copy=copy, inplace=inplace,
+                                                                           level=level,
+                                                                           errors=errors)
                 res.operation.result_df = res
 
         # Finally, update the attribute name in the operation if it was renamed.
@@ -602,7 +641,6 @@ class ExpDataFrame(pd.DataFrame):
             for col in coinciding_cols:
                 left_df.rename(columns={col: col + lsuffix}, inplace=True)
                 right_df.rename(columns={col: col + rsuffix}, inplace=True)
-
 
             result_df.operation = Join(left_df, right_df, None, on, result_df, left_name, right_name)
 

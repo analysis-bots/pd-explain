@@ -11,6 +11,8 @@ from fedex_generator.commons import utils
 import numpy as np
 
 df_loc = 'C:/Users/itaye/Desktop/pdexplain/pd-explain/Examples/Datasets/spotify_all.csv'
+
+
 class ExpSeries(pd.Series):
     """
     Explainable series, Inherit from pandas Series.
@@ -44,13 +46,13 @@ class ExpSeries(pd.Series):
         self.filter_items = []
 
     def std_int(self, df, target):
-        return abs(df[target].mean()-df.mean())/df.std()
+        return abs(df[target].mean() - df.mean()) / df.std()
+
     def calc_influence_std(self, df_agg, df_ex, g_att, g_agg, target):
         try:
             return abs(self.std_int(df_ex.groupby(g_att)[g_agg].mean(), target) - self.std_int(df_agg, target))
         except:
             return 0
-        
 
     def b_join(
             self,
@@ -116,14 +118,15 @@ class ExpSeries(pd.Series):
                 continue
             _, bins = pd.cut(df_in[attr], 30, retbins=True, duplicates='drop')
             df_bins_in = pd.cut(df_in[attr], bins=bins).value_counts(normalize=True).sort_index().rename(df_in.id)
-        
+
             top_inf = 0
             top_bin = None
             for bin in df_bins_in.keys():
-            # print(bin.left, bin.right)
-                df_in_exc = df_in[(df_in[attr] < bin.left)|(df_in[attr] > bin.right)]
-            # print(df_in_exc.head())
-                inf = self.calc_influence_std(df_agg, df_in_exc, g_att, g_agg, target)/(df_in.id.count()/df_in_exc.id.count())
+                # print(bin.left, bin.right)
+                df_in_exc = df_in[(df_in[attr] < bin.left) | (df_in[attr] > bin.right)]
+                # print(df_in_exc.head())
+                inf = self.calc_influence_std(df_agg, df_in_exc, g_att, g_agg, target) / (
+                            df_in.id.count() / df_in_exc.id.count())
                 if inf > top_inf:
                     top_inf = inf
                     top_bin = bin
@@ -135,35 +138,39 @@ class ExpSeries(pd.Series):
                 top_attr = attr
 
         # print(f'overall, the top contributing bin is {top_bin_all} of {top_attr}. influence {top_inf_all}')
-        df = df_in[(df_in[top_attr] < top_bin_all.left)|(df_in[top_attr] > top_bin_all.right)].groupby(g_att)[g_agg].mean()
+        df = df_in[(df_in[top_attr] < top_bin_all.left) | (df_in[top_attr] > top_bin_all.right)].groupby(g_att)[
+            g_agg].mean()
         fig, ax = plt.subplots(layout='constrained', figsize=(7, 7))
         x1 = list(df_agg.index)
         ind1 = np.arange(len(x1))
         y1 = df_agg.values
-    
+
         x2 = list(df.index)
         ind2 = np.arange(len(x2))
         y2 = df.values
-    
-        bar1 = ax.bar(ind1-0.2, y1, 0.4, alpha=1., label='All')
-        bar2 = ax.bar(ind2+0.2, y2, 0.4,alpha=1., label='Without (\'Explicit\' = 0)')
+
+        bar1 = ax.bar(ind1 - 0.2, y1, 0.4, alpha=1., label='All')
+        bar2 = ax.bar(ind2 + 0.2, y2, 0.4, alpha=1., label='Without (\'Explicit\' = 0)')
         ax.set_ylabel(f'{g_agg} (mean)')
         ax.set_xlabel(f'{g_att}')
         ax.set_xticks(ind1)
         ax.set_xticklabels(tuple([str(i) for i in x1]), rotation=45)
         ax.legend(loc='best')
         ax.set_title('The predicate (\'Explicit\' = 0) has high influence on this outlier')
-    # items_to_bold=[target]
+        # items_to_bold=[target]
         bar1[x1.index(target)].set_edgecolor('tab:green')
         bar1[x1.index(target)].set_linewidth(2)
         bar2[x2.index(target)].set_edgecolor('tab:green')
         bar2[x2.index(target)].set_linewidth(2)
         ax.get_xticklabels()[-1].set_color('tab:green')
+
     def drop_duplicates(
             self,
     ):
         return ExpSeries(super().drop_duplicates())
-    def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1, figs_in_row: int = 2, explainer='fedex',
+
+    def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1, figs_in_row: int = 2,
+                explainer='fedex',
                 target=None, dir=None, control=None, hold_out=[],
                 show_scores: bool = False, title: str = None):
         """
@@ -193,5 +200,6 @@ class ExpSeries(pd.Series):
         if self.operation is None:
             print('no operation was found.')
             return
-        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, explainer=explainer, target=target, dir=dir, control=control, hold_out=hold_out,
+        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, explainer=explainer,
+                                      target=target, dir=dir, control=control, hold_out=hold_out,
                                       figs_in_row=figs_in_row, show_scores=show_scores, title=title)

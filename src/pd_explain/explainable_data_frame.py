@@ -168,12 +168,12 @@ class ExpDataFrame(pd.DataFrame):
                 # GroupBy operations can have an empty source_df
                 if self.operation.source_df is not None:
                     res.operation.source_df = res.operation.source_df.drop(labels=labels, axis=axis, index=index,
-                                                                          columns=columns, level=level, inplace=inplace,
-                                                                          errors=errors)
+                                                                           columns=columns, level=level,
+                                                                           inplace=inplace,
+                                                                           errors=errors)
                 res.operation.result_df = res
 
         return res
-
 
     def rename(self,
                mapper: Renamer | None = None,
@@ -214,11 +214,16 @@ class ExpDataFrame(pd.DataFrame):
             # Otherwise, the operation may use the old dataframes or cause an error.
             # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
             if self.operation is not None:
-                # GroupBy operations can have an empty source_df
-                if self.operation.source_df is not None:
+                # Filter and GroupBy operations have a source_df field that needs to be updated.
+                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
                     self.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                                     copy=copy, inplace=inplace, level=level, errors=errors)
-            # Perform the renaming, and save the result to a variable so we can return it later.
+                # Join operations have a left_df and right_df field that needs to be updated.
+                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
+                    self.operation.left_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
+                                                  copy=copy, inplace=inplace, level=level, errors=errors)
+                    self.operation.right_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
+                                                    copy=copy, inplace=inplace, level=level, errors=errors)
 
                 self.operation.result_df = self
         else:
@@ -229,12 +234,20 @@ class ExpDataFrame(pd.DataFrame):
                                                    copy=copy, inplace=inplace, level=level, errors=errors)
             if self.operation is not None:
                 res.operation = self.operation
-                # GroupBy operations can have an empty source_df
-                if self.operation.source_df is not None:
+                # Filter and GroupBy operations have a source_df field that needs to be updated.
+                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
                                                                              columns=columns, axis=axis,
                                                                              copy=copy, inplace=inplace, level=level,
                                                                              errors=errors)
+                # Join operations have a left_df and right_df field that needs to be updated.
+                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
+                    res.operation.left_df = res.operation.left_df.rename(mapper=mapper, index=index, columns=columns,
+                                                                       axis=axis, copy=copy, inplace=inplace, level=level,
+                                                                       errors=errors)
+                    res.operation.right_df = res.operation.right_df.rename(mapper=mapper, index=index, columns=columns,
+                                                                         axis=axis, copy=copy, inplace=inplace, level=level,
+                                                                         errors=errors)
                 res.operation.result_df = res
 
         # Finally, update the attribute name in the operation if it was renamed.
@@ -576,7 +589,22 @@ class ExpDataFrame(pd.DataFrame):
 
             result_df = ExpDataFrame(pd.merge(self, right_df, on=on, left_on=left_on,
                                               right_on=right_on, how=how, suffixes=(lsuffix, rsuffix), sort=sort))
-            result_df.operation = Join(self, right_df, None, on, result_df, left_name, right_name)
+
+            # This is a complete hack to fix the issue: applying suffixes to the columns of the resulting dataframe
+            # causes the explanation to fail, since it can no longer match up the columns of the resulting dataframe
+            # with the columns of the original dataframes. This is a temporary fix until a better solution is found.
+            # We simply apply the suffixes to the original dataframes, before passing them to the Join operation.
+            left_cols = [col for col in self.columns if col not in ['index', on]]
+            right_cols = [col for col in right_df.columns if col not in ['index', on]]
+            coinciding_cols = set(left_cols) & set(right_cols)
+            left_df = self.copy()
+            right_df = right_df.copy()
+            for col in coinciding_cols:
+                left_df.rename(columns={col: col + lsuffix}, inplace=True)
+                right_df.rename(columns={col: col + rsuffix}, inplace=True)
+
+
+            result_df.operation = Join(left_df, right_df, None, on, result_df, left_name, right_name)
 
             return result_df
 

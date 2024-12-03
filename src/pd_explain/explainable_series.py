@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List
+from typing import List, Literal
 
 import pandas as pd
 from pandas._typing import Dtype
@@ -171,7 +171,7 @@ class ExpSeries(pd.Series):
 
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1, figs_in_row: int = 2,
                 explainer='fedex',
-                target=None, dir=None, control=None, hold_out=[],
+                target=None, dir: Literal["high", "low", 1, -1]=None, control=None, hold_out=[],
                 show_scores: bool = False, title: str = None):
         """
         Generate explanation to series base on the operation lead to this series result
@@ -182,16 +182,21 @@ class ExpSeries(pd.Series):
         :param figs_in_row: number of explanations figs in one row
         :param show_scores: show scores on explanation
         :param title: explanation title
+        :param explainer: explanation method, default is fedex. Options are fedex or outlier.
+        :param target: outlier target value to explain
+        :param dir: direction of the outlier. Can be 'high' or 'low' (or corresponding integer values 1 and -1) when using
+                    the outlier explainer. Default is None.
 
         :return: explanation figures
         """
-        # if explainer == 'outlier':
+        if explainer == 'outlier':
+            if dir is None:
+                raise ValueError('dir must be provided for outlier explanation')
+            if dir not in ['high', 'low', 1, -1]:
+                raise ValueError('dir must be either high or low or the corresponding integer values 1 and -1')
+            if target is None:
+                raise ValueError('target value must be provided for outlier explanation')
 
-        #     df = pd.read_csv(df_loc)
-        #     new_songs = df[df.year > 1990]
-        #     m_p_by_decade = new_songs.groupby('decade').mean()['popularity']
-        #     self.explain_outlier(m_p_by_decade, new_songs, 'decade', 'popularity', 2020)
-        #     return
         if attributes is None:
             attributes = []
 

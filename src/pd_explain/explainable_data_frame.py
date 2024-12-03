@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+from copy import copy
+
 import numpy as np
 import pandas as pd
 from matplotlib.axis import Axis
@@ -85,6 +88,7 @@ class ExpDataFrame(pd.DataFrame):
 
         return _c
 
+
     def __getitem__(self, key):
         """
         Get item from dataframe, save the item key
@@ -99,12 +103,40 @@ class ExpDataFrame(pd.DataFrame):
             self.filter_items.append(key)
         to_return = super().__getitem__(key)
         t = str(type(to_return))
-        if str(type(to_return)) == "<class 'pandas.core.frame.DataFrame'>":
-            return ExpDataFrame(to_return)
-        if t == "<class 'pd_explain.explainable_data_frame.ExpDataFrame'>":
-            return to_return
+        if isinstance(to_return, pd.DataFrame) and not isinstance(to_return, ExpDataFrame):
+            to_return = ExpDataFrame(to_return)
+        elif isinstance(to_return, pd.Series) and not isinstance(to_return, ExpSeries):
+            to_return = ExpSeries(to_return)
+        # # If the item is a normal dataframe, we convert it to an explainable dataframe.
+        # if str(type(to_return)) == "<class 'pandas.core.frame.DataFrame'>":
+        #     to_return = ExpDataFrame(to_return)
+        # elif t == "<class 'pandas.core.series.Series'>":
+        #     to_return = ExpSeries(to_return)
+
+        # If the item is an explainable dataframe or series, we want to update its operation.
+        if isinstance(to_return, ExpDataFrame) or isinstance(to_return, ExpSeries):
+            if self.operation is not None:
+                # Copy the operation, to avoid changing the original operation of the dataframe.
+                to_return.operation = copy(self.operation)
+                # Filter and GroupBy operations: perform the same selection on the source dataframe.
+                if hasattr(to_return.operation, 'source_df') and to_return.operation.source_df is not None:
+                    to_return.operation.source_df = to_return.operation.source_df.__getitem__(key)
+                # Join operations: perform the same selection on the left and right dataframes.
+                elif hasattr(to_return.operation, 'left_df'):
+                    try:
+                        to_return.operation.left_df = to_return.operation.left_df.__getitem__(key)
+                    except KeyError:
+                        pass
+                    try:
+                        to_return.operation.right_df = to_return.operation.right_df.__getitem__(key)
+                    except KeyError:
+                        pass
+                # Finally, update the result dataframe of the operation to have the same selection applied.
+                to_return.operation.result_df = to_return if isinstance(to_return, ExpDataFrame) else to_return.to_frame()
+
         # to_return.source_df = self.operation.source_df
-        return ExpSeries(to_return)
+        # Final case: if the item is a series, we return an explainable series. We also want to update its operation.
+        return to_return
 
     def copy(self, deep=True):
         """
@@ -146,7 +178,7 @@ class ExpDataFrame(pd.DataFrame):
             # Perform the dropping, and set res to None as we are doing the operation inplace.
             super(ExpDataFrame, self).drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
                                            inplace=inplace, errors=errors)
-            res = None
+            res = self
             # When doing an inplace drop, we need to update the source dataframe of the operation.
             # Otherwise, the operation may use the old dataframes or cause an error.
             # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
@@ -183,16 +215,18 @@ class ExpDataFrame(pd.DataFrame):
             # no operation found error.
             res = super(ExpDataFrame, self).drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
                                                  inplace=inplace, errors=errors)
-            if self.operation is not None:
-                res.operation = self.operation
+            if res.operation is not None:
+                # We copy the operation, as we don't want to change the original operation of the dataframe when not
+                # doing an inplace operation.
+                res.operation = copy(self.operation)
                 # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
+                if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
                     res.operation.source_df = res.operation.source_df.drop(labels=labels, axis=axis, index=index,
                                                                            columns=columns, level=level,
                                                                            inplace=inplace,
                                                                            errors=errors)
                 # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
+                elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
                     # See the comment above, in the inplace block, for an explanation of the try-except block.
                     try:
                         res.operation.left_df = res.operation.left_df.drop(labels=labels, axis=axis, index=index,
@@ -210,7 +244,7 @@ class ExpDataFrame(pd.DataFrame):
                         pass
                 res.operation.result_df = res
 
-        return res
+        return res if not inplace else None
 
     def rename(self,
                mapper: Renamer | None = None,
@@ -246,7 +280,7 @@ class ExpDataFrame(pd.DataFrame):
             # Perform the renaming, and set res to None as we are doing the operation inplace.
             super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                              copy=copy, inplace=inplace, level=level, errors=errors)
-            res = None
+            res = self
             # When doing an inplace rename, we need to update the source dataframe of the operation.
             # Otherwise, the operation may use the old dataframes or cause an error.
             # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
@@ -270,15 +304,15 @@ class ExpDataFrame(pd.DataFrame):
             res = super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                                    copy=copy, inplace=inplace, level=level, errors=errors)
             if self.operation is not None:
-                res.operation = self.operation
+                res.operation = copy(self.operation)
                 # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
+                if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
                                                                              columns=columns, axis=axis,
                                                                              copy=copy, inplace=inplace, level=level,
                                                                              errors=errors)
                 # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
+                elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
                     res.operation.left_df = res.operation.left_df.rename(mapper=mapper, index=index, columns=columns,
                                                                          axis=axis, copy=copy, inplace=inplace,
                                                                          level=level,
@@ -290,36 +324,36 @@ class ExpDataFrame(pd.DataFrame):
                 res.operation.result_df = res
 
         # Finally, update the attribute name in the operation if it was renamed.
-        if self.operation is not None:
+        if res.operation is not None:
 
             # Filter and join operations have an attribute field that needs to be updated.
-            if hasattr(self.operation, 'attribute'):
+            if hasattr(res.operation, 'attribute'):
 
-                if columns is not None and self.operation.attribute in columns:
-                    self.operation.attribute = columns[self.operation.attribute]
+                if columns is not None and res.operation.attribute in columns:
+                    res.operation.attribute = columns[res.operation.attribute]
 
                 # In the case of a mapper, we only care about making the update to the operation if it affects the columns.
                 elif mapper is not None and axis == 'columns':
 
                     # If the mapper is of the form {old_name: new_name}, we need to update the attribute name if it was
                     # renamed.
-                    if hasattr(mapper, '__getitem__') and self.operation.attribute in mapper:
-                        self.operation.attribute = mapper[self.operation.attribute]
+                    if hasattr(mapper, '__getitem__') and res.operation.attribute in mapper:
+                        res.operation.attribute = mapper[res.operation.attribute]
                     # Otherwise, if the mapper is a function, we need to call the function on the attribute name.
                     elif callable(mapper):
-                        self.operation.attribute = mapper(self.operation.attribute)
+                        res.operation.attribute = mapper(res.operation.attribute)
 
             # GroupBy operations have a group_attributes field that needs to be updated.
-            elif hasattr(self.operation, 'group_attributes'):
+            elif hasattr(res.operation, 'group_attributes'):
 
                 # Extract the group attributes, and figure out if any of them were renamed.
-                group_attributes = self.operation.group_attributes if len(self.operation.group_attributes) > 1 else [
-                    self.operation.group_attributes]
-                shared_attributes = set(self.operation.group_attributes) & set(columns)
+                group_attributes = res.operation.group_attributes if len(res.operation.group_attributes) > 1 else [
+                    res.operation.group_attributes]
+                shared_attributes = set(res.operation.group_attributes) & set(columns)
 
                 # If the group attributes were renamed, we need to update the group_attributes field.
                 if columns is not None and len(shared_attributes) > 0:
-                    self.operation.group_attributes = [columns[attr] if attr in shared_attributes else attr for attr in
+                    res.operation.group_attributes = [columns[attr] if attr in shared_attributes else attr for attr in
                                                        group_attributes]
 
                 # If there is a mapper, we need to update attributes that were renamed.
@@ -327,14 +361,14 @@ class ExpDataFrame(pd.DataFrame):
                     # If the mapper is of the form {old_name: new_name}, we need to update the attribute name if it was
                     # renamed.
                     if hasattr(mapper, '__getitem__'):
-                        self.operation.group_attributes = [mapper[attr] if attr in mapper else attr for attr in
+                        res.operation.group_attributes = [mapper[attr] if attr in mapper else attr for attr in
                                                            group_attributes]
                     # Otherwise, if the mapper is a function, we need to call the function on the attribute name.
                     elif callable(mapper):
-                        self.operation.group_attributes = [mapper(attr) for attr in group_attributes]
+                        res.operation.group_attributes = [mapper(attr) for attr in group_attributes]
 
         # Return the result. None if inplace=True, otherwise the new dataframe.
-        return res
+        return res if not inplace else None
 
     def sample(
             self,
@@ -782,6 +816,9 @@ class ExpDataFrame(pd.DataFrame):
         if self.operation is None:
             print('no operation was found.')
             return
+
+        if str.lower(explainer) == 'outlier':
+            raise ValueError("Outlier explainer is not supported for multi-attribute dataframes, only for series.")
 
         return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, figs_in_row=figs_in_row,
                                       show_scores=show_scores, title=title, corr_TH=corr_TH, explainer=explainer,

@@ -34,7 +34,7 @@ from pd_explain.explainable_series import ExpSeries
 
 class ExpDataFrame(pd.DataFrame):
     """
-    Explainable dataframe, extents Pandas DataFrame adding state management and explain() function.
+    Explainable dataframe, extends Pandas DataFrame adding state management and explain() function.
     """
 
     def __init__(
@@ -245,8 +245,8 @@ class ExpDataFrame(pd.DataFrame):
 
                 if columns is not None and self.operation.attribute in columns:
                     self.operation.attribute = columns[self.operation.attribute]
-                # In the case of a mapper, we only care about making the update to the operation if it affects the columns.
 
+                # In the case of a mapper, we only care about making the update to the operation if it affects the columns.
                 elif mapper is not None and axis == 'columns':
 
                     # If the mapper is of the form {old_name: new_name}, we need to update the attribute name if it was
@@ -281,7 +281,7 @@ class ExpDataFrame(pd.DataFrame):
                     elif callable(mapper):
                         self.operation.group_attributes = [mapper(attr) for attr in group_attributes]
 
-        # Then return the result.
+        # Return the result. None if inplace=True, otherwise the new dataframe.
         return res
 
     def sample(
@@ -574,14 +574,8 @@ class ExpDataFrame(pd.DataFrame):
             right_df = ExpDataFrame(other.copy())
             right_df.df_name = right_name
 
-            # ignore_columns = [attribute for attribute in on] if on is not None else []
-            # ignore_columns.append('index')
-            # self.columns = [col if col in ignore_columns else left_name + "_" + col
-            # for col in self]
-            # right_df.columns = [col if col in ignore_columns else right_name + "_" + col
-            # for col in right_df]
-            result_df = ExpDataFrame(pd.merge(self, right_df, on=on, left_on=left_on, right_on=right_on, how=how))
-            # result_df = ExpDataFrame(super().join(right_df, on, how, lsuffix, rsuffix, sort))
+            result_df = ExpDataFrame(pd.merge(self, right_df, on=on, left_on=left_on,
+                                              right_on=right_on, how=how, suffixes=(lsuffix, rsuffix), sort=sort))
             result_df.operation = Join(self, right_df, None, on, result_df, left_name, right_name)
 
             return result_df

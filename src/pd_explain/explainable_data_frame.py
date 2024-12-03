@@ -88,7 +88,6 @@ class ExpDataFrame(pd.DataFrame):
 
         return _c
 
-
     def __getitem__(self, key):
         """
         Get item from dataframe, save the item key
@@ -102,25 +101,24 @@ class ExpDataFrame(pd.DataFrame):
                 self.filter_items = []
             self.filter_items.append(key)
         to_return = super().__getitem__(key)
-        t = str(type(to_return))
+
+        # Convert the result to an explainable dataframe or series if it is not already.
         if isinstance(to_return, pd.DataFrame) and not isinstance(to_return, ExpDataFrame):
             to_return = ExpDataFrame(to_return)
         elif isinstance(to_return, pd.Series) and not isinstance(to_return, ExpSeries):
             to_return = ExpSeries(to_return)
-        # # If the item is a normal dataframe, we convert it to an explainable dataframe.
-        # if str(type(to_return)) == "<class 'pandas.core.frame.DataFrame'>":
-        #     to_return = ExpDataFrame(to_return)
-        # elif t == "<class 'pandas.core.series.Series'>":
-        #     to_return = ExpSeries(to_return)
 
         # If the item is an explainable dataframe or series, we want to update its operation.
         if isinstance(to_return, ExpDataFrame) or isinstance(to_return, ExpSeries):
             if self.operation is not None:
+
                 # Copy the operation, to avoid changing the original operation of the dataframe.
                 to_return.operation = copy(self.operation)
+
                 # Filter and GroupBy operations: perform the same selection on the source dataframe.
                 if hasattr(to_return.operation, 'source_df') and to_return.operation.source_df is not None:
                     to_return.operation.source_df = to_return.operation.source_df.__getitem__(key)
+
                 # Join operations: perform the same selection on the left and right dataframes.
                 elif hasattr(to_return.operation, 'left_df'):
                     try:
@@ -131,11 +129,11 @@ class ExpDataFrame(pd.DataFrame):
                         to_return.operation.right_df = to_return.operation.right_df.__getitem__(key)
                     except KeyError:
                         pass
-                # Finally, update the result dataframe of the operation to have the same selection applied.
-                to_return.operation.result_df = to_return if isinstance(to_return, ExpDataFrame) else to_return.to_frame()
 
-        # to_return.source_df = self.operation.source_df
-        # Final case: if the item is a series, we return an explainable series. We also want to update its operation.
+                # Finally, update the result dataframe of the operation to have the same selection applied.
+                to_return.operation.result_df = to_return if isinstance(to_return,
+                                                                        ExpDataFrame) else to_return.to_frame()
+
         return to_return
 
     def copy(self, deep=True):
@@ -354,7 +352,7 @@ class ExpDataFrame(pd.DataFrame):
                 # If the group attributes were renamed, we need to update the group_attributes field.
                 if columns is not None and len(shared_attributes) > 0:
                     res.operation.group_attributes = [columns[attr] if attr in shared_attributes else attr for attr in
-                                                       group_attributes]
+                                                      group_attributes]
 
                 # If there is a mapper, we need to update attributes that were renamed.
                 elif mapper is not None and axis == 'columns':
@@ -362,7 +360,7 @@ class ExpDataFrame(pd.DataFrame):
                     # renamed.
                     if hasattr(mapper, '__getitem__'):
                         res.operation.group_attributes = [mapper[attr] if attr in mapper else attr for attr in
-                                                           group_attributes]
+                                                          group_attributes]
                     # Otherwise, if the mapper is a function, we need to call the function on the attribute name.
                     elif callable(mapper):
                         res.operation.group_attributes = [mapper(attr) for attr in group_attributes]
@@ -817,6 +815,9 @@ class ExpDataFrame(pd.DataFrame):
             print('no operation was found.')
             return
 
+        # Ensure that the user does not get a non-informative error message if they try to use the outlier explainer.
+        # Without this line, the user gets an AttributeError 'str' object has no attribute 'items',
+        # which provides no information to the user.
         if str.lower(explainer) == 'outlier':
             raise ValueError("Outlier explainer is not supported for multi-attribute dataframes, only for series.")
 

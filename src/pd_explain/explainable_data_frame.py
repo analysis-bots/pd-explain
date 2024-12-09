@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from copy import copy
 
 import numpy as np
@@ -650,6 +651,11 @@ class ExpDataFrame(pd.DataFrame):
         :return: A Explain DataFrame of the two merged objects with join operation filed.
         """
         try:
+            # If no on is specified, we raise a warning to let the user know that the operation and explanation may not
+            # work as expected.
+            if on is None:
+                warnings.warn("No 'on' parameter specified in join operation. The operation and explanation may not work as expected.")
+
             left_name = utils.get_calling_params_name(self)
             right_name = utils.get_calling_params_name(other)
             self = self.reset_index()
@@ -670,9 +676,9 @@ class ExpDataFrame(pd.DataFrame):
             coinciding_cols = set(left_cols) & set(right_cols)
             left_df = self.copy()
             right_df = right_df.copy()
-            for col in coinciding_cols:
-                left_df.rename(columns={col: col + lsuffix}, inplace=True)
-                right_df.rename(columns={col: col + rsuffix}, inplace=True)
+
+            left_df.rename(columns={col: col + lsuffix for col in coinciding_cols}, inplace=True)
+            right_df.rename(columns={col: col + rsuffix for col in coinciding_cols}, inplace=True)
 
             result_df.operation = Join(left_df, right_df, None, on, result_df, left_name, right_name)
 

@@ -416,6 +416,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             return original_result
 
         return result
+
     def drop_duplicates(
             self,
     ) -> ExpDataFrame | None:
@@ -462,4 +463,4 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             return
         mean_agg = self.mean()
         mean_agg.explain(schema=schema, attributes=attributes, top_k=top_k, explainer='fedex', target=target, dir=dir,
-                                      figs_in_row=figs_in_row, show_scores=show_scores, title=title, ignore=ignore)
+                         figs_in_row=figs_in_row, show_scores=show_scores, title=title, ignore=ignore)

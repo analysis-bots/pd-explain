@@ -6,8 +6,9 @@ from copy import copy
 import numpy as np
 import pandas as pd
 from matplotlib.axis import Axis
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from pandas._libs.lib import no_default
+from sklearn.decomposition import PCA
 
 # importing sys
 import sys
@@ -15,23 +16,25 @@ import sys
 # adding Folder_2/subfolder to the system path
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator-1/src/')
-sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/FEDEx_Generator/src")
+sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/FEDEx_Generator/src/")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\cluster-explorer\\src\\")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
+from cluster_explorer import Explainer, condition_generator, str_rule_to_list
 from typing import (
     Hashable,
     Sequence,
     Union,
-    List, Callable,
+    List, Callable, Literal,
 )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
-sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/pd-explain/src")
+sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/pd-explain/src/")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.explainable_series import ExpSeries
 
@@ -790,6 +793,58 @@ class ExpDataFrame(pd.DataFrame):
 
     def present_deleted_correlated(self, figs_in_row: int = 2):  #####
         return self.operation.present_deleted_correlated(figs_in_row=figs_in_row)
+
+    def explain_many_to_one(self, labels: Series | List[int] | np.ndarray | DataFrame, coverage_threshold:float = 0.6,
+                            max_explanation_length: int = 5, separation_threshold:float = 0.5, p_value:int = 0,
+                            use_pca_for_visualization: bool = True, pca_components: Literal[2,3] = 2):
+        # If the user passes a list of labels, a dataframe or an np array, we need to convert it to a series.
+        # If this fails and raises an error, then the user has passed an invalid type and it is no longer our problem.
+        if not isinstance(labels, Series):
+            labels = Series(labels)
+
+        if p_value < 0:
+            raise ValueError("The p-value must be a positive number.")
+        if coverage_threshold < 0 or coverage_threshold > 1:
+            raise ValueError("The coverage threshold must be between 0 and 1.")
+        if max_explanation_length < 1:
+            raise ValueError("The maximum explanation length must be at least 1.")
+        if separation_threshold < 0 or separation_threshold > 1:
+            raise ValueError("The separation threshold must be between 0 and 1.")
+
+        conciseness_threshold = 1 / max_explanation_length
+
+        # If the user did not specify a p-value, we set it to max_explanation_length, aka the inverse of the conciseness threshold.
+        if p_value == 0:
+            p_value = max_explanation_length
+
+        # Converting the dataframe to a normal dataframe, as the explainer does not use any of the extra attributes of
+        # ExpDataFrame, thus we can avoid the additional overhead of using an ExpDataFrame.
+        as_normal_df = DataFrame(self)
+
+
+        explainer = Explainer(as_normal_df, labels)
+        explanations = explainer.generate_explanations(coverage_threshold=coverage_threshold,
+                                                       conciseness_threshold=conciseness_threshold,
+                                                       separation_threshold=separation_threshold, p_value=p_value)
+
+        # Since most dataframes are too high dimensional to visualize, we use PCA to reduce the dimensionality.
+        # The user can choose to use PCA for visualization or not.
+        if use_pca_for_visualization:
+            pca = PCA(n_components=pca_components)
+            to_visualize = pca.fit_transform(as_normal_df)
+        else:
+            to_visualize = as_normal_df
+
+        # Apply the rules to the data to get the indices of the data points that are explained by each rule.
+        applied_rules = []
+        for explanation in explanations.iterrows():
+            # The explanation is a tuple, where the first element is the index and the second element is the explanation.
+            explanation = explanation[1]
+            rule = str_rule_to_list(explanation['rule'])
+            rule_as_binary_np_array = condition_generator(data=self, rules=[rule])
+            applied_rules.append((rule_as_binary_np_array, explanations['Cluster'], rule))
+
+        return to_visualize, explanations, applied_rules
 
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
                 dir=None,

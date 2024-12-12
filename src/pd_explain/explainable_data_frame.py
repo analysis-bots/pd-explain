@@ -9,6 +9,9 @@ from matplotlib.axis import Axis
 from pandas import DataFrame, Series
 from pandas._libs.lib import no_default
 from sklearn.decomposition import PCA
+from ipywidgets import Tab, VBox, HBox, Label, Output, Box, Text, HTML
+import matplotlib.pyplot as plt
+from IPython.display import display
 
 # importing sys
 import sys
@@ -29,7 +32,7 @@ from typing import (
     Hashable,
     Sequence,
     Union,
-    List, Callable, Literal,
+    List, Callable, Literal, Tuple,
 )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
 
@@ -794,7 +797,120 @@ class ExpDataFrame(pd.DataFrame):
     def present_deleted_correlated(self, figs_in_row: int = 2):  #####
         return self.operation.present_deleted_correlated(figs_in_row=figs_in_row)
 
-    def explain_many_to_one(self, labels: Series | List[int] | np.ndarray | DataFrame, coverage_threshold:float = 0.6,
+    def _visualize_all_clusters(self, to_visualize: np.ndarray, cluster_labels: np.ndarray | Series):
+        """
+        Visualizes all clusters in the data each in a different color, in one plot.
+        """
+        # Create a 3D plot if the data is 3D, otherwise create a 2D plot.
+        if to_visualize.shape[1] == 3:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+        else:
+            fig, ax = plt.subplots()
+
+        labels = cluster_labels.unique()
+        labels.sort()
+        for label in labels:
+            try:
+                label_title = f"Cluster {int(label)}"
+            except ValueError:
+                label_title = f"{label}"
+            current_datapoints = to_visualize[cluster_labels == label]
+            if to_visualize.shape[1] == 3:
+                ax.scatter(current_datapoints[:, 0], current_datapoints[:, 1], current_datapoints[:, 2], label=label_title)
+            else:
+                ax.scatter(current_datapoints[:, 0], current_datapoints[:, 1], label=label_title)
+
+
+        return fig, ax
+
+
+    def _visualize_many_to_one_explanations(self, to_visualize: np.ndarray, explanations: DataFrame,
+                                            applied_rules: DataFrame, cluster_labels: np.ndarray | Series):
+        cluster_tabs = Tab()
+        cluster_tabs_children = []
+        cluster_titles = []
+        for cluster in explanations['Cluster'].unique():
+            try:
+                cluster_titles.append(f"Cluster {int(cluster)}")
+            except ValueError:
+                cluster_titles.append(f"{cluster}")
+
+        out = Output()
+        with out:
+            fig, ax = self._visualize_all_clusters(to_visualize, cluster_labels)
+            ax.legend(loc='upper right')
+            plt.show(fig)
+
+        first_box = Box(children=[out])
+        cluster_tabs_children.append(first_box)
+        cluster_titles.insert(0, "All Clusters")
+
+
+        # Go over each cluster and visualize the explanations for that cluster.
+        for cluster in explanations['Cluster'].unique():
+            cluster_tab = Tab()
+            cluster_explanations = explanations[explanations['Cluster'] == cluster]
+            cluster_rules = applied_rules[applied_rules['Cluster'] == cluster]
+            cluster_outputs = []
+
+            # Go over the rules for each cluster, and plot the data, emphasizing the data points that are explained by
+            # each rule. Each of these plots go into a separate sub-tab.
+            for rule in cluster_rules.iterrows():
+                tab_hbox = HBox()
+                text_vbox = VBox()
+                rule_row = rule[1]
+                idx = rule_row['Idx']
+                rule = rule_row['Rule']
+                explanation_row = explanations.iloc[idx]
+
+                # Get the data points that are explained by the rule.
+                explained_data_points = to_visualize[rule]
+                not_explained_data_points = to_visualize[~rule]
+                not_explained_data_points_cluster_labels = cluster_labels[~rule]
+
+                out = Output()
+
+                # Visualize all the data, then add an "X" marker for the data points that are explained by the rule.
+                with out:
+                    fig, ax = self._visualize_all_clusters(to_visualize, cluster_labels)
+                    ax.scatter(explained_data_points[:, 0], explained_data_points[:, 1], c='black', marker='X', label='Explained by rule')
+                    # Add a legend with cluster labels + "X" for the explained data points.
+                    ax.legend(loc='upper right')
+                    plt.show(fig)
+
+                text_vbox.children = [HTML(f"""
+                <h3>Rule: {rule_row['Explanation']}</h3><br><br>
+                <h5>Conciseness: {explanation_row['conciseness']}</h5><br>
+                <h5>Separation error: {explanation_row['separation_err']}</h5><br>
+                <h5>Coverage: {explanation_row['coverage']}</h5><br>
+                """)]
+                tab_hbox.children = [out, text_vbox]
+
+                cluster_outputs.append(tab_hbox)
+
+            cluster_tab.children = cluster_outputs
+            for i, output in enumerate(cluster_outputs):
+                cluster_tab.set_title(i, f"Explanation {i}")
+
+            cluster_tabs_children.append(cluster_tab)
+
+        cluster_tabs.children = cluster_tabs_children
+        # If the clusters are denoted by integers, we set the tab titles to "Cluster {cluster_id}", otherwise we use the
+        # cluster name.
+        for i, title in enumerate(cluster_titles):
+            cluster_tabs.set_title(i, title)
+
+        display(cluster_tabs)
+
+
+
+
+
+
+
+
+    def _explain_many_to_one(self, labels: Series | List[int] | np.ndarray | DataFrame, coverage_threshold:float = 0.6,
                             max_explanation_length: int = 5, separation_threshold:float = 0.5, p_value:int = 0,
                             use_pca_for_visualization: bool = True, pca_components: Literal[2,3] = 2):
         # If the user passes a list of labels, a dataframe or an np array, we need to convert it to a series.
@@ -836,15 +952,18 @@ class ExpDataFrame(pd.DataFrame):
             to_visualize = as_normal_df
 
         # Apply the rules to the data to get the indices of the data points that are explained by each rule.
-        applied_rules = []
+        applied_rules = DataFrame(columns=['Rule', 'Cluster', 'Explanation', 'Idx'])
         for explanation in explanations.iterrows():
             # The explanation is a tuple, where the first element is the index and the second element is the explanation.
+            idx = explanation[0]
             explanation = explanation[1]
             rule = str_rule_to_list(explanation['rule'])
             rule_as_binary_np_array = condition_generator(data=self, rules=[rule])
-            applied_rules.append((rule_as_binary_np_array, explanations['Cluster'], rule))
+            cluster = explanation['Cluster']
+            applied_rules = pd.concat([applied_rules, DataFrame({'Rule': [rule_as_binary_np_array], 'Cluster': cluster,
+                                                                 'Explanation': explanation['rule'], 'Idx': idx})])
 
-        return to_visualize, explanations, applied_rules
+        self._visualize_many_to_one_explanations(to_visualize, explanations, applied_rules, cluster_labels=labels)
 
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
                 dir=None,

@@ -5,11 +5,12 @@ from copy import copy
 
 import numpy as np
 import pandas as pd
+from matplotlib import cm
 from matplotlib.axis import Axis
 from pandas import DataFrame, Series
 from pandas._libs.lib import no_default
 from sklearn.decomposition import PCA
-from ipywidgets import Tab, VBox, HBox, Label, Output, Box, Text, HTML
+from ipywidgets import Tab, VBox, HBox, Label, Output, Box, Text, HTML, Layout
 import matplotlib.pyplot as plt
 from IPython.display import display
 
@@ -660,7 +661,8 @@ class ExpDataFrame(pd.DataFrame):
             # If no on is specified, we raise a warning to let the user know that the operation and explanation may not
             # work as expected.
             if on is None:
-                warnings.warn("No 'on' parameter specified in join operation. The operation and explanation may not work as expected.")
+                warnings.warn(
+                    "No 'on' parameter specified in join operation. The operation and explanation may not work as expected.")
 
             left_name = utils.get_calling_params_name(self)
             right_name = utils.get_calling_params_name(other)
@@ -797,7 +799,7 @@ class ExpDataFrame(pd.DataFrame):
     def present_deleted_correlated(self, figs_in_row: int = 2):  #####
         return self.operation.present_deleted_correlated(figs_in_row=figs_in_row)
 
-    def _visualize_all_clusters(self, to_visualize: np.ndarray, cluster_labels: np.ndarray | Series):
+    def _plot_clusters(self, to_visualize: np.ndarray, cluster_labels: np.ndarray | Series):
         """
         Visualizes all clusters in the data each in a different color, in one plot.
         """
@@ -810,35 +812,39 @@ class ExpDataFrame(pd.DataFrame):
 
         labels = cluster_labels.unique()
         labels.sort()
-        for label in labels:
+
+        for i, label in enumerate(labels):
             try:
                 label_title = f"Cluster {int(label)}"
             except ValueError:
                 label_title = f"{label}"
             current_datapoints = to_visualize[cluster_labels == label]
             if to_visualize.shape[1] == 3:
-                ax.scatter(current_datapoints[:, 0], current_datapoints[:, 1], current_datapoints[:, 2], label=label_title)
+                ax.scatter(current_datapoints[:, 0], current_datapoints[:, 1], current_datapoints[:, 2],
+                           label=label_title)
             else:
                 ax.scatter(current_datapoints[:, 0], current_datapoints[:, 1], label=label_title)
 
-
         return fig, ax
-
 
     def _visualize_many_to_one_explanations(self, to_visualize: np.ndarray, explanations: DataFrame,
                                             applied_rules: DataFrame, cluster_labels: np.ndarray | Series):
         cluster_tabs = Tab()
         cluster_tabs_children = []
         cluster_titles = []
-        for cluster in explanations['Cluster'].unique():
+        unique_cluster_labels = cluster_labels.unique()
+        # Get a list of cluster titles, which will be used as the titles of the tabs.
+        # The title is either "Cluster {cluster_id}" if the cluster id is an int or the name of the cluster.
+        for cluster in unique_cluster_labels:
             try:
                 cluster_titles.append(f"Cluster {int(cluster)}")
             except ValueError:
                 cluster_titles.append(f"{cluster}")
 
+        # Add an initial tab for all clusters, visualizing all the data points.
         out = Output()
         with out:
-            fig, ax = self._visualize_all_clusters(to_visualize, cluster_labels)
+            fig, ax = self._plot_clusters(to_visualize, cluster_labels)
             ax.legend(loc='upper right')
             plt.show(fig)
 
@@ -846,19 +852,23 @@ class ExpDataFrame(pd.DataFrame):
         cluster_tabs_children.append(first_box)
         cluster_titles.insert(0, "All Clusters")
 
-
         # Go over each cluster and visualize the explanations for that cluster.
-        for cluster in explanations['Cluster'].unique():
+        for i, cluster in enumerate(unique_cluster_labels):
             cluster_tab = Tab()
             cluster_explanations = explanations[explanations['Cluster'] == cluster]
             cluster_rules = applied_rules[applied_rules['Cluster'] == cluster]
             cluster_outputs = []
 
+            if cluster_explanations.empty:
+                res = HTML(f"<h2>No explanation found for {cluster_titles[i + 1]}</h2>")
+                cluster_tabs_children.append(res)
+                continue
+
             # Go over the rules for each cluster, and plot the data, emphasizing the data points that are explained by
             # each rule. Each of these plots go into a separate sub-tab.
             for rule in cluster_rules.iterrows():
                 tab_hbox = HBox()
-                text_vbox = VBox()
+                text_vbox = VBox(layout=Layout(width='30%'))
                 rule_row = rule[1]
                 idx = rule_row['Idx']
                 rule = rule_row['Rule']
@@ -866,15 +876,14 @@ class ExpDataFrame(pd.DataFrame):
 
                 # Get the data points that are explained by the rule.
                 explained_data_points = to_visualize[rule]
-                not_explained_data_points = to_visualize[~rule]
-                not_explained_data_points_cluster_labels = cluster_labels[~rule]
 
                 out = Output()
 
                 # Visualize all the data, then add an "X" marker for the data points that are explained by the rule.
                 with out:
-                    fig, ax = self._visualize_all_clusters(to_visualize, cluster_labels)
-                    ax.scatter(explained_data_points[:, 0], explained_data_points[:, 1], c='black', marker='X', label='Explained by rule')
+                    fig, ax = self._plot_clusters(to_visualize, cluster_labels)
+                    ax.scatter(explained_data_points[:, 0], explained_data_points[:, 1], marker='X', c='black',
+                               label='Covered by rule')
                     # Add a legend with cluster labels + "X" for the explained data points.
                     ax.legend(loc='upper right')
                     plt.show(fig)
@@ -885,10 +894,12 @@ class ExpDataFrame(pd.DataFrame):
                 <h5>Separation error: {explanation_row['separation_err']}</h5><br>
                 <h5>Coverage: {explanation_row['coverage']}</h5><br>
                 """)]
-                tab_hbox.children = [out, text_vbox]
+                left_box = Box(children=[out], layout=Layout(width='70%'))
+                tab_hbox.children = [left_box, text_vbox]
 
                 cluster_outputs.append(tab_hbox)
 
+            # Add the explanations to the tab.
             cluster_tab.children = cluster_outputs
             for i, output in enumerate(cluster_outputs):
                 cluster_tab.set_title(i, f"Explanation {i}")
@@ -903,20 +914,15 @@ class ExpDataFrame(pd.DataFrame):
 
         display(cluster_tabs)
 
-
-
-
-
-
-
-
-    def _explain_many_to_one(self, labels: Series | List[int] | np.ndarray | DataFrame, coverage_threshold:float = 0.6,
-                            max_explanation_length: int = 5, separation_threshold:float = 0.5, p_value:int = 0,
-                            use_pca_for_visualization: bool = True, pca_components: Literal[2,3] = 2):
+    def _explain_many_to_one(self, labels: Series | List[int] | np.ndarray | DataFrame, coverage_threshold: float = 0.6,
+                             max_explanation_length: int = 5, separation_threshold: float = 0.5, p_value: int = 0,
+                             use_pca_for_visualization: bool = True, pca_components: Literal[2, 3] = 2):
         # If the user passes a list of labels, a dataframe or an np array, we need to convert it to a series.
         # If this fails and raises an error, then the user has passed an invalid type and it is no longer our problem.
         if not isinstance(labels, Series):
             labels = Series(labels)
+
+        can_visualize = True
 
         if p_value < 0:
             raise ValueError("The p-value must be a positive number.")
@@ -926,6 +932,11 @@ class ExpDataFrame(pd.DataFrame):
             raise ValueError("The maximum explanation length must be at least 1.")
         if separation_threshold < 0 or separation_threshold > 1:
             raise ValueError("The separation threshold must be between 0 and 1.")
+        if use_pca_for_visualization and pca_components > 3:
+            raise ValueError("The number of PCA components must be at most 3. We do not support 4D or higher plots.")
+        if not use_pca_for_visualization and self.shape[1] > 3:
+            warnings.warn("The dataframe is too high dimensional to visualize. We recommend using PCA for visualization.")
+            can_visualize = False
 
         conciseness_threshold = 1 / max_explanation_length
 
@@ -936,7 +947,6 @@ class ExpDataFrame(pd.DataFrame):
         # Converting the dataframe to a normal dataframe, as the explainer does not use any of the extra attributes of
         # ExpDataFrame, thus we can avoid the additional overhead of using an ExpDataFrame.
         as_normal_df = DataFrame(self)
-
 
         explainer = Explainer(as_normal_df, labels)
         explanations = explainer.generate_explanations(coverage_threshold=coverage_threshold,
@@ -963,7 +973,8 @@ class ExpDataFrame(pd.DataFrame):
             applied_rules = pd.concat([applied_rules, DataFrame({'Rule': [rule_as_binary_np_array], 'Cluster': cluster,
                                                                  'Explanation': explanation['rule'], 'Idx': idx})])
 
-        self._visualize_many_to_one_explanations(to_visualize, explanations, applied_rules, cluster_labels=labels)
+        if can_visualize:
+            self._visualize_many_to_one_explanations(to_visualize, explanations, applied_rules, cluster_labels=labels)
 
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
                 dir=None,

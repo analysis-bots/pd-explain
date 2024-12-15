@@ -675,6 +675,10 @@ class ExpDataFrame(pd.DataFrame):
             result_df = ExpDataFrame(pd.merge(self, right_df, on=on, left_on=left_on,
                                               right_on=right_on, how=how, suffixes=(lsuffix, rsuffix), sort=sort))
 
+            # Check if the resulting df is empty. If it is, we raise a warning to let the user know.
+            if result_df.empty:
+                warnings.warn("The resulting dataframe is empty. Check the join operation to ensure it is correct.")
+
             # This is a complete hack to fix the issue: applying suffixes to the columns of the resulting dataframe
             # causes the explanation to fail, since it can no longer match up the columns of the resulting dataframe
             # with the columns of the original dataframes. This is a temporary fix until a better solution is found.
@@ -1005,6 +1009,13 @@ class ExpDataFrame(pd.DataFrame):
         if self.operation is None:
             print('no operation was found.')
             return
+
+        # Convert the source and result dataframe to normal dataframes.
+        # This is done because the explainer does not need the extra attributes of the ExpDataFrame, which are used for
+        # the user facing API to allow them easy use of the explainers. This helps avoid extra overhead from ExpDataFrame
+        # as well as potential bugs from the way the overridden methods and the explainers interact.
+        self.operation.source_df = DataFrame(self.operation.source_df)
+        self.operation.result_df = DataFrame(self.operation.result_df)
 
         # Ensure that the user does not get a non-informative error message if they try to use the outlier explainer.
         # Without this line, the user gets an AttributeError 'str' object has no attribute 'items',

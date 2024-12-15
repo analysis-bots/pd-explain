@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List, Literal
 
 import pandas as pd
+from pandas import DataFrame
 from pandas._typing import Dtype
 import matplotlib.pyplot as plt
 from fedex_generator.Operations.BJoin import BJoin
@@ -205,6 +206,14 @@ class ExpSeries(pd.Series):
         if self.operation is None:
             print('no operation was found.')
             return
+
+        # Convert the source and result dataframe to normal dataframes.
+        # This is done because the explainer does not need the extra attributes of the ExpDataFrame, which are used for
+        # the user facing API to allow them easy use of the explainers. This helps avoid extra overhead from ExpDataFrame
+        # as well as potential bugs from the way the overridden methods and the explainers interact.
+        self.operation.source_df = DataFrame(self.operation.source_df)
+        self.operation.result_df = DataFrame(self.operation.result_df)
+
         return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, explainer=explainer,
                                       target=target, dir=dir, control=control, hold_out=hold_out,
                                       figs_in_row=figs_in_row, show_scores=show_scores, title=title)

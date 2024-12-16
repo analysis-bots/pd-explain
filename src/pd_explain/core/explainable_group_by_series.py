@@ -3,7 +3,7 @@ from __future__ import annotations
 from fedex_generator.Operations.GroupBy import GroupBy
 from pandas._libs import lib
 from pandas.core.groupby.generic import SeriesGroupBy
-from pd_explain.explainable_series import ExpSeries
+from pd_explain.core.explainable_series import ExpSeries
 
 
 class ExpSeriesGroupBy(SeriesGroupBy):

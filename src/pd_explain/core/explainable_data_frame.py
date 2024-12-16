@@ -5,12 +5,11 @@ from copy import copy
 
 import numpy as np
 import pandas as pd
-from matplotlib import cm
 from matplotlib.axis import Axis
 from pandas import DataFrame, Series
 from pandas._libs.lib import no_default
 from sklearn.decomposition import PCA
-from ipywidgets import Tab, VBox, HBox, Label, Output, Box, Text, HTML, Layout, HTMLMath
+from ipywidgets import Tab, VBox, HBox, Output, Box, HTML, Layout, HTMLMath
 import matplotlib.pyplot as plt
 from IPython.display import display
 
@@ -20,8 +19,8 @@ import sys
 # adding Folder_2/subfolder to the system path
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator-1/src/')
-sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/FEDEx_Generator/src/")
-sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\cluster-explorer\\src\\")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\FEDEx_Generator\\src")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\cluster-explorer\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
@@ -33,14 +32,14 @@ from typing import (
     Hashable,
     Sequence,
     Union,
-    List, Callable, Literal, Tuple,
-)
+    List, Callable, Literal, )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
+from pd_explain.explainers.explainer_factory import ExplainerFactory
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
-sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/pd-explain/src/")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
-from pd_explain.explainable_series import ExpSeries
+from pd_explain.core.explainable_series import ExpSeries
 
 
 class ExpDataFrame(pd.DataFrame):
@@ -497,7 +496,7 @@ class ExpDataFrame(pd.DataFrame):
         :return:Explain DataFrameGroupBy object that contains information about the groups.
         """
         try:
-            from pd_explain.explainable_group_by_dataframe import ExpDataFrameGroupBy
+            from pd_explain.core.explainable_group_by_dataframe import ExpDataFrameGroupBy
             # group_attributes = GroupBy.get_one_to_many_attributes(self, [by] if isinstance(by, str) else by)
             group_attributes = by
             tmp = pd.core.groupby.generic.DataFrameGroupBy
@@ -1049,3 +1048,5 @@ class ExpDataFrame(pd.DataFrame):
         return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, figs_in_row=figs_in_row,
                                       show_scores=show_scores, title=title, corr_TH=corr_TH, explainer=explainer,
                                       consider=consider, cont=value, attr=attr, ignore=ignore)
+
+

@@ -88,7 +88,7 @@ class ExpSeries(pd.Series):
 
         :return: A Explain DataFrame of the two merged objects with join operation filed.
         """
-        from pd_explain.explainable_data_frame import ExpDataFrame
+        from pd_explain.core.explainable_data_frame import ExpDataFrame
         try:
             left_name = utils.get_calling_params_name(self)
             right_name = utils.get_calling_params_name(other)

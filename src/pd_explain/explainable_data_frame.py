@@ -10,7 +10,7 @@ from matplotlib.axis import Axis
 from pandas import DataFrame, Series
 from pandas._libs.lib import no_default
 from sklearn.decomposition import PCA
-from ipywidgets import Tab, VBox, HBox, Label, Output, Box, Text, HTML, Layout
+from ipywidgets import Tab, VBox, HBox, Label, Output, Box, Text, HTML, Layout, HTMLMath
 import matplotlib.pyplot as plt
 from IPython.display import display
 
@@ -28,7 +28,7 @@ from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
-from cluster_explorer import Explainer, condition_generator, str_rule_to_list
+from cluster_explorer import Explainer, condition_generator, str_rule_to_list, rule_to_human_readable
 from typing import (
     Hashable,
     Sequence,
@@ -852,8 +852,29 @@ class ExpDataFrame(pd.DataFrame):
             ax.legend(loc='upper right')
             plt.show(fig)
 
-        first_box = Box(children=[out])
-        cluster_tabs_children.append(first_box)
+        general_tab = Tab()
+        metric_explanations_html = HTMLMath(f"""
+            <h2>Explanation quality metrics</h2>
+            <h4>Conciseness</h4>
+            <p>Conciseness is a measure of how concise the explanation is. It is calculated as the inverse of the number of 
+            conditions in the rule.
+            A rule with fewer conditions is considered more concise and thus better.
+            </p>
+            <h4>Separation error</h4>
+            <p>The ratio of points for which explanation $E_c$ holds, but those points are not in cluster / group $c$. 
+            Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \wedge CL(x) \\neq c \\ |}}{{|\\ x \\in X \\ | \\ E_c(x) = True\\ |}}$$
+            The lower the separation error, the better the explanation is at separating the cluster from other points.
+            </p>
+            <h4>Coverage</h4>
+            <p>The ratio of points for which explanation $E_c$ holds and those points are in cluster / group $c$.
+            Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \wedge CL(x) = c\\ |}}{{|\\ x \\in X \\ | \\ CL(x) = c \\ |}}$$
+            The higher the coverage, the better.
+            </p>
+        """)
+        general_tab.children = [Box(children=[out]), metric_explanations_html]
+        general_tab.set_title(0, "All Clusters Plot")
+        general_tab.set_title(1, "Explanation Metrics")
+        cluster_tabs_children.append(general_tab)
         cluster_titles.insert(0, "All Clusters")
 
         # Go over each cluster and visualize the explanations for that cluster.
@@ -893,11 +914,11 @@ class ExpDataFrame(pd.DataFrame):
                     plt.show(fig)
 
                 text_vbox.children = [HTML(f"""
-                <h3>Rule: {rule_row['Explanation']}</h3><br><br>
+                <h4>Rule:<br> {rule_row['Human Readable Rule']}</h4><hr width='100%' size='2'>
                 <h5>Conciseness: {explanation_row['conciseness']}</h5><br>
                 <h5>Separation error: {explanation_row['separation_err']}</h5><br>
                 <h5>Coverage: {explanation_row['coverage']}</h5><br>
-                """)]
+                """, tooltip="Test")]
                 left_box = Box(children=[out], layout=Layout(width='70%'))
                 tab_hbox.children = [left_box, text_vbox]
 
@@ -906,7 +927,7 @@ class ExpDataFrame(pd.DataFrame):
             # Add the explanations to the tab.
             cluster_tab.children = cluster_outputs
             for i, output in enumerate(cluster_outputs):
-                cluster_tab.set_title(i, f"Explanation {i}")
+                cluster_tab.set_title(i, f"Explanation {i + 1}")
 
             cluster_tabs_children.append(cluster_tab)
 
@@ -966,16 +987,18 @@ class ExpDataFrame(pd.DataFrame):
             to_visualize = as_normal_df
 
         # Apply the rules to the data to get the indices of the data points that are explained by each rule.
-        applied_rules = DataFrame(columns=['Rule', 'Cluster', 'Explanation', 'Idx'])
+        applied_rules = DataFrame(columns=['Rule', 'Cluster', 'Explanation', 'Idx', 'Human Readable Rule'])
         for explanation in explanations.iterrows():
             # The explanation is a tuple, where the first element is the index and the second element is the explanation.
             idx = explanation[0]
             explanation = explanation[1]
             rule = str_rule_to_list(explanation['rule'])
             rule_as_binary_np_array = condition_generator(data=self, rules=[rule])
+            human_readable_rule = rule_to_human_readable(rule)
             cluster = explanation['Cluster']
             applied_rules = pd.concat([applied_rules, DataFrame({'Rule': [rule_as_binary_np_array], 'Cluster': cluster,
-                                                                 'Explanation': explanation['rule'], 'Idx': idx})])
+                                                                 'Explanation': explanation['rule'], 'Idx': idx,
+                                                                 'Human Readable Rule': human_readable_rule})])
 
         if can_visualize:
             self._visualize_many_to_one_explanations(to_visualize, explanations, applied_rules, cluster_labels=labels)

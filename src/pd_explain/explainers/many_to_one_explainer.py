@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, List
 
 from .explainer_interface import ExplainerInterface
 import pandas as pd
@@ -9,25 +9,31 @@ from sklearn.decomposition import PCA
 from matplotlib import pyplot as plt
 import numpy as np
 from ipywidgets import Tab, HTML, HTMLMath, Output, VBox, HBox, Box, Layout
-from IPython.display import display
+import textwrap
 
 
 class ManyToOneExplainer(ExplainerInterface):
 
     def __init__(self, source_df: DataFrame, labels: Series | str | list[int], coverage_threshold: float = 0.6,
                  max_explanation_length: int = 5, separation_threshold: float = 0.5, p_value: int = 0,
-                 use_pca_for_visualization: bool = True, pca_components: Literal[2, 3] = 2):
+                 use_pca_for_visualization: bool = True, pca_components: Literal[2, 3] = 2,
+                 mode: Literal['conjunctive','disjunctive'] = 'conjunctive',
+                 *args, **kwargs):
 
-        self._source_df = source_df
+        # Convert the source_df to a DataFrame object, to avoid overhead from overridden methods in ExpDataFrame,
+        # as well as to avoid any bad interactions between those methods and the explainer.
+        self._source_df = DataFrame(source_df)
 
         if isinstance(labels, str):
             self._labels = source_df[labels]
+            self._source_df = self._source_df.drop(labels, axis=1, inplace=False)
         elif not isinstance(labels, Series):
             self._labels = Series(labels)
         else:
             self._labels = labels
 
         self._possible_to_visualize = True
+        self._mapping = self.create_mapping()
 
         if p_value < 0:
             raise ValueError("The p-value must be a positive number.")
@@ -56,6 +62,23 @@ class ManyToOneExplainer(ExplainerInterface):
         self._use_pca_for_visualization = use_pca_for_visualization
         self._pca_components = pca_components
         self._explanations = None
+        self._mode = mode
+        self._explainer = None
+        self._ran_explainer = False
+
+
+    def create_mapping(self) -> dict:
+        """
+        In the event that the user provided non-numeric labels, we need to map those labels to integers.
+        This function checks if the labels are non-numeric, and if so, it creates a mapping from the labels to integers.
+        Otherwise, it returns a dictionary where each label is mapped to itself.
+        """
+        if not self._labels.apply(lambda x: isinstance(x, (int, float))).all():
+            unique_labels = self._labels.unique()
+            mapping = {label: i for i, label in enumerate(unique_labels)}
+            self._labels = self._labels.map(mapping)
+            return mapping
+        return {label: label for label in self._labels.unique()}
 
     def can_visualize(self) -> bool:
         return self._possible_to_visualize
@@ -88,7 +111,7 @@ class ManyToOneExplainer(ExplainerInterface):
 
         return fig, ax
 
-    def _convert_rules(self, rules: DataFrame) -> DataFrame:
+    def _convert_rules(self, rules: DataFrame, categorical_mapping: dict) -> DataFrame:
         """
         Converts the rules from the explainer into forms that are more suitable to work with in code and for visualization.
 
@@ -104,7 +127,7 @@ class ManyToOneExplainer(ExplainerInterface):
             # and finally we also convert it into a human readable format, then save everything.
             rule = str_rule_to_list(explanation['rule'])
             rule_as_binary_np_array = condition_generator(data=self._source_df, rules=[rule])
-            human_readable_rule = rule_to_human_readable(rule)
+            human_readable_rule = rule_to_human_readable(rule, categorical_mapping)
             cluster = explanation['Cluster']
             converted_rules = pd.concat(
                 [converted_rules, DataFrame({'Rule': [rule_as_binary_np_array], 'Cluster': cluster,
@@ -114,8 +137,8 @@ class ManyToOneExplainer(ExplainerInterface):
 
     def _create_general_tab(self, to_visualize: np.ndarray, cluster_labels: np.ndarray | Series) -> Tab:
         """
-        Creates the initial tab of the visualizations, that contains:</br>
-        1. A plot of all clusters in the data, each in a different color.</br>
+        Creates the initial tab of the visualizations, that contains:
+        1. A plot of all clusters in the data, each in a different color.
         2. An explanation of the quality metrics used to evaluate the explanations.
 
         :param to_visualize: The data to visualize.
@@ -138,12 +161,12 @@ class ManyToOneExplainer(ExplainerInterface):
                     </p>
                     <h4>Separation error</h4>
                     <p>The ratio of points for which explanation $E_c$ holds, but those points are not in cluster / group $c$. 
-                    Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \wedge CL(x) \\neq c \\ |}}{{|\\ x \\in X \\ | \\ E_c(x) = True\\ |}}$$
+                    Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \\wedge CL(x) \\neq c \\ |}}{{|\\ x \\in X \\ | \\ E_c(x) = True\\ |}}$$
                     The lower the separation error, the better the explanation is at separating the cluster from other points.
                     </p>
                     <h4>Coverage</h4>
                     <p>The ratio of points for which explanation $E_c$ holds and those points are in cluster / group $c$.
-                    Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \wedge CL(x) = c\\ |}}{{|\\ x \\in X \\ | \\ CL(x) = c \\ |}}$$
+                    Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \\wedge CL(x) = c\\ |}}{{|\\ x \\in X \\ | \\ CL(x) = c \\ |}}$$
                     The higher the coverage, the better.
                     </p>
                 """)
@@ -154,9 +177,16 @@ class ManyToOneExplainer(ExplainerInterface):
         return general_tab
 
     def _create_tab_for_cluster(self, cluster: str | int, rules: DataFrame, to_visualize: np.ndarray,
-                                cluster_title: str, ) -> Tab:
+                                cluster_title: str, ) -> HTML | Tab:
         """
+        Create a tab for a specific cluster, containing sub-tabs for each rule that explains the cluster.
 
+        :param cluster: The cluster to create the tab for.
+        :param rules: The rules generated by the explainer and converted to a more suitable format.
+        :param to_visualize: The data to visualize.
+        :param cluster_title: The title of the cluster.
+
+        :return: The tab containing the explanations for the cluster, or an HTML element if no explanations were found.
         """
         cluster_tab = Tab()
         cluster_explanations = self._explanations[self._explanations['Cluster'] == cluster]
@@ -171,7 +201,7 @@ class ManyToOneExplainer(ExplainerInterface):
         # each rule. Each of these plots go into a separate sub-tab.
         for rule in cluster_rules.iterrows():
             tab_hbox = HBox()
-            text_vbox = VBox(layout=Layout(width='30%'))
+            text_vbox = VBox(layout=Layout(width='32%', left='2%'))
             rule_row = rule[1]
             idx = rule_row['Idx']
             rule = rule_row['Rule']
@@ -191,13 +221,25 @@ class ManyToOneExplainer(ExplainerInterface):
                 ax.legend(loc='upper right')
                 plt.show(fig)
 
+            human_readable_rule = rule_row['Human Readable Rule']
+            # To make the rule more readable, we add line breaks after "AND" and "OR".
+            # We also add a special token for splitting the rule into lines we can wrap.
+            if "AND" in human_readable_rule:
+                human_readable_rule = human_readable_rule.replace("AND", "AND<br>@@@")
+            if "OR" in human_readable_rule:
+                human_readable_rule = human_readable_rule.replace("OR", "OR<br>@@@")
+            human_readable_rule_split = human_readable_rule.split("@@@")
+            human_readable_rule_split = [" ".join(textwrap.wrap(line, width=42)) for line in human_readable_rule_split]
+            human_readable_rule = "".join(human_readable_rule_split)
+
+
             text_vbox.children = [HTML(f"""
-                        <h4>Rule:<br> {rule_row['Human Readable Rule']}</h4><hr width='100%' size='2'>
-                        <h5>Conciseness: {explanation_row['conciseness']}</h5><br>
-                        <h5>Separation error: {explanation_row['separation_err']}</h5><br>
-                        <h5>Coverage: {explanation_row['coverage']}</h5><br>
-                        """, tooltip="Test")]
-            left_box = Box(children=[out], layout=Layout(width='70%'))
+                        <h2>Rule:<br> {human_readable_rule}</h2><hr width='100%' size='2'>
+                        <h3>Conciseness: {explanation_row['conciseness']}</h3><br>
+                        <h3>Separation error: {explanation_row['separation_err']}</h3><br>
+                        <h3>Coverage: {explanation_row['coverage']}</h3><br>
+                        """)]
+            left_box = Box(children=[out], layout=Layout(max_width='60%'))
             tab_hbox.children = [left_box, text_vbox]
 
             cluster_outputs.append(tab_hbox)
@@ -209,19 +251,57 @@ class ManyToOneExplainer(ExplainerInterface):
 
         return cluster_tab
 
+    def _map_categorical_features_to_one_hot_encoded_df(self, categorical_features: List[str], one_hot_encoded_df: DataFrame) -> dict:
+        """
+        Maps the categorical features, after one-hot encoding, to the original dataframe, so that
+        we can display the categorical features with their original names in the visualizations.
+
+        :param categorical_features: The categorical features in the original dataframe.
+        :param one_hot_encoded_df: The one-hot encoded dataframe.
+
+        :return: A dictionary mapping the categorical features to the one-hot encoded dataframe. Each key is a column name
+        in the one-hot encoded dataframe, and each value is the original categorical feature name.
+        """
+        mapping = {}
+        for feature in categorical_features:
+            for column in one_hot_encoded_df.columns:
+                if column.startswith(feature):
+                    mapping[column] = feature
+        return mapping
+
+
+
     def visualize(self):
+
+        if not self._ran_explainer:
+            raise RuntimeError("You must run the explainer before visualizing the results.")
+
+        # First, we one-hot encode the categorical features, as that is what the explainer did, and also what PCA needs.
+        self._explainer.df = self._source_df
+        categorical_features = self._explainer.one_hot()
+        self._source_df = self._explainer.df
+        # We map the one-hot encoded features to the original categorical features, so that we can display them in the visualizations.
+        if categorical_features:
+            categorical_mapping = self._map_categorical_features_to_one_hot_encoded_df(categorical_features, self._source_df)
+        else:
+            categorical_mapping = {}
+
+
         # Since most dataframes are too high dimensional to visualize, we use PCA to reduce the dimensionality.
         # The user can choose to use PCA for visualization or not.
         if self._use_pca_for_visualization:
             pca = PCA(n_components=self._pca_components)
+            # We use one-hot encoding for categorical data, as PCA requires numerical data.
             to_visualize = pca.fit_transform(self._source_df)
         else:
             to_visualize = self._source_df
 
-        converted_rules = self._convert_rules(self._explanations)
+        converted_rules = self._convert_rules(self._explanations, categorical_mapping)
 
         cluster_titles = []
+        cluster_titles.append("General")
         unique_cluster_labels = self._labels.unique()
+        unique_cluster_labels.sort()
         # Get a list of cluster titles, which will be used as the titles of the tabs.
         # The title is either "Cluster {cluster_id}" if the cluster id is an int or the name of the cluster.
         for cluster in unique_cluster_labels:
@@ -230,26 +310,39 @@ class ManyToOneExplainer(ExplainerInterface):
             except ValueError:
                 cluster_titles.append(f"{cluster}")
 
+
+        # Create the outer tab that contains all the cluster tabs.
         cluster_tabs = Tab()
+        # Add the first, general tab that contains the plot of all clusters and the explanation of the metrics.
         cluster_tabs_children = [self._create_general_tab(to_visualize, self._labels)]
 
+        # Populate the outer tab with a tab for each cluster, each tab containing tabs for each rule.
         for i, cluster in enumerate(unique_cluster_labels):
             cluster_tabs_children.append(
                 self._create_tab_for_cluster(cluster, converted_rules, to_visualize, cluster_titles[i + 1]))
 
         cluster_tabs.children = cluster_tabs_children
+        # Give the tabs the appropriate titles.
         for i, title in enumerate(cluster_titles):
             cluster_tabs.set_title(i, title)
 
-        display(cluster_tabs)
         return cluster_tabs
 
     def generate_explanation(self):
 
-        explainer = Explainer(self._source_df, self._labels)
-        self._explanations = explainer.generate_explanations(coverage_threshold=self._coverage_threshold,
+        # Create the explainer object and generate the explanations.
+        self._explainer = Explainer(self._source_df, self._labels)
+        self._explanations = self._explainer.generate_explanations(coverage_threshold=self._coverage_threshold,
                                                              conciseness_threshold=self._conciseness_threshold,
                                                              separation_threshold=self._separation_threshold,
-                                                             p_value=self._p_value)
+                                                             p_value=self._p_value,
+                                                             mode=self._mode)
+
+        # Reverse the mapping, if a mapping was created.
+        if self._mapping:
+            self._explanations['Cluster'] = self._explanations['Cluster'].map({v: k for k, v in self._mapping.items()})
+            self._labels = self._labels.map({v: k for k, v in self._mapping.items()})
+
+        self._ran_explainer = True
 
         return self._explanations

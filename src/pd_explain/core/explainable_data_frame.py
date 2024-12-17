@@ -802,210 +802,13 @@ class ExpDataFrame(pd.DataFrame):
     def present_deleted_correlated(self, figs_in_row: int = 2):  #####
         return self.operation.present_deleted_correlated(figs_in_row=figs_in_row)
 
-    def _plot_clusters(self, to_visualize: np.ndarray, cluster_labels: np.ndarray | Series):
-        """
-        Visualizes all clusters in the data each in a different color, in one plot.
-        """
-        # Create a 3D plot if the data is 3D, otherwise create a 2D plot.
-        if to_visualize.shape[1] == 3:
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-        else:
-            fig, ax = plt.subplots()
-
-        labels = cluster_labels.unique()
-        labels.sort()
-
-        for i, label in enumerate(labels):
-            try:
-                label_title = f"Cluster {int(label)}"
-            except ValueError:
-                label_title = f"{label}"
-            current_datapoints = to_visualize[cluster_labels == label]
-            if to_visualize.shape[1] == 3:
-                ax.scatter(current_datapoints[:, 0], current_datapoints[:, 1], current_datapoints[:, 2],
-                           label=label_title)
-            else:
-                ax.scatter(current_datapoints[:, 0], current_datapoints[:, 1], label=label_title)
-
-        return fig, ax
-
-    def _visualize_many_to_one_explanations(self, to_visualize: np.ndarray, explanations: DataFrame,
-                                            applied_rules: DataFrame, cluster_labels: np.ndarray | Series):
-        cluster_tabs = Tab()
-        cluster_tabs_children = []
-        cluster_titles = []
-        unique_cluster_labels = cluster_labels.unique()
-        # Get a list of cluster titles, which will be used as the titles of the tabs.
-        # The title is either "Cluster {cluster_id}" if the cluster id is an int or the name of the cluster.
-        for cluster in unique_cluster_labels:
-            try:
-                cluster_titles.append(f"Cluster {int(cluster)}")
-            except ValueError:
-                cluster_titles.append(f"{cluster}")
-
-        # Add an initial tab for all clusters, visualizing all the data points.
-        out = Output()
-        with out:
-            fig, ax = self._plot_clusters(to_visualize, cluster_labels)
-            ax.legend(loc='upper right')
-            plt.show(fig)
-
-        general_tab = Tab()
-        metric_explanations_html = HTMLMath(f"""
-            <h2>Explanation quality metrics</h2>
-            <h4>Conciseness</h4>
-            <p>Conciseness is a measure of how concise the explanation is. It is calculated as the inverse of the number of 
-            conditions in the rule.
-            A rule with fewer conditions is considered more concise and thus better.
-            </p>
-            <h4>Separation error</h4>
-            <p>The ratio of points for which explanation $E_c$ holds, but those points are not in cluster / group $c$. 
-            Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \wedge CL(x) \\neq c \\ |}}{{|\\ x \\in X \\ | \\ E_c(x) = True\\ |}}$$
-            The lower the separation error, the better the explanation is at separating the cluster from other points.
-            </p>
-            <h4>Coverage</h4>
-            <p>The ratio of points for which explanation $E_c$ holds and those points are in cluster / group $c$.
-            Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \wedge CL(x) = c\\ |}}{{|\\ x \\in X \\ | \\ CL(x) = c \\ |}}$$
-            The higher the coverage, the better.
-            </p>
-        """)
-        general_tab.children = [Box(children=[out]), metric_explanations_html]
-        general_tab.set_title(0, "All Clusters Plot")
-        general_tab.set_title(1, "Explanation Metrics")
-        cluster_tabs_children.append(general_tab)
-        cluster_titles.insert(0, "All Clusters")
-
-        # Go over each cluster and visualize the explanations for that cluster.
-        for i, cluster in enumerate(unique_cluster_labels):
-            cluster_tab = Tab()
-            cluster_explanations = explanations[explanations['Cluster'] == cluster]
-            cluster_rules = applied_rules[applied_rules['Cluster'] == cluster]
-            cluster_outputs = []
-
-            if cluster_explanations.empty:
-                res = HTML(f"<h2>No explanation found for {cluster_titles[i + 1]}</h2>")
-                cluster_tabs_children.append(res)
-                continue
-
-            # Go over the rules for each cluster, and plot the data, emphasizing the data points that are explained by
-            # each rule. Each of these plots go into a separate sub-tab.
-            for rule in cluster_rules.iterrows():
-                tab_hbox = HBox()
-                text_vbox = VBox(layout=Layout(width='30%'))
-                rule_row = rule[1]
-                idx = rule_row['Idx']
-                rule = rule_row['Rule']
-                explanation_row = explanations.iloc[idx]
-
-                # Get the data points that are explained by the rule.
-                explained_data_points = to_visualize[rule]
-
-                out = Output()
-
-                # Visualize all the data, then add an "X" marker for the data points that are explained by the rule.
-                with out:
-                    fig, ax = self._plot_clusters(to_visualize, cluster_labels)
-                    ax.scatter(explained_data_points[:, 0], explained_data_points[:, 1], marker='X', c='black',
-                               label='Covered by rule')
-                    # Add a legend with cluster labels + "X" for the explained data points.
-                    ax.legend(loc='upper right')
-                    plt.show(fig)
-
-                text_vbox.children = [HTML(f"""
-                <h4>Rule:<br> {rule_row['Human Readable Rule']}</h4><hr width='100%' size='2'>
-                <h5>Conciseness: {explanation_row['conciseness']}</h5><br>
-                <h5>Separation error: {explanation_row['separation_err']}</h5><br>
-                <h5>Coverage: {explanation_row['coverage']}</h5><br>
-                """, tooltip="Test")]
-                left_box = Box(children=[out], layout=Layout(width='70%'))
-                tab_hbox.children = [left_box, text_vbox]
-
-                cluster_outputs.append(tab_hbox)
-
-            # Add the explanations to the tab.
-            cluster_tab.children = cluster_outputs
-            for i, output in enumerate(cluster_outputs):
-                cluster_tab.set_title(i, f"Explanation {i + 1}")
-
-            cluster_tabs_children.append(cluster_tab)
-
-        cluster_tabs.children = cluster_tabs_children
-        # If the clusters are denoted by integers, we set the tab titles to "Cluster {cluster_id}", otherwise we use the
-        # cluster name.
-        for i, title in enumerate(cluster_titles):
-            cluster_tabs.set_title(i, title)
-
-        display(cluster_tabs)
-
-    def _explain_many_to_one(self, labels: Series | List[int] | np.ndarray | DataFrame, coverage_threshold: float = 0.6,
-                             max_explanation_length: int = 5, separation_threshold: float = 0.5, p_value: int = 0,
-                             use_pca_for_visualization: bool = True, pca_components: Literal[2, 3] = 2):
-        # If the user passes a list of labels, a dataframe or an np array, we need to convert it to a series.
-        # If this fails and raises an error, then the user has passed an invalid type and it is no longer our problem.
-        if not isinstance(labels, Series):
-            labels = Series(labels)
-
-        can_visualize = True
-
-        if p_value < 0:
-            raise ValueError("The p-value must be a positive number.")
-        if coverage_threshold < 0 or coverage_threshold > 1:
-            raise ValueError("The coverage threshold must be between 0 and 1.")
-        if max_explanation_length < 1:
-            raise ValueError("The maximum explanation length must be at least 1.")
-        if separation_threshold < 0 or separation_threshold > 1:
-            raise ValueError("The separation threshold must be between 0 and 1.")
-        if use_pca_for_visualization and pca_components > 3:
-            raise ValueError("The number of PCA components must be at most 3. We do not support 4D or higher plots.")
-        if not use_pca_for_visualization and self.shape[1] > 3:
-            warnings.warn("The dataframe is too high dimensional to visualize. We recommend using PCA for visualization.")
-            can_visualize = False
-
-        conciseness_threshold = 1 / max_explanation_length
-
-        # If the user did not specify a p-value, we set it to max_explanation_length, aka the inverse of the conciseness threshold.
-        if p_value == 0:
-            p_value = max_explanation_length
-
-        # Converting the dataframe to a normal dataframe, as the explainer does not use any of the extra attributes of
-        # ExpDataFrame, thus we can avoid the additional overhead of using an ExpDataFrame.
-        as_normal_df = DataFrame(self)
-
-        explainer = Explainer(as_normal_df, labels)
-        explanations = explainer.generate_explanations(coverage_threshold=coverage_threshold,
-                                                       conciseness_threshold=conciseness_threshold,
-                                                       separation_threshold=separation_threshold, p_value=p_value)
-
-        # Since most dataframes are too high dimensional to visualize, we use PCA to reduce the dimensionality.
-        # The user can choose to use PCA for visualization or not.
-        if use_pca_for_visualization:
-            pca = PCA(n_components=pca_components)
-            to_visualize = pca.fit_transform(as_normal_df)
-        else:
-            to_visualize = as_normal_df
-
-        # Apply the rules to the data to get the indices of the data points that are explained by each rule.
-        applied_rules = DataFrame(columns=['Rule', 'Cluster', 'Explanation', 'Idx', 'Human Readable Rule'])
-        for explanation in explanations.iterrows():
-            # The explanation is a tuple, where the first element is the index and the second element is the explanation.
-            idx = explanation[0]
-            explanation = explanation[1]
-            rule = str_rule_to_list(explanation['rule'])
-            rule_as_binary_np_array = condition_generator(data=self, rules=[rule])
-            human_readable_rule = rule_to_human_readable(rule)
-            cluster = explanation['Cluster']
-            applied_rules = pd.concat([applied_rules, DataFrame({'Rule': [rule_as_binary_np_array], 'Cluster': cluster,
-                                                                 'Explanation': explanation['rule'], 'Idx': idx,
-                                                                 'Human Readable Rule': human_readable_rule})])
-
-        if can_visualize:
-            self._visualize_many_to_one_explanations(to_visualize, explanations, applied_rules, cluster_labels=labels)
-
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
                 dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
-                consider='right', value=None, attr=None, ignore=[]):
+                consider='right', value=None, attr=None, ignore=[],
+                labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 5,
+                separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
+                pca_components: Literal[2, 3] = 2, mode:Literal['conjunctive', 'disjunctive'] ='conjunctive'):
         """
         Generate explanation to series base on the operation lead to this series result
         :param schema: result columns, can change columns name and ignored columns
@@ -1014,30 +817,24 @@ class ExpDataFrame(pd.DataFrame):
         :param figs_in_row: number of explanations figs in one row
         :param show_scores: show scores on explanation
         :param title: explanation title
-
+        :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'outlier'. Note that
+        'outlier' is only supported for series, not for dataframes.
+        :param corr_TH: correlation threshold
+        :param target: target value for the outlier explainer
+        :param dir: direction for the outlier explainer. Can be either 'high' or 'low'.
+        :param consider: which side of a join to consider for the explanation. Can be either 'left' or 'right'.
+        :param labels: cluster / group labels for the many to one explainer
+        :param coverage_threshold: minimum coverage threshold for the many to one explainer
+        :param max_explanation_length: maximum explanation length for the many to one explainer
+        :param separation_threshold: maximum separation threshold for the many to one explainer
+        :param p_value: p-value for the many to one explainer. p-value is related to the explanation length.
+        :param use_pca_for_visualization: whether to use PCA for visualization in the many to one explainer. Leave on
+        if your data has more than 3 dimensions.
+        :param pca_components: number of PCA components to use for visualization in the many to one explainer. Can be 2 or 3.
+        :param mode: mode of the explanation of the many to one explainer. Can be either 'conjunctive' or 'disjunctive'.
 
         :return: explanation figures
         """
-        if attributes is None:
-            attributes = []
-            if top_k is None:
-                top_k = 1
-        else:
-            if top_k is None:
-                top_k = len(attributes)
-
-        if schema is None:
-            schema = {}
-        if self.operation is None:
-            print('no operation was found.')
-            return
-
-        # Convert the source and result dataframe to normal dataframes.
-        # This is done because the explainer does not need the extra attributes of the ExpDataFrame, which are used for
-        # the user facing API to allow them easy use of the explainers. This helps avoid extra overhead from ExpDataFrame
-        # as well as potential bugs from the way the overridden methods and the explainers interact.
-        self.operation.source_df = DataFrame(self.operation.source_df)
-        self.operation.result_df = DataFrame(self.operation.result_df)
 
         # Ensure that the user does not get a non-informative error message if they try to use the outlier explainer.
         # Without this line, the user gets an AttributeError 'str' object has no attribute 'items',
@@ -1045,8 +842,22 @@ class ExpDataFrame(pd.DataFrame):
         if str.lower(explainer) == 'outlier':
             raise ValueError("Outlier explainer is not supported for multi-attribute dataframes, only for series.")
 
-        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, figs_in_row=figs_in_row,
-                                      show_scores=show_scores, title=title, corr_TH=corr_TH, explainer=explainer,
-                                      consider=consider, cont=value, attr=attr, ignore=ignore)
+        factory = ExplainerFactory()
+        explainer = factory.create_explainer(explainer, operation=self.operation,
+                                             schema=schema, attributes=attributes, top_k=top_k, figs_in_row=figs_in_row,
+                                             show_scores=show_scores, title=title, corr_TH=corr_TH,
+                                             consider=consider, cont=value, attr=attr, ignore=ignore,
+                                             labels=labels, coverage_threshold=coverage_threshold,
+                                             max_explanation_length=max_explanation_length,
+                                             separation_threshold=separation_threshold, p_value=p_value,
+                                             use_pca_for_visualization=use_pca_for_visualization,
+                                             pca_components=pca_components,
+                                             target=target, dir=dir,
+                                             source_df=self, mode=mode
+                                             )
+        explanation = explainer.generate_explanation()
 
+        if explainer.can_visualize():
+            return explainer.visualize()
 
+        return explanation

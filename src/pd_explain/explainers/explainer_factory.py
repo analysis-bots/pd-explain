@@ -9,9 +9,6 @@ class ExplainerFactory:
     A singleton class.
     """
 
-    def __init__(self):
-        pass
-
     def create_explainer(self, explainer, *args, **kwargs):
         """
         Create an explainer object based on the requested explainer.
@@ -22,7 +19,7 @@ class ExplainerFactory:
         """
         if explainer == "fedex":
             return FedexExplainer(*args, **kwargs)
-        elif explainer == "many_to_one":
+        elif explainer.replace("_", " ") == "many to one":
             return ManyToOneExplainer(*args, **kwargs)
         else:
             raise ValueError(f"Explainer {explainer} not supported.")

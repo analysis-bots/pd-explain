@@ -43,7 +43,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.aggregate(func, engine, engine_kwargs, kwargs)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict=func,
@@ -108,7 +108,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
             if hasattr(self, 'original'):
                 original_result = self.original.count()
-                original_result.operation = GroupBy(source_df=None,
+                original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                     source_scheme={},
                                                     group_attributes=self.group_attributes,
                                                     agg_dict={agg_attr: ['count']},
@@ -150,7 +150,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
             if hasattr(self, 'original'):
                 original_result = self.original.mean(numeric_only, engine, engine_kwargs)
-                original_result.operation = GroupBy(source_df=None,
+                original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                     source_scheme={},
                                                     group_attributes=self.group_attributes,
                                                     agg_dict='mean',
@@ -180,7 +180,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
             if hasattr(self, 'original'):
                 original_result = self.original.median(numeric_only)
-                original_result.operation = GroupBy(source_df=None,
+                original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                     source_scheme={},
                                                     group_attributes=self.group_attributes,
                                                     agg_dict='median',
@@ -222,7 +222,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.std(ddof, engine, engine_kwargs)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict='std',
@@ -262,7 +262,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.var(ddof, engine, engine_kwargs)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict='var',
@@ -287,7 +287,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.sem(ddof)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict='sem',
@@ -310,7 +310,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.size()
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict='size',
@@ -353,7 +353,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.sum(numeric_only, min_count, engine, engine_kwargs)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict='sum',
@@ -380,7 +380,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.prod(numeric_only, min_count)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict='prod',
@@ -407,7 +407,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.min(numeric_only, min_count)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict='min',
@@ -439,7 +439,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.max(numeric_only, min_count)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict='max',

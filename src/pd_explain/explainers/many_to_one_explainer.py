@@ -17,18 +17,28 @@ class ManyToOneExplainer(ExplainerInterface):
     def __init__(self, source_df: DataFrame, labels: Series | str | list[int], coverage_threshold: float = 0.6,
                  max_explanation_length: int = 5, separation_threshold: float = 0.5, p_value: int = 0,
                  use_pca_for_visualization: bool = True, pca_components: Literal[2, 3] = 2,
-                 mode: Literal['conjunctive','disjunctive'] = 'conjunctive',
+                 explanation_form: Literal['conjunctive', 'disjunctive'] = 'conjunctive',
+                 select_columns=None, operation=None,
                  *args, **kwargs):
 
         # Convert the source_df to a DataFrame object, to avoid overhead from overridden methods in ExpDataFrame,
         # as well as to avoid any bad interactions between those methods and the explainer.
-        self._source_df = DataFrame(source_df)
+        if type(source_df) != DataFrame:
+            self._source_df = DataFrame(source_df)
 
-        if isinstance(labels, str):
+        if select_columns is not None and len(select_columns) > 0:
+            source_df = source_df[select_columns]
+
+        if labels is None:
+            self._source_df, self._labels = self._create_groupby_labels(operation)
+        # If the labels are a string, we assume that the string is the name of the column that contains the labels.
+        elif isinstance(labels, str):
             self._labels = source_df[labels]
             self._source_df = self._source_df.drop(labels, axis=1, inplace=False)
+        # If the labels are a list of integers, we simply convert them to a Series object.
         elif not isinstance(labels, Series):
             self._labels = Series(labels)
+        # If the labels are already a Series object, we simply use them as they are.
         else:
             self._labels = labels
 
@@ -62,10 +72,43 @@ class ManyToOneExplainer(ExplainerInterface):
         self._use_pca_for_visualization = use_pca_for_visualization
         self._pca_components = pca_components
         self._explanations = None
-        self._mode = mode
+        self.explanation_form = explanation_form
         self._explainer = None
         self._ran_explainer = False
 
+    def _create_groupby_labels(self, operation) -> (DataFrame, Series):
+        """
+        Create labels for the many-to-one explainer based on the last operation performed on the DataFrame.
+        If the last operation is a groupby operation, the labels are the groups created by the groupby operation.
+        Otherwise, the user must provide labels.
+
+        :param operation: The last operation performed on the DataFrame.
+        :return: The source DataFrame from the operation and the labels.
+        We return the source dataframe as well, because the source dataframe from the operation is prior to the
+        groupby operation, and that is what interests us.
+        """
+        if not "GroupBy" in operation.__repr__():
+            raise ValueError(
+                "If the last operation performed on the DataFrame is not a groupby operation, you must provide labels.")
+        else:
+            # Get the groupby attributes and the index values of the resulting DataFrame.
+            group_attributes = operation.result_df.index.names
+            index_values = operation.result_df.index.values
+            source_df = DataFrame(operation.source_df)
+            # Create an array of all -1 values, the length of the original DataFrame, as a placeholder for the labels.
+            labels = np.full(source_df.shape[0], -1, dtype='O')
+            # Go over the index values and assign the group labels to the corresponding rows in the source DataFrame.
+            source_group_attributes_only = source_df[group_attributes]
+            for i, group in enumerate(index_values):
+                group_indices = source_group_attributes_only.index[
+                    source_group_attributes_only[group_attributes].eq(group).all(axis=1)].values
+                labels[group_indices] = str(group)
+
+            # We drop the groupby attributes from the source dataframe, as otherwise, the explainer will return
+            # an explanation saying the best rule is "groupby_attribute == group", which is not very informative.
+            source_df = source_df.drop(group_attributes, axis=1, inplace=False)
+
+            return source_df, Series(labels)
 
     def create_mapping(self) -> dict:
         """
@@ -148,15 +191,19 @@ class ManyToOneExplainer(ExplainerInterface):
         out = Output()
         with out:
             fig, ax = self._plot_clusters(to_visualize, cluster_labels)
-            ax.legend(loc='upper right')
+            if len(cluster_labels.unique()) > 7:
+                ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+            else:
+                ax.legend(loc='upper right')
+            ax.set_title("All Clusters")
             plt.show(fig)
 
         general_tab = Tab()
         metric_explanations_html = HTMLMath(f"""
                     <h2>Explanation quality metrics</h2>
                     <h4>Conciseness</h4>
-                    <p>Conciseness is a measure of how concise the explanation is. It is calculated as the inverse of the number of 
-                    conditions in the rule.
+                    <p>Conciseness is a measure of how concise the explanation is.<br>
+                    It is calculated as the inverse of the number of conditions in the rule.
                     A rule with fewer conditions is considered more concise and thus better.
                     </p>
                     <h4>Separation error</h4>
@@ -218,7 +265,10 @@ class ManyToOneExplainer(ExplainerInterface):
                 ax.scatter(explained_data_points[:, 0], explained_data_points[:, 1], marker='X', c='black',
                            label='Covered by rule')
                 # Add a legend with cluster labels + "X" for the explained data points.
-                ax.legend(loc='upper right')
+                if len(self._labels.unique()) > 7:
+                    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+                else:
+                    ax.legend(loc='upper right')
                 plt.show(fig)
 
             human_readable_rule = rule_row['Human Readable Rule']
@@ -229,9 +279,9 @@ class ManyToOneExplainer(ExplainerInterface):
             if "OR" in human_readable_rule:
                 human_readable_rule = human_readable_rule.replace("OR", "OR<br>@@@")
             human_readable_rule_split = human_readable_rule.split("@@@")
-            human_readable_rule_split = [" ".join(textwrap.wrap(line, width=42)) for line in human_readable_rule_split]
+            human_readable_rule_split = ["<br>".join(textwrap.wrap(line, width=40)) for line in
+                                         human_readable_rule_split]
             human_readable_rule = "".join(human_readable_rule_split)
-
 
             text_vbox.children = [HTML(f"""
                         <h2>Rule:<br> {human_readable_rule}</h2><hr width='100%' size='2'>
@@ -251,7 +301,8 @@ class ManyToOneExplainer(ExplainerInterface):
 
         return cluster_tab
 
-    def _map_categorical_features_to_one_hot_encoded_df(self, categorical_features: List[str], one_hot_encoded_df: DataFrame) -> dict:
+    def _map_categorical_features_to_one_hot_encoded_df(self, categorical_features: List[str],
+                                                        one_hot_encoded_df: DataFrame) -> dict:
         """
         Maps the categorical features, after one-hot encoding, to the original dataframe, so that
         we can display the categorical features with their original names in the visualizations.
@@ -269,8 +320,6 @@ class ManyToOneExplainer(ExplainerInterface):
                     mapping[column] = feature
         return mapping
 
-
-
     def visualize(self):
 
         if not self._ran_explainer:
@@ -282,10 +331,10 @@ class ManyToOneExplainer(ExplainerInterface):
         self._source_df = self._explainer.df
         # We map the one-hot encoded features to the original categorical features, so that we can display them in the visualizations.
         if categorical_features:
-            categorical_mapping = self._map_categorical_features_to_one_hot_encoded_df(categorical_features, self._source_df)
+            categorical_mapping = self._map_categorical_features_to_one_hot_encoded_df(categorical_features,
+                                                                                       self._source_df)
         else:
             categorical_mapping = {}
-
 
         # Since most dataframes are too high dimensional to visualize, we use PCA to reduce the dimensionality.
         # The user can choose to use PCA for visualization or not.
@@ -310,7 +359,6 @@ class ManyToOneExplainer(ExplainerInterface):
             except ValueError:
                 cluster_titles.append(f"{cluster}")
 
-
         # Create the outer tab that contains all the cluster tabs.
         cluster_tabs = Tab()
         # Add the first, general tab that contains the plot of all clusters and the explanation of the metrics.
@@ -333,10 +381,10 @@ class ManyToOneExplainer(ExplainerInterface):
         # Create the explainer object and generate the explanations.
         self._explainer = Explainer(self._source_df, self._labels)
         self._explanations = self._explainer.generate_explanations(coverage_threshold=self._coverage_threshold,
-                                                             conciseness_threshold=self._conciseness_threshold,
-                                                             separation_threshold=self._separation_threshold,
-                                                             p_value=self._p_value,
-                                                             mode=self._mode)
+                                                                   conciseness_threshold=self._conciseness_threshold,
+                                                                   separation_threshold=self._separation_threshold,
+                                                                   p_value=self._p_value,
+                                                                   mode=self.explanation_form)
 
         # Reverse the mapping, if a mapping was created.
         if self._mapping:

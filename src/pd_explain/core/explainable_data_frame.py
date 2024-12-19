@@ -34,7 +34,7 @@ from typing import (
     Union,
     List, Callable, Literal, )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
-from pd_explain.explainers.explainer_factory import ExplainerFactory
+from pd_explain.explainers import ExplainerFactory
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
@@ -808,7 +808,9 @@ class ExpDataFrame(pd.DataFrame):
                 consider='right', value=None, attr=None, ignore=[],
                 labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 5,
                 separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
-                pca_components: Literal[2, 3] = 2, mode:Literal['conjunctive', 'disjunctive'] ='conjunctive'):
+                pca_components: Literal[2, 3] = 2,
+                explanation_form: Literal['conjunctive', 'disjunctive'] = 'conjunctive',
+                select_columns: List[str] = None):
         """
         Generate explanation to series base on the operation lead to this series result
         :param schema: result columns, can change columns name and ignored columns
@@ -823,7 +825,10 @@ class ExpDataFrame(pd.DataFrame):
         :param target: target value for the outlier explainer
         :param dir: direction for the outlier explainer. Can be either 'high' or 'low'.
         :param consider: which side of a join to consider for the explanation. Can be either 'left' or 'right'.
-        :param labels: cluster / group labels for the many to one explainer
+        :param labels: cluster / group labels for the many to one explainer. Can either be a series or a column name.
+        If a column name is provided, the column must be present in the dataframe.
+        If you wish to explain the groups of a groupby operation, leave this parameter as None (so long as the last
+        operation was a groupby operation).
         :param coverage_threshold: minimum coverage threshold for the many to one explainer
         :param max_explanation_length: maximum explanation length for the many to one explainer
         :param separation_threshold: maximum separation threshold for the many to one explainer
@@ -831,7 +836,8 @@ class ExpDataFrame(pd.DataFrame):
         :param use_pca_for_visualization: whether to use PCA for visualization in the many to one explainer. Leave on
         if your data has more than 3 dimensions.
         :param pca_components: number of PCA components to use for visualization in the many to one explainer. Can be 2 or 3.
-        :param mode: mode of the explanation of the many to one explainer. Can be either 'conjunctive' or 'disjunctive'.
+        :param explanation_form: mode of the explanation of the many to one explainer. Can be either 'conjunctive' or 'disjunctive'.
+        :param select_columns: List of columns to consider in the many to one explainer. If None, all columns are considered.
 
         :return: explanation figures
         """
@@ -843,7 +849,7 @@ class ExpDataFrame(pd.DataFrame):
             raise ValueError("Outlier explainer is not supported for multi-attribute dataframes, only for series.")
 
         factory = ExplainerFactory()
-        explainer = factory.create_explainer(explainer, operation=self.operation,
+        explainer = factory.create_explainer(explainer=explainer, operation=self.operation,
                                              schema=schema, attributes=attributes, top_k=top_k, figs_in_row=figs_in_row,
                                              show_scores=show_scores, title=title, corr_TH=corr_TH,
                                              consider=consider, cont=value, attr=attr, ignore=ignore,
@@ -853,7 +859,8 @@ class ExpDataFrame(pd.DataFrame):
                                              use_pca_for_visualization=use_pca_for_visualization,
                                              pca_components=pca_components,
                                              target=target, dir=dir,
-                                             source_df=self, mode=mode
+                                             source_df=self, mode=explanation_form,
+                                             select_columns=select_columns
                                              )
         explanation = explainer.generate_explanation()
 

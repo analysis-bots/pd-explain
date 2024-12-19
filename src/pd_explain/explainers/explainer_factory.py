@@ -17,8 +17,8 @@ class ExplainerFactory:
         :param kwargs: The arguments to pass to the explainer.
         :return: The explainer object.
         """
-        if explainer == "fedex":
-            return FedexExplainer(*args, **kwargs)
+        if explainer == "fedex" or explainer == 'outlier' or explainer == 'shapley':
+            return FedexExplainer(explainer=explainer,*args, **kwargs)
         elif explainer.replace("_", " ") == "many to one":
             return ManyToOneExplainer(*args, **kwargs)
         else:

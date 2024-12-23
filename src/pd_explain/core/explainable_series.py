@@ -3,10 +3,12 @@ from __future__ import annotations
 from typing import List, Literal
 
 import pandas as pd
+from pandas import DataFrame
 from pandas._typing import Dtype
 import matplotlib.pyplot as plt
 from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
+from pd_explain.explainers import ExplainerFactory
 
 import numpy as np
 
@@ -87,7 +89,7 @@ class ExpSeries(pd.Series):
 
         :return: A Explain DataFrame of the two merged objects with join operation filed.
         """
-        from pd_explain.explainable_data_frame import ExpDataFrame
+        from pd_explain.core.explainable_data_frame import ExpDataFrame
         try:
             left_name = utils.get_calling_params_name(self)
             right_name = utils.get_calling_params_name(other)
@@ -172,7 +174,13 @@ class ExpSeries(pd.Series):
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1, figs_in_row: int = 2,
                 explainer='fedex',
                 target=None, dir: Literal["high", "low", 1, -1]=None, control=None, hold_out=[],
-                show_scores: bool = False, title: str = None):
+                show_scores: bool = False, title: str = None,
+                labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 5,
+                separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
+                visualization_dims: Literal[2, 3] = 2,
+                explanation_form: Literal['conjunctive', 'disjunctive'] = 'conjunctive',
+                select_columns: List[str] = None
+                ):
         """
         Generate explanation to series base on the operation lead to this series result
 
@@ -189,22 +197,24 @@ class ExpSeries(pd.Series):
 
         :return: explanation figures
         """
-        if explainer == 'outlier':
-            if dir is None:
-                raise ValueError('dir must be provided for outlier explanation')
-            if dir not in ['high', 'low', 1, -1]:
-                raise ValueError('dir must be either high or low or the corresponding integer values 1 and -1')
-            if target is None:
-                raise ValueError('target value must be provided for outlier explanation')
 
-        if attributes is None:
-            attributes = []
+        factory = ExplainerFactory()
+        explainer = factory.create_explainer(
+            schema=schema, attributes=attributes, top_k=top_k, explainer=explainer,
+            target=target, dir=dir, control=control, hold_out=hold_out,
+            figs_in_row=figs_in_row, show_scores=show_scores, title=title,
+            operation=self.operation, source_df=self,
+            labels=labels, coverage_threshold=coverage_threshold,
+            max_explanation_length=max_explanation_length,
+            separation_threshold=separation_threshold, p_value=p_value,
+            use_pca_for_visualization=use_pca_for_visualization,
+            pca_components=visualization_dims,
+            explanation_form=explanation_form, select_columns=select_columns
+        )
 
-        if schema is None:
-            schema = {}
-        if self.operation is None:
-            print('no operation was found.')
-            return
-        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, explainer=explainer,
-                                      target=target, dir=dir, control=control, hold_out=hold_out,
-                                      figs_in_row=figs_in_row, show_scores=show_scores, title=title)
+        explanation = explainer.generate_explanation()
+
+        if explainer.can_visualize():
+            return explainer.visualize()
+
+        return explanation

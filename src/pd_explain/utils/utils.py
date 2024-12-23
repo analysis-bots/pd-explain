@@ -1,6 +1,6 @@
 import pandas as pd
 
-from pd_explain.explainable_data_frame import ExpDataFrame
+from pd_explain.core.explainable_data_frame import ExpDataFrame
 
 """
 Utils functions and configs

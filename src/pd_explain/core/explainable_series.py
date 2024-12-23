@@ -177,7 +177,7 @@ class ExpSeries(pd.Series):
                 show_scores: bool = False, title: str = None,
                 labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 5,
                 separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
-                pca_components: Literal[2, 3] = 2,
+                visualization_dims: Literal[2, 3] = 2,
                 explanation_form: Literal['conjunctive', 'disjunctive'] = 'conjunctive',
                 select_columns: List[str] = None
                 ):
@@ -208,7 +208,7 @@ class ExpSeries(pd.Series):
             max_explanation_length=max_explanation_length,
             separation_threshold=separation_threshold, p_value=p_value,
             use_pca_for_visualization=use_pca_for_visualization,
-            pca_components=pca_components,
+            pca_components=visualization_dims,
             explanation_form=explanation_form, select_columns=select_columns
         )
 

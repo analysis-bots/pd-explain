@@ -808,7 +808,7 @@ class ExpDataFrame(pd.DataFrame):
                 consider='right', value=None, attr=None, ignore=[],
                 labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 5,
                 separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
-                pca_components: Literal[2, 3] = 2,
+                visualization_dims: Literal[2, 3] = 2,
                 explanation_form: Literal['conjunctive', 'disjunctive'] = 'conjunctive',
                 select_columns: List[str] = None):
         """
@@ -835,7 +835,7 @@ class ExpDataFrame(pd.DataFrame):
         :param p_value: p-value for the many to one explainer. p-value is related to the explanation length.
         :param use_pca_for_visualization: whether to use PCA for visualization in the many to one explainer. Leave on
         if your data has more than 3 dimensions.
-        :param pca_components: number of PCA components to use for visualization in the many to one explainer. Can be 2 or 3.
+        :param visualization_dims: number of PCA components to use for visualization in the many to one explainer. Can be 2 or 3.
         :param explanation_form: mode of the explanation of the many to one explainer. Can be either 'conjunctive' or 'disjunctive'.
         :param select_columns: List of columns to consider in the many to one explainer. If None, all columns are considered.
 
@@ -857,7 +857,7 @@ class ExpDataFrame(pd.DataFrame):
                                              max_explanation_length=max_explanation_length,
                                              separation_threshold=separation_threshold, p_value=p_value,
                                              use_pca_for_visualization=use_pca_for_visualization,
-                                             pca_components=pca_components,
+                                             pca_components=visualization_dims,
                                              target=target, dir=dir,
                                              source_df=self, mode=explanation_form,
                                              select_columns=select_columns

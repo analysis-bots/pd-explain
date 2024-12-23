@@ -11,6 +11,8 @@ import numpy as np
 from ipywidgets import Tab, HTML, HTMLMath, Output, VBox, HBox, Box, Layout
 import textwrap
 
+MAX_LABELS = 10
+
 
 class ManyToOneExplainer(ExplainerInterface):
 
@@ -24,10 +26,18 @@ class ManyToOneExplainer(ExplainerInterface):
         # Convert the source_df to a DataFrame object, to avoid overhead from overridden methods in ExpDataFrame,
         # as well as to avoid any bad interactions between those methods and the explainer.
         if type(source_df) != DataFrame:
-            self._source_df = DataFrame(source_df)
+            source_df = DataFrame(source_df)
 
         if select_columns is not None and len(select_columns) > 0:
+            if isinstance(select_columns, str):
+                select_columns = [select_columns]
+            # If the labels are in the dataframe, we add them to the columns to select, to not remove them.
+            # They will be removed later, but removing them now would cause an error.
+            if isinstance(labels, str) and labels not in select_columns:
+                select_columns.append(labels)
             source_df = source_df[select_columns]
+
+        self._source_df = source_df
 
         if labels is None:
             self._source_df, self._labels = self._create_groupby_labels(operation)
@@ -191,7 +201,7 @@ class ManyToOneExplainer(ExplainerInterface):
         out = Output()
         with out:
             fig, ax = self._plot_clusters(to_visualize, cluster_labels)
-            if len(cluster_labels.unique()) > 7:
+            if len(cluster_labels.unique()) > MAX_LABELS:
                 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
             else:
                 ax.legend(loc='upper right')
@@ -252,12 +262,12 @@ class ManyToOneExplainer(ExplainerInterface):
             rule_row = rule[1]
             idx = rule_row['Idx']
             rule = rule_row['Rule']
-            explanation_row = self._explanations.iloc[idx]
+            explanation_row = self._explanations.loc[idx]
 
             # Get the data points that are explained by the rule.
             explained_data_points = to_visualize[rule]
 
-            out = Output()
+            out = Output(layout=Layout(width='100%'))
 
             # Visualize all the data, then add an "X" marker for the data points that are explained by the rule.
             with out:
@@ -265,7 +275,7 @@ class ManyToOneExplainer(ExplainerInterface):
                 ax.scatter(explained_data_points[:, 0], explained_data_points[:, 1], marker='X', c='black',
                            label='Covered by rule')
                 # Add a legend with cluster labels + "X" for the explained data points.
-                if len(self._labels.unique()) > 7:
+                if len(self._labels.unique()) > MAX_LABELS:
                     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
                 else:
                     ax.legend(loc='upper right')

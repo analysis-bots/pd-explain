@@ -14,3 +14,6 @@ class Query:
             return self.attribute == other.attribute and self.operation == other.operation and self.value == other.value
         if isinstance(other, str):
             return str(self) == other or self.__repr__() == other
+
+    def __str__(self):
+        return self.__repr__()

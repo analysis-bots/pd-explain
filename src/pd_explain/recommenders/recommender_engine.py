@@ -4,6 +4,8 @@ import inspect
 from pathlib import Path
 
 from pandas import DataFrame
+from ipywidgets import Tab, HTML
+from IPython.display import display
 
 from pd_explain.recommenders.recommender_base import RecommenderBase
 from pd_explain.recommenders.utils.consts import PACKAGE_NAME
@@ -128,17 +130,36 @@ class RecommenderEngine:
         for recommender_name in recommender_names:
             self._enable_recommender(recommender_name)
 
-    def recommend(self) -> List:
+    def recommend(self) -> Tab:
         """
         Recommend a list of items.
 
         :return: A list of recommendations.
         """
+        recommendations_tab = Tab()
         recommendations = []
         for recommender in self._recommenders:
             if recommender.name in self.enabled_recommenders:
-                recommendations.extend(recommender.recommend())
-        return recommendations
+                recommendations.append(recommender.recommend(self._df))
+
+        recommendations_tab.children = recommendations
+        for i, recommender in enumerate(self.enabled_recommenders):
+            title = recommender.replace("Recommender", "").replace("recommender", "") + " Recommendations"
+            recommendations_tab.set_title(i, title)
+
+        # This is a hack, to make it so that tabs use a flex layout and don't cut off long titles.
+        display(
+            HTML(
+                """
+        <style>
+        .jupyter-widgets.widget-tab > .p-TabBar .p-TabBar-tab {
+            flex: 0 1 auto
+        }
+        </style>
+        """
+            )
+        )
+        return recommendations_tab
 
 # Example usage
 if __name__ == "__main__":

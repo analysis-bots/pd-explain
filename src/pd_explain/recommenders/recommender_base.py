@@ -2,8 +2,10 @@ from abc import ABC, abstractmethod
 from typing import List, Dict
 
 import numpy as np
-from ipywidgets import Tab
+from ipywidgets import Tab, HTML
+from IPython.display import display
 from pandas import DataFrame, Series
+from pd_explain.recommenders.utils.data_classes import Query
 
 
 class RecommenderBase(ABC):
@@ -35,24 +37,37 @@ class RecommenderBase(ABC):
             # Condense the scores to a single array per attribute
             scores = self._condense_scores(scores)
             # Get the top-k skyline attributes
-            attributes = self.top_k_skyline(scores, top_k_attributes)
+            attributes = self.top_k_skyline(scores=scores, top_k=top_k_attributes)
 
         # Get the queries for each attribute
-        queries = self._create_queries_internal(data, attributes)
+        queries = self._create_queries_internal(data=data, attributes=attributes)
 
         # If the data is too large, we want to avoid computing scores on possibly many queries on the entire data.
         # Therefore, we sample the data instead.
         sampled_data = self.sample_data(data)
 
         # Score each query
-        query_scores = self._compute_query_scores_internal(sampled_data, attributes, queries, top_k_explanations)
+        query_scores = self._compute_query_scores_internal(data=sampled_data, attributes=attributes,
+                                                           queries=queries, top_k=top_k_explanations)
 
         # Take the top-k recommendations for each attribute
         for attribute in attributes:
             query_scores[attribute] = query_scores[attribute][:top_k_recommendations]
             queries[attribute] = [query for query in queries[attribute] if query in query_scores[attribute].index.tolist()]
 
-        return self._create_tab_internal(data, attributes, queries, query_scores)
+        display(
+            HTML(
+                """
+        <style>
+        .jupyter-widgets.widget-tab > .p-TabBar .p-TabBar-tab {
+            flex: 0 1 auto
+        }
+        </style>
+        """
+            )
+        )
+
+        return self._create_tab_internal(data=data, attributes=attributes, queries=queries, top_k_explanations=top_k_explanations)
 
 
 
@@ -147,14 +162,15 @@ class RecommenderBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def _create_tab_internal(self, data: DataFrame, attributes: List[str], queries: Dict[str, List[str]], query_scores: Dict[str, Series]) -> Tab:
+    def _create_tab_internal(self, data: DataFrame, attributes: List[str],
+                             queries: Dict[str, List], top_k_explanations: int) -> Tab:
         """
         Create the tab with the recommendations.
 
         :param data: The data to recommend queries for.
         :param attributes: The attributes to recommend queries for.
         :param queries: The queries to recommend.
-        :param query_scores: The scores for the queries.
+        :param top_k_explanations: The number of top-k explanations to consider.
 
         :return: The tab with the recommendations.
         """

@@ -4,6 +4,8 @@ import numpy as np
 from ipywidgets import Tab
 from pandas import DataFrame, Series
 import pandas as pd
+from ipywidgets import Output
+import matplotlib.pyplot as plt
 
 from pd_explain.recommenders.utils import consts
 from pd_explain.recommenders.utils.data_classes import Query
@@ -39,9 +41,42 @@ class FilterRecommender(RecommenderBase):
             query_scores[attribute] = query_scores[attribute].sort_values(ascending=False)
         return query_scores
 
-    def _create_tab_internal(self, data: DataFrame, attributes: List[str], queries: Dict[str, List[str]],
-                             query_scores: Dict[str, np.ndarray]) -> Tab:
-        pass
+    def _create_tab_internal(self, data: DataFrame, attributes: List[str],
+                             queries: Dict[str, List[Query]], top_k_explanations: int) -> Tab:
+        # Create the external tab that will contain all the query sub-tabs
+        tab = Tab()
+        children = []
+        for attribute in attributes:
+            # Create a sub-tab for each attribute
+            queries_tab = Tab()
+            queries_tab_children = []
+            queries_tab_titles = []
+            # Create the explanation plot for each query
+            for query in queries[attribute]:
+                filtered_data = Filter(source_df=data, source_scheme={}, attribute=attribute,
+                                       operation_str=query.operation, value=query.value)
+                out = Output()
+
+
+                with out:
+                    fig = filtered_data.explain(top_k=top_k_explanations)
+                    plt.show(fig)
+
+                queries_tab_children.append(out)
+                queries_tab_titles.append(str(query))
+
+            # Add the children to the tab, and set the titles
+            queries_tab.children = queries_tab_children
+            for i, title in enumerate(queries_tab_titles):
+                queries_tab.set_title(i, title)
+            children.append(queries_tab)
+
+        # Add the children to the external tab
+        tab.children = children
+        for i, attribute in enumerate(attributes):
+            tab.set_title(i, attribute)
+        return tab
+
 
     def __init__(self):
         super().__init__()

@@ -4,10 +4,11 @@ import pandas as pd
 from pandas import DataFrame
 from abc import ABC, abstractmethod
 
-MIN_NUM_UNIQUE_VALUES = 6
-
 
 class AttributeInterestingnessAnalyzerBase(ABC):
+
+    def __init__(self):
+        self._should_refresh_internals = True
 
     def strings_to_numbers(self, data: DataFrame) -> DataFrame:
         """
@@ -17,6 +18,7 @@ class AttributeInterestingnessAnalyzerBase(ABC):
 
         :return: The data with all string columns converted to numbers.
         """
+        data = data.copy()
         for column in data.columns:
             if data[column].dtype == 'object':
                 data[column] = pd.Categorical(data[column])
@@ -33,6 +35,7 @@ class AttributeInterestingnessAnalyzerBase(ABC):
 
         :return: A dictionary with the interestingness of each attribute, sorted in descending order.
         """
+        self._should_refresh_internals = True
         data = self.strings_to_numbers(data)
         interestingness = {}
         for column in data.columns:
@@ -40,20 +43,6 @@ class AttributeInterestingnessAnalyzerBase(ABC):
         interestingness = dict(sorted(interestingness.items(), key=lambda item: item[1], reverse=True))
         return interestingness
 
-    def is_numeric(self, data: DataFrame, column: str) -> bool:
-        """
-        Check if a column is numeric.
-
-        :param data: The data.
-        :param column: The column to check.
-
-        :return: True if the column is numeric, False otherwise.
-        """
-        unique_values = data[column].unique()
-        # If the column has less than 6 unique values, even if it is numeric, we consider it categorical.
-        if len(unique_values) <= MIN_NUM_UNIQUE_VALUES:
-            return False
-        return data[column].dtype in ['int64', 'float64', 'int32', 'float32']
 
     @abstractmethod
     def _calculate_interestingness(self, data, column) -> float:

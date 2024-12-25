@@ -1,19 +1,30 @@
 from pd_explain.recommenders.analyzers.attribute_interestingness_analyzer_base import AttributeInterestingnessAnalyzerBase
 import pandas as pd
+from pd_explain.recommenders.utils.util_funcs import is_numeric
 
 class CorrelationBasedAttributeInterestingnessAnalyzer(AttributeInterestingnessAnalyzerBase):
+
+    def __init__(self):
+        super().__init__()
+        self._corr_matrix_pearson = None
+        self._corr_matrix_spearman = None
 
     def _calculate_interestingness(self, data, column) -> float:
         """
         Calculate how interesting an attribute is based on its correlation with other attributes.
         An attribute is more interesting if it is highly correlated with many other attributes.
         """
-        if self.is_numeric(data, column):
+        if self._should_refresh_internals:
+            self._corr_matrix_pearson = data.corr(method='pearson')
+            self._corr_matrix_spearman = data.corr(method='spearman')
+            self._should_refresh_internals = False
+
+        if is_numeric(data, column):
             # If the data is numeric, we use pearson correlation.
-            corr = data.corr(method='pearson')[column].abs()
+            corr = self._corr_matrix_pearson[column].abs()
         else:
             # If the data is not numeric, we use spearman correlation
-            corr = data.corr(method='spearman')[column].abs()
+            corr = self._corr_matrix_spearman[column].abs()
 
         # Drop the correlation with the attribute itself, as it will always be 1.
         corr = corr.drop(column)

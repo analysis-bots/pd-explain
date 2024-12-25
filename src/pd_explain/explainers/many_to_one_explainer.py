@@ -9,6 +9,7 @@ from sklearn.decomposition import PCA
 from matplotlib import pyplot as plt
 import numpy as np
 from ipywidgets import Tab, HTML, HTMLMath, Output, VBox, HBox, Box, Layout
+from IPython.display import display
 import textwrap
 
 MAX_LABELS = 10
@@ -383,6 +384,23 @@ class ManyToOneExplainer(ExplainerInterface):
         # Give the tabs the appropriate titles.
         for i, title in enumerate(cluster_titles):
             cluster_tabs.set_title(i, title)
+
+        # A complete hack to make the tabs display correctly in Jupyter Lab, so they won't be squished.
+        display(
+            HTML(
+                """
+                <style>
+                .jupyter-widgets.widget-tab > .p-TabBar {
+                    overflow-x: auto;
+                    white-space: nowrap;
+                }
+                .jupyter-widgets.widget-tab > .p-TabBar .p-TabBar-tab {
+                    flex: 0 0 auto;
+                }
+                </style>
+                """
+            )
+        )
 
         return cluster_tabs
 

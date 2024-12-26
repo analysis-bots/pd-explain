@@ -8,18 +8,35 @@ from ipywidgets import Output
 import matplotlib.pyplot as plt
 
 from pd_explain.recommenders.utils import consts
-from pd_explain.recommenders.utils.data_classes import Query
+from pd_explain.recommenders.utils.recommendation_data_classes import FilterQuery
 from pd_explain.recommenders.recommender_base import RecommenderBase
 from pd_explain.recommenders.utils.util_funcs import is_numeric
-from pd_explain.recommenders.analyzers.correlation_based_attribute_interestingness_analyzer import \
-    CorrelationBasedAttributeInterestingnessAnalyzer
+from pd_explain.recommenders.configurations.filter_recommender_configuration import FilterRecommenderConfiguration
+from pd_explain.recommenders.measures.correlation_based_attribute_interestingness_measure import \
+    CorrelationBasedAttributeInterestingnessMeasure
 from fedex_generator.Measures.ExceptionalityMeasure import ExceptionalityMeasure
 from fedex_generator.Operations.Filter import Filter
 
 
 class FilterRecommender(RecommenderBase):
+    """
+    A recommender that recommends filter queries to the user.
 
-    def _compute_query_scores_internal(self, data: DataFrame, attributes: List[str], queries: Dict[str, List], top_k: int) -> \
+    This class is a subclass of RecommenderBase, and implements the filter specific logic.
+    """
+
+    def __init__(self):
+        measures = [CorrelationBasedAttributeInterestingnessMeasure()]
+        super().__init__(configuration=FilterRecommenderConfiguration(), measures=measures)
+
+    __name__ = 'FilterRecommender'
+
+    @property
+    def name(self) -> str:
+        return self.__name__
+
+
+    def _compute_recommendation_scores_internal(self, data: DataFrame, attributes: List[str], queries: Dict[str, List], top_k: int) -> \
             dict[str, Series]:
         query_scores = {}
         for attribute in attributes:
@@ -42,7 +59,7 @@ class FilterRecommender(RecommenderBase):
         return query_scores
 
     def _create_tab_internal(self, data: DataFrame, attributes: List[str],
-                             queries: Dict[str, List[Query]], top_k_explanations: int) -> Tab:
+                             queries: Dict[str, List[FilterQuery]], top_k_explanations: int) -> Tab:
         # Create the external tab that will contain all the query sub-tabs
         tab = Tab()
         children = []
@@ -77,29 +94,7 @@ class FilterRecommender(RecommenderBase):
             tab.set_title(i, attribute)
         return tab
 
-
-    def __init__(self):
-        super().__init__()
-        self._analyzers = [
-            CorrelationBasedAttributeInterestingnessAnalyzer()
-        ]
-
-    __name__ = 'FilterRecommender'
-
-    @property
-    def name(self) -> str:
-        return self.__name__
-
-    def _create_queries_internal(self, data: DataFrame, attributes: List[str]) -> dict[str, list[Query]]:
-        """
-        Create the filter queries for each attribute.
-        Uses binning to decide which values to use for the filter.
-
-        :param data: The data to recommend queries for.
-        :param attributes: The attributes to recommend queries for.
-
-        :return: The queries for each attribute.
-        """
+    def _create_recommendation_candidates_internal(self, data: DataFrame, attributes: List[str]) -> dict[str, list[FilterQuery]]:
         queries = {}
         for attribute in attributes:
             col = data[attribute]
@@ -107,37 +102,28 @@ class FilterRecommender(RecommenderBase):
             # If the attribute is numeric, we use the bin edges as filter values for less than and greater than filters
             if is_numeric(data, attribute):
                 # Bin the attribute if it is numeric
-                bins = pd.qcut(col, consts.NUM_BINS, retbins=True, duplicates='drop')[1]
+                bins = pd.qcut(col, self._configuration.num_bins, retbins=True, duplicates='drop')[1]
                 bins.sort()
                 # Create the filter queries. For each bin, we create a less than and greater than query using
                 # the bin edges as filter values.
                 for i in range(len(bins) - 1):
                     # A greater than query on the first bin is meaningless because it would include all values
                     if i != 0:
-                        attribute_queries.append(Query(attribute, ">=", bins[i]))
+                        attribute_queries.append(FilterQuery(attribute, ">=", bins[i]))
                     # Likewise, a less than query on the last bin is meaningless
                     if i != len(bins) - 2:
-                        attribute_queries.append(Query(attribute, "<=", bins[i + 1]))
+                        attribute_queries.append(FilterQuery(attribute, "<=", bins[i + 1]))
 
             # If the attribute is categorical, we use the bin values as filter values for equality filters
             else:
                 # Keep the 10 most frequent values if the attribute is categorical
                 value_counts = col.value_counts()
-                bins = value_counts.index[:consts.NUM_BINS]
+                bins = value_counts.index[:self._configuration.num_bins]
                 for b in bins:
-                    attribute_queries.append(Query(attribute, "==", b))
+                    attribute_queries.append(FilterQuery(attribute, "==", b))
                     # If there are only 2 values, adding a not equal query is meaningless and would be the same as the equal query
                     if len(bins) > 2:
-                        attribute_queries.append(Query(attribute, "!=", b))
+                        attribute_queries.append(FilterQuery(attribute, "!=", b))
             # Add the queries to the dictionary
             queries[attribute] = attribute_queries
         return queries
-
-
-if __name__ == '__main__':
-    import pandas as pd
-
-    df = pd.read_csv(r"..\..\..\..\Examples\Datasets\adult.csv")
-    df = DataFrame(df)
-    recommender = FilterRecommender()
-    tab = recommender.recommend(df)

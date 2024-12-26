@@ -5,7 +5,14 @@ from pandas import DataFrame
 from abc import ABC, abstractmethod
 
 
-class AttributeInterestingnessAnalyzerBase(ABC):
+class AttributeInterestingnessMeasureBase(ABC):
+    """
+    Base class for measures that calculate how interesting each attribute in a dataset is.
+
+    Interestingness, in this case, is a measure of how likely an attribute is to produce interesting insights
+    if we perform some operation with it.
+    This is used to determine which attributes to try and generate recommendations for.
+    """
 
     def __init__(self):
         self._should_refresh_internals = True
@@ -25,7 +32,7 @@ class AttributeInterestingnessAnalyzerBase(ABC):
                 data[column] = data[column].cat.codes
         return data
 
-    def analyze(self, data: DataFrame) -> Dict[str, float]:
+    def compute_measure(self, data: DataFrame) -> Dict[str, float]:
         """
         Analyze how interesting each attribute in the data is.
         Interestingness, in this case, is a measure of how likely an attribute is to produce interesting insights
@@ -46,4 +53,12 @@ class AttributeInterestingnessAnalyzerBase(ABC):
 
     @abstractmethod
     def _calculate_interestingness(self, data, column) -> float:
+        """
+        Calculate how interesting the attribute is.
+
+        :param data: The data to analyze.
+        :param column: The column to analyze.
+
+        :return: A float representing how interesting the attribute is.
+        """
         raise NotImplementedError

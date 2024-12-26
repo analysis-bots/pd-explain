@@ -3,7 +3,7 @@ import pkgutil
 import inspect
 from pathlib import Path
 
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from ipywidgets import Tab, HTML
 from IPython.display import display
 
@@ -12,9 +12,14 @@ from pd_explain.recommenders.utils.consts import PACKAGE_NAME
 from typing import List
 
 class RecommenderEngine:
+    """
+    The RecommenderEngine class is the main class of the recommender module, and is the only one that is exposed by the module.
+    This class is responsible for managing all recommenders, enabling and disabling them, and getting recommendations from them.
+    """
 
     def __init__(self, df: DataFrame, disabled_recommenders=None):
-        # If the input inherits from 'DataFrame', convert it to a 'DataFrame' object.
+        # We need a DataFrame to work with. If the user provides a different type, we will try to convert it to a DataFrame.
+        # If that fails, an error will be raised by the DataFrame constructor.
         self._df = DataFrame(df)
         self._recommenders = []
         self.enabled_recommenders = []
@@ -23,6 +28,13 @@ class RecommenderEngine:
 
         if disabled_recommenders is not None and len(disabled_recommenders) > 0:
             self.disable_recommenders(disabled_recommenders)
+
+
+    def __str__(self):
+        return f"RecommenderEngine with {len(self._recommenders)} recommenders. Enabled recommenders: {self.enabled_recommenders}. Disabled recommenders: {self.disabled_recommenders}."
+
+    def __repr__(self):
+        return self.__str__()
 
     def load_recommenders(self):
         """
@@ -62,6 +74,8 @@ class RecommenderEngine:
         """
         Disable a recommender by name.
         Disabling is done by removing the recommender from the 'enabled_recommenders' list and adding it to the 'disabled_recommenders' list.
+
+        :param recommender_name: The name of the recommender to disable.
         """
         recommender = self._get_recommender_by_name(recommender_name)
         # If the recommender is found and is enabled, disable it.
@@ -94,6 +108,8 @@ class RecommenderEngine:
         """
         Enable a recommender by name.
         Enabling is done by removing the recommender from the 'disabled_recommenders' list and adding it to the 'enabled_recommenders' list.
+
+        :param recommender_name: The name of the recommender to enable.
         """
         recommender = self._get_recommender_by_name(recommender_name)
         # If the recommender is found and is disabled, enable it.
@@ -132,16 +148,18 @@ class RecommenderEngine:
 
     def recommend(self) -> Tab:
         """
-        Recommend a list of items.
+        Get recommendations from all enabled recommenders.
 
-        :return: A list of recommendations.
+        :return: A Tab widget containing the recommendations of all enabled recommenders.
         """
         recommendations_tab = Tab()
         recommendations = []
+        # Get the recommendations from all enabled recommenders.
         for recommender in self._recommenders:
             if recommender.name in self.enabled_recommenders:
                 recommendations.append(recommender.recommend(self._df))
 
+        # Set a tab and a title for each recommender.
         recommendations_tab.children = recommendations
         for i, recommender in enumerate(self.enabled_recommenders):
             title = recommender.replace("Recommender", "").replace("recommender", "") + " Recommendations"
@@ -160,6 +178,47 @@ class RecommenderEngine:
             )
         )
         return recommendations_tab
+
+    @property
+    def recommender_configurations(self):
+        """
+        Get the configurations of all recommenders.
+        """
+        return {recommender.name: recommender.config for recommender in self._recommenders}
+
+    @property
+    def recommender_configurations_descriptions(self):
+        """
+        Get the configuration descriptions of all recommenders.
+        """
+        return {recommender.name: recommender.config_info for recommender in self._recommenders}
+
+    def set_recommender_configuration(self, recommender_name: str, config: dict):
+        """
+        Set the configuration of a recommender.
+
+        :param recommender_name: The name of the recommender.
+        :param config: The configuration to set.
+        """
+        recommender = self._get_recommender_by_name(recommender_name)
+        if recommender:
+            recommender.config = config
+        else:
+            raise ValueError(f"Recommender '{recommender_name}' not found.")
+
+    @property
+    def global_config_values(self):
+        """
+        Get the values of the global configurations of all recommenders.
+        """
+        return self._recommenders[0].global_config_values
+
+    @property
+    def global_config(self):
+        """
+        Get the global configurations of all recommenders.
+        """
+        return self._recommenders[0].global_config
 
 # Example usage
 if __name__ == "__main__":

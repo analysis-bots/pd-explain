@@ -34,6 +34,7 @@ sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/pd-explain/src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.explainable_series import ExpSeries
+from pd_explain.recommenders.recommender_engine import RecommenderEngine
 
 
 class ExpDataFrame(pd.DataFrame):
@@ -73,6 +74,26 @@ class ExpDataFrame(pd.DataFrame):
         self.operation = None
         self.explanation = None
         self.filter_items = None
+        self._recommender = RecommenderEngine(self)
+
+
+    @property
+    def recommender(self) -> RecommenderEngine:
+        """
+        Gets the recommender engine for the current dataframe.
+        """
+        return self._recommender
+
+    def recommend(self):
+        """
+        Get recommendations for the current dataframe.
+        See the RecommenderEngine class for more information on how to enable and disable recommenders,
+        as well as how to configure them.
+
+
+        :return: A Tab widget containing the recommendations of all enabled recommenders.
+        """
+        return self._recommender.recommend()
 
     # We overwrite the constructor to ensure that an ExpDataFrame is returned when a new DataFrame is created.
     # This is necessary so that methods not overridden in this class, like iloc, return an ExpDataFrame.

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
-class Query:
+class FilterQuery:
     attribute: str
     operation: str
     value: any
@@ -10,7 +10,7 @@ class Query:
         return f"{self.attribute} {self.operation} {self.value}"
 
     def __eq__(self, other):
-        if isinstance(other, Query):
+        if isinstance(other, FilterQuery):
             return self.attribute == other.attribute and self.operation == other.operation and self.value == other.value
         if isinstance(other, str):
             return str(self) == other or self.__repr__() == other

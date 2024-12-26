@@ -1,8 +1,8 @@
-from pd_explain.recommenders.analyzers.attribute_interestingness_analyzer_base import AttributeInterestingnessAnalyzerBase
+from pd_explain.recommenders.measures.attribute_interestingness_measure_base import AttributeInterestingnessMeasureBase
 import pandas as pd
 from pd_explain.recommenders.utils.util_funcs import is_numeric
 
-class CorrelationBasedAttributeInterestingnessAnalyzer(AttributeInterestingnessAnalyzerBase):
+class CorrelationBasedAttributeInterestingnessMeasure(AttributeInterestingnessMeasureBase):
 
     def __init__(self):
         super().__init__()
@@ -42,8 +42,8 @@ class CorrelationBasedAttributeInterestingnessAnalyzer(AttributeInterestingnessA
 
 if __name__ == '__main__':
     dataset = pd.DataFrame(pd.read_csv(r"..\..\..\..\Examples\Datasets\adult.csv"))
-    analyzer = CorrelationBasedAttributeInterestingnessAnalyzer()
+    analyzer = CorrelationBasedAttributeInterestingnessMeasure()
 
-    interestingness = analyzer.analyze(dataset)
+    interestingness = analyzer.compute_measure(dataset)
     print(interestingness)
 

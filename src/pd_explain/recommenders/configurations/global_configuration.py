@@ -1,3 +1,5 @@
+from copy import copy
+
 from singleton_decorator import singleton
 from pd_explain.recommenders.configurations.filter_recommender_configuration import FilterRecommenderConfiguration
 
@@ -17,24 +19,129 @@ class GlobalConfiguration:
         }
         self._listeners = []
         self._registered_recommenders = list(self._recommender_configurations.keys())
+        self._enabled_recommenders = set(self._registered_recommenders)
+        self._disabled_recommenders = set()
+
+
+    @property
+    def enabled_recommenders(self) -> set[str]:
+        """
+        Get the names of the enabled recommenders.
+        """
+        return copy(self._enabled_recommenders)
+
+    @property
+    def disabled_recommenders(self) -> set[str]:
+        """
+        Get the names of the disabled recommenders.
+        """
+        return copy(self._disabled_recommenders)
+
+
+    def enable_recommenders(self, recommender_names: list[str], notify_listeners=True):
+        """
+        Enable the recommenders.
+
+        :param recommender_names: The names of the recommenders to enable.
+        :param notify_listeners: Whether to notify the listeners of the configuration change. Default is True.
+        Setting to false will make it so only future recommender_engine objects will have the changes applied.
+        """
+        if isinstance(recommender_names, str):
+            recommender_names = [recommender_names]
+
+        enabled_recommenders = []
+
+        for recommender_name in recommender_names:
+            matched_name = self.match_recommender(recommender_name)
+            if matched_name and matched_name in self._disabled_recommenders and matched_name not in self._enabled_recommenders:
+                self._enabled_recommenders.add(matched_name)
+                self._disabled_recommenders.remove(matched_name)
+                enabled_recommenders.append(matched_name)
+            if not matched_name:
+                raise ValueError(f"Recommender '{recommender_name}' not found.")
+
+        if notify_listeners:
+            self.notify_listeners({
+                'engine': {
+                    'enable': enabled_recommenders
+                }
+            })
+
+    def disable_recommenders(self, recommender_names: list[str], notify_listeners=True):
+        """
+        Disable the recommenders.
+
+        :param recommender_names: The names of the recommenders to disable.
+        :param notify_listeners: Whether to notify the listeners of the configuration change. Default is True.
+        Setting to false will make it so only future recommender_engine objects will have the changes applied.
+        """
+        if isinstance(recommender_names, str):
+            recommender_names = [recommender_names]
+
+        disabled_recommenders = []
+
+        for recommender_name in recommender_names:
+            matched_name = self.match_recommender(recommender_name)
+            if matched_name and matched_name in self._enabled_recommenders and matched_name not in self._disabled_recommenders:
+                self._disabled_recommenders.add(matched_name)
+                self._enabled_recommenders.remove(matched_name)
+                disabled_recommenders.append(matched_name)
+            if not matched_name:
+                raise ValueError(f"Recommender '{recommender_name}' not found.")
+
+        if notify_listeners:
+            self.notify_listeners({
+                'engine': {
+                    'disable': disabled_recommenders
+                }
+            })
 
     @property
     def recommender_configurations(self):
         """
         Get the configurations of all recommenders.
         """
-        return {name: config.config for name, config in self._recommender_configurations.items()}
+        config = {
+            'Engine settings':
+                {
+                    'Enabled recommenders': self.enabled_recommenders,
+                    'Disabled recommenders': self.disabled_recommenders
+                }
+        }
+        config.update({
+            name: config.config for name, config in self._recommender_configurations.items()
+        })
+        return config
+
+    @property
+    def config_info(self):
+        """
+        Gets the additional information about each attribute in the configuration, that each configuration class provides.
+        """
+        config = {
+            'Engine settings':
+                {
+                    'Enabled recommenders': 'The recommenders that are currently enabled.',
+                    'Disabled recommenders': 'The recommenders that are currently disabled.'
+                }
+        }
+        config.update({
+            name: config.config_info for name, config in self._recommender_configurations.items()
+        })
+        return config
 
     @property
     def registered_recommenders(self):
         """
         Get the names of all registered recommenders.
         """
-        return self._registered_recommenders
+        return copy(self._registered_recommenders)
 
     def set_configuration(self, configuration: dict, notify_listeners=True):
         """
-        Set the configuration for the recommender.
+        Set the configuration for the recommenders.
+        Please note that you can not enable or disable recommenders using this method. See the enable_recommenders
+        and disable_recommenders methods for that.
 
         :param configuration: The configuration to set. Expects a dictionary with the recommender name as the key, and
         another nested dictionary with the configuration keys as keys and the configuration values as values.

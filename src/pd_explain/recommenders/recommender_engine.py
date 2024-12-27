@@ -9,9 +9,12 @@ from IPython.display import display
 
 from pd_explain.recommenders.recommender_base import RecommenderBase
 from pd_explain.recommenders.utils.consts import PACKAGE_NAME
-from typing import List
+from pd_explain.recommenders.utils.listener_interface import ListenerInterface
+from typing import List, Dict, Any
+from pd_explain.recommenders.configurations.global_configuration import GlobalConfiguration
 
-class RecommenderEngine:
+
+class RecommenderEngine(ListenerInterface):
     """
     The RecommenderEngine class is the main class of the recommender module, and is the only one that is exposed by the module.
     This class is responsible for managing all recommenders, enabling and disabling them, and getting recommendations from them.
@@ -21,10 +24,13 @@ class RecommenderEngine:
         # We need a DataFrame to work with. If the user provides a different type, we will try to convert it to a DataFrame.
         # If that fails, an error will be raised by the DataFrame constructor.
         self._df = DataFrame(df)
+        self._global_config = GlobalConfiguration()
         self._recommenders = []
-        self.enabled_recommenders = []
-        self.disabled_recommenders = []
+        self.enabled_recommenders = self._global_config.enabled_recommenders
+        self.disabled_recommenders = self._global_config.disabled_recommenders
         self.load_recommenders()
+        self._global_config.add_listener(self)
+        self._attribute_backup = None
 
         if disabled_recommenders is not None and len(disabled_recommenders) > 0:
             self.disable_recommenders(disabled_recommenders)
@@ -35,6 +41,14 @@ class RecommenderEngine:
 
     def __repr__(self):
         return self.__str__()
+
+    def on_event(self, values: dict):
+        for key, value in values.items():
+            if key == "engine":
+                if "enable" in value:
+                    self.enable_recommenders(value["enable"])
+                if "disable" in value:
+                    self.disable_recommenders(value["disable"])
 
     def load_recommenders(self):
         """
@@ -64,11 +78,12 @@ class RecommenderEngine:
         Load all classes from the given module that inherit from 'RecommenderBase'.
         """
         for name, obj in inspect.getmembers(module, inspect.isclass):
-            # If the class is a recommender, add it to the list of recommenders and enable it by default.
+            # If the class is a recommender, add it to the list of recommenders and enable it (unless it has been disabled globally).
             if name.endswith('Recommender') and issubclass(obj, RecommenderBase) and obj is not RecommenderBase:
                 recommender_instance = obj()
                 self._recommenders.append(recommender_instance)
-                self.enabled_recommenders.append(recommender_instance.name)
+                if recommender_instance.name not in self.disabled_recommenders:
+                    self.enabled_recommenders.add(recommender_instance.name)
 
     def _disable_recommender(self, recommender_name: str) -> None:
         """
@@ -79,9 +94,9 @@ class RecommenderEngine:
         """
         recommender = self._get_recommender_by_name(recommender_name)
         # If the recommender is found and is enabled, disable it.
-        if recommender and recommender.name in self.enabled_recommenders:
+        if recommender and recommender.name in self.enabled_recommenders and recommender.name not in self.disabled_recommenders:
             self.enabled_recommenders.remove(recommender.name)
-            self.disabled_recommenders.append(recommender.name)
+            self.disabled_recommenders.add(recommender.name)
         # If the recommender is already disabled, do nothing.
         # Double disabling should not throw an error, but should not change the state either.
         elif recommender and recommender.name in self.disabled_recommenders:
@@ -113,9 +128,9 @@ class RecommenderEngine:
         """
         recommender = self._get_recommender_by_name(recommender_name)
         # If the recommender is found and is disabled, enable it.
-        if recommender and recommender.name in self.disabled_recommenders:
+        if recommender and recommender.name in self.disabled_recommenders and recommender.name not in self.enabled_recommenders:
             self.disabled_recommenders.remove(recommender.name)
-            self.enabled_recommenders.append(recommender.name)
+            self.enabled_recommenders.add(recommender.name)
         # If the recommender is already enabled, do nothing.
         # Double enabling should not throw an error, but should not change the state either.
         elif recommender and recommender.name in self.enabled_recommenders:
@@ -146,12 +161,15 @@ class RecommenderEngine:
         for recommender_name in recommender_names:
             self._enable_recommender(recommender_name)
 
-    def recommend(self) -> Tab:
+    def recommend(self) -> Tab | HTML:
         """
         Get recommendations from all enabled recommenders.
 
         :return: A Tab widget containing the recommendations of all enabled recommenders.
         """
+        if len(self.enabled_recommenders) == 0:
+            return HTML("No recommenders enabled. Unable to provide recommendations.")
+
         recommendations_tab = Tab()
         recommendations = []
         # Get the recommendations from all enabled recommenders.
@@ -184,7 +202,16 @@ class RecommenderEngine:
         """
         Get the configurations of all recommenders.
         """
-        return {recommender.name: recommender.config for recommender in self._recommenders}
+        config = {
+            "Enabled recommenders": list(self.enabled_recommenders),
+            "Disabled recommenders": list(self.disabled_recommenders),
+        }
+        config.update(
+            {
+                recommender.name: recommender.config for recommender in self._recommenders
+            }
+        )
+        return config
 
     @property
     def recommender_configurations_descriptions(self):
@@ -193,18 +220,19 @@ class RecommenderEngine:
         """
         return {recommender.name: recommender.config_info for recommender in self._recommenders}
 
-    def set_recommender_configuration(self, recommender_name: str, config: dict):
+    @recommender_configurations.setter
+    def recommender_configurations(self, config: Dict[str, Dict[str, Any]]) -> None:
         """
         Set the configuration of a recommender.
 
-        :param recommender_name: The name of the recommender.
-        :param config: The configuration to set.
+        :param config: The configuration to set. Expected format: {'recommender_name': {'config_key': config_value}}.
         """
-        recommender = self._get_recommender_by_name(recommender_name)
-        if recommender:
-            recommender.config = config
-        else:
-            raise ValueError(f"Recommender '{recommender_name}' not found.")
+        for recommender_name, recommender_config in config.items():
+            recommender = self._get_recommender_by_name(recommender_name)
+            if recommender:
+                recommender.config = recommender_config
+            else:
+                raise ValueError(f"Recommender '{recommender_name}' not found.")
 
     @property
     def global_config_values(self):
@@ -220,12 +248,26 @@ class RecommenderEngine:
         """
         return self._recommenders[0].global_config
 
-# Example usage
-if __name__ == "__main__":
-    engine = RecommenderEngine()
-    print(engine._recommenders)
-    print(engine.enabled_recommenders)
-    print(engine.disabled_recommenders)
-    engine.disable_recommenders('filter')
-    print(engine.enabled_recommenders)
-    print(engine.disabled_recommenders)
+    def __del__(self):
+        self._global_config.remove_listener(self)
+
+    def set_attributes(self, attributes):
+        """
+        Set the attributes to recommend queries for on all recommenders.
+
+        :param attributes: The attributes to recommend queries for.
+        """
+        self._attribute_backup = {}
+        for recommender in self._recommenders:
+            self._attribute_backup[recommender.name] = recommender.config["attributes"]
+            recommender.config = {"attributes": attributes}
+
+
+    def restore_attributes(self):
+        """
+        Restores the attributes to recommend queries for to their previous state on all recommenders.
+        This should be used after setting attributes with the 'set_attributes' method.
+        """
+        for recommender in self._recommenders:
+            recommender.config = {"attributes": self._attribute_backup[recommender.name]}
+        self._attribute_backup = None

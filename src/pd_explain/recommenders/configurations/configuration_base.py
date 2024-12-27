@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+from copy import copy
+
 
 class ConfigurationBase(ABC):
     """
@@ -21,7 +23,7 @@ class ConfigurationBase(ABC):
         The configuration information.
         The config info gives human readable explanations of the configuration keys, as a dictionary with the configuration keys as keys and the explanations as values.
         """
-        return self._added_info
+        return copy(self._added_info)
 
 
     @property
@@ -30,7 +32,7 @@ class ConfigurationBase(ABC):
         The configuration of the recommender.
         The configuration is a dictionary with the configuration keys as keys and the configuration values as values.
         """
-        return self._config
+        return copy(self._config)
 
     @config.setter
     def config(self, value: dict):

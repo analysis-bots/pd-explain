@@ -44,4 +44,5 @@ def get_dataset(name) -> (pd.DataFrame, ExpDataFrame):
     # This is done to save time when running the tests.
     if name not in exp_datasets:
         exp_datasets[name] = to_explainable(dataset)
-    return dataset, exp_datasets[name]
+    # Return copies, to make sure the original datasets are not modified and tests are independent.
+    return dataset.copy(), exp_datasets[name].copy()

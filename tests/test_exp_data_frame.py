@@ -597,6 +597,7 @@ def test_groupby_with_var_numeric_only_should_work(dataset_name, groupby_columns
     assert exp_dataset.equals(dataset)
     assert exp_dataset.operation is None
 
+
 def test_groupby_with_var_non_numeric_only_should_fail():
     """
     Test that the groupby method aggregation fails when numeric_only is set to False and a non-numeric column is present.
@@ -604,7 +605,6 @@ def test_groupby_with_var_non_numeric_only_should_fail():
     dataset, exp_dataset = get_dataset('adults')
     with pytest.raises(TypeError):
         exp_dataset.groupby(['workclass']).var(numeric_only=False)
-
 
 
 @pytest.mark.parametrize('dataset_name, groupby_columns', [
@@ -641,7 +641,7 @@ def test_groupby_with_std_non_numeric_only_should_fail():
     Test that the groupby method aggregation fails when numeric_only is set to False and a non-numeric column is present.
     """
     dataset, exp_dataset = get_dataset('adults')
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         exp_dataset.groupby(['workclass']).std(numeric_only=False)
 
 
@@ -679,13 +679,14 @@ def test_groupby_with_sem_non_numeric_only_should_fail():
     Test that the groupby method aggregation fails when numeric_only is set to False and a non-numeric column is present.
     """
     dataset, exp_dataset = get_dataset('adults')
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         exp_dataset.groupby(['workclass']).sem(numeric_only=False)
 
 
 @pytest.mark.parametrize('dataset_name, left_df_cols, right_df_cols, how, on', [
     ('adults', ['workclass', 'education'], ['workclass', 'age'], 'inner', 'workclass'),
-    ('clients_data', ['Education_Level', 'Marital_Status'], ['Education_Level', 'Income_Category'], 'outer', 'Education_Level'),
+    ('clients_data', ['Education_Level', 'Marital_Status'], ['Education_Level', 'Income_Category'], 'outer',
+     'Education_Level'),
     ('spotify', ['acousticness', 'artists'], ['artists', 'danceability'], 'left', 'artists'),
     ('houses', ['MSSubClass', 'LotArea'], ['MSSubClass', 'Street'], 'right', 'MSSubClass')
 ])
@@ -726,11 +727,11 @@ def test_join_should_work(dataset_name, left_df_cols, right_df_cols, how, on):
 
 def test_join_illegal_column_should_fail():
     """
-    Test that the join operation fails when the column is not present in the dataframe.
+    Test that the join operation fails when the "on" column is not present in the dataframe.
     """
     dataset, exp_dataset = get_dataset('adults')
     with pytest.raises(KeyError):
-        exp_dataset.join(exp_dataset['not_a_column'])
+        exp_dataset.join(exp_dataset, how='inner', on='not_a_column')
 
 
 def test_sample_should_work():
@@ -903,3 +904,157 @@ def test_reset_index_not_inplace_after_op_should_work():
     assert exp_dataset.columns.tolist() != exp_dataset_reset.columns.tolist()
     # Check that the internal state is unchanged
     assert exp_dataset.operation is not None
+
+
+def test_drop_inplace_should_work():
+    """
+    Test that the drop method works as expected.
+    """
+    dataset, exp_dataset = get_dataset('adults')
+    # Drop the column
+    exp_dataset.drop(columns='workclass', inplace=True)
+    dataset.drop(columns='workclass', inplace=True)
+    # Check that the results are the same
+    assert exp_dataset.equals(dataset)
+    # Check that the result is still an ExpDataFrame
+    assert isinstance(exp_dataset, pd_explain.ExpDataFrame)
+    # Check that the internal state is unchanged
+    assert exp_dataset.operation is None
+
+
+def test_drop_not_inplace_should_work():
+    """
+    Test that the drop method works as expected.
+    """
+    dataset, exp_dataset = get_dataset('adults')
+    # Drop the column
+    exp_dataset_dropped = exp_dataset.drop(columns='workclass')
+    dataset_dropped = dataset.drop(columns='workclass')
+    # Check that the results are the same
+    assert exp_dataset_dropped.equals(dataset_dropped)
+    # Check that the result is still an ExpDataFrame
+    assert isinstance(exp_dataset_dropped, pd_explain.ExpDataFrame)
+    # Check that the original dataframe is not affected
+    assert exp_dataset.columns.tolist() != exp_dataset_dropped.columns.tolist()
+    # Check that the internal state is unchanged
+    assert exp_dataset.operation is None
+
+
+def test_drop_illegal_column_should_fail():
+    """
+    Test that the drop method fails when the column is not present in the dataframe.
+    """
+    dataset, exp_dataset = get_dataset('adults')
+    with pytest.raises(KeyError):
+        exp_dataset.drop(columns='not_a_column')
+
+
+def test_drop_inplace_after_op_should_work():
+    """
+    Test that the drop method works as expected after an operation has been performed.
+    """
+    dataset, exp_dataset = get_dataset('adults')
+    # Perform an operation
+    exp_dataset = exp_dataset[exp_dataset['age'] > 30]
+    dataset = dataset[dataset['age'] > 30]
+    # Drop the column
+    exp_dataset.drop(columns='workclass', inplace=True)
+    dataset.drop(columns='workclass', inplace=True)
+    # Check that the results are the same
+    assert exp_dataset.equals(dataset)
+    # Check that the result is still an ExpDataFrame
+    assert isinstance(exp_dataset, pd_explain.ExpDataFrame)
+    # Check that the internal state is unchanged
+    assert exp_dataset.operation is not None
+    source_df_cols = exp_dataset.operation.source_df.columns.tolist()
+    # FEDEX internally calls reset_index on the source dataframe, which causes the index to be reset and thus fail the equality check.
+    if 'index' in source_df_cols and 'index' not in exp_dataset.columns:
+        source_df_cols.remove('index')
+    # Check that the columns in the operation's source_df have been changed
+    assert source_df_cols == exp_dataset.columns.tolist()
+    # Check that the columns in the operation's result_df have been changed as well
+    assert exp_dataset.operation.result_df.columns.tolist() == exp_dataset.columns.tolist()
+
+
+def test_drop_not_inplace_after_op_should_work():
+    """
+    Test that the drop method works as expected after an operation has been performed.
+    """
+    dataset, exp_dataset = get_dataset('adults')
+    # Perform an operation
+    exp_dataset = exp_dataset[exp_dataset['age'] > 30]
+    dataset = dataset[dataset['age'] > 30]
+    # Drop the column
+    exp_dataset_dropped = exp_dataset.drop(columns='workclass')
+    dataset_dropped = dataset.drop(columns='workclass')
+    # Check that the results are the same
+    assert exp_dataset_dropped.equals(dataset_dropped)
+    # Check that the result is still an ExpDataFrame
+    assert isinstance(exp_dataset_dropped, pd_explain.ExpDataFrame)
+    # Check that the original dataframe is not affected
+    assert exp_dataset.columns.tolist() != exp_dataset_dropped.columns.tolist()
+    # Check that the internal state is unchanged
+    assert exp_dataset.operation is not None
+    source_df_cols = exp_dataset_dropped.operation.source_df.columns.tolist()
+    # FEDEX internally calls reset_index on the source dataframe, which causes the index to be reset and thus fail the equality check.
+    if 'index' in source_df_cols and 'index' not in exp_dataset_dropped.columns:
+        source_df_cols.remove('index')
+    # Check that the columns in the operation's source_df have been changed
+    assert source_df_cols == exp_dataset_dropped.columns.tolist()
+    # Check that the columns in the operation's result_df have been changed as well
+    assert exp_dataset_dropped.operation.result_df.columns.tolist() == exp_dataset_dropped.columns.tolist()
+
+
+def test_copy_should_work():
+    """
+    Test that the copy method works as expected.
+    """
+    dataset, exp_dataset = get_dataset('adults')
+    # Copy the dataframe
+    exp_dataset_copy = exp_dataset.copy()
+    dataset_copy = dataset.copy()
+    # Check that the results are the same
+    assert exp_dataset_copy.equals(dataset_copy)
+    # Check that the result is still an ExpDataFrame
+    assert isinstance(exp_dataset_copy, pd_explain.ExpDataFrame)
+    # Check that the original dataframe is not affected
+    assert exp_dataset.equals(dataset)
+    # Check that the internal state is unchanged
+    assert exp_dataset_copy.operation is None
+    assert exp_dataset.operation is None
+
+
+@pytest.mark.parametrize('dataset_name, columns', [
+    ('adults', ['workclass']),
+    ('clients_data', ['Education_Level', 'Marital_Status']),
+    ('spotify', ['acousticness', 'artists']),
+    ('houses', ['MSSubClass', 'LotArea'])
+])
+def test_get_item_should_work(dataset_name, columns):
+    """
+    Test that the get_item method works as expected.
+    """
+    dataset, exp_dataset = get_dataset(dataset_name)
+    # Get the columns
+    exp_dataset_columns = exp_dataset[columns]
+    dataset_columns = dataset[columns]
+    # Check that the results are the same
+    assert exp_dataset_columns.equals(dataset_columns)
+    # Check that the result is still an ExpDataFrame
+    assert isinstance(exp_dataset_columns, pd_explain.ExpDataFrame)
+    # Check that the original dataframe is not affected
+    assert exp_dataset.equals(dataset)
+    # Check that the internal state is unchanged
+    assert exp_dataset_columns.operation is None
+
+
+def test_get_item_illegal_column_should_fail():
+    """
+    Test that the get_item method fails when the column is not present in the dataframe.
+    """
+    dataset, exp_dataset = get_dataset('adults')
+    with pytest.raises(KeyError):
+        exp_dataset['not_a_column']
+
+
+

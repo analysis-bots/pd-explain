@@ -40,6 +40,7 @@ sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.core.explainable_series import ExpSeries
+from pd_explain.recommenders.recommender_engine import RecommenderEngine
 
 
 class ExpDataFrame(pd.DataFrame):
@@ -79,6 +80,36 @@ class ExpDataFrame(pd.DataFrame):
         self.operation = None
         self.explanation = None
         self.filter_items = None
+        self._recommender = RecommenderEngine(self)
+
+
+    @property
+    def recommender(self) -> RecommenderEngine:
+        """
+        Gets the recommender engine for the current dataframe.
+        """
+        return self._recommender
+
+    def recommend(self, attributes: List[str] = None):
+        """
+        Get recommendations for the current dataframe.
+        See the RecommenderEngine class for more information on how to enable and disable recommenders,
+        as well as how to configure them.
+
+        :param attributes: The attributes to recommend queries for. If None, the recommender will automatically select the attributes.
+
+        :return: A Tab widget containing the recommendations of all enabled recommenders.
+        """
+        if attributes is not None:
+            self._recommender.set_attributes(attributes)
+
+        ret_tab =  self._recommender.recommend()
+
+        # If the attributes were set, we need to restore the original attributes of the recommender.
+        if attributes is not None:
+            self._recommender.restore_attributes()
+
+        return ret_tab
 
     # We overwrite the constructor to ensure that an ExpDataFrame is returned when a new DataFrame is created.
     # This is necessary so that methods not overridden in this class, like iloc, return an ExpDataFrame.

@@ -6,8 +6,12 @@ from copy import copy as cpy
 import numpy as np
 import pandas as pd
 from matplotlib.axis import Axis
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from pandas._libs.lib import no_default
+from sklearn.decomposition import PCA
+from ipywidgets import Tab, VBox, HBox, Output, Box, HTML, Layout, HTMLMath
+import matplotlib.pyplot as plt
+from IPython.display import display
 
 # importing sys
 import sys
@@ -15,25 +19,28 @@ import sys
 # adding Folder_2/subfolder to the system path
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator-1/src/')
-sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/FEDEx_Generator/src")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\FEDEx_Generator\\src")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\cluster-explorer\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
+from cluster_explorer import Explainer, condition_generator, str_rule_to_list, rule_to_human_readable
 from typing import (
     Hashable,
     Sequence,
     Union,
-    List, Callable,
-)
+    List, Callable, Literal, )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
+from pd_explain.explainers import ExplainerFactory
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
-sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/pd-explain/src")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
-from pd_explain.explainable_series import ExpSeries
+from pd_explain.core.explainable_series import ExpSeries
+from pd_explain.recommenders.recommender_engine import RecommenderEngine
 
 
 class ExpDataFrame(pd.DataFrame):
@@ -73,6 +80,36 @@ class ExpDataFrame(pd.DataFrame):
         self.operation = None
         self.explanation = None
         self.filter_items = None
+        self._recommender = RecommenderEngine(self)
+
+
+    @property
+    def recommender(self) -> RecommenderEngine:
+        """
+        Gets the recommender engine for the current dataframe.
+        """
+        return self._recommender
+
+    def recommend(self, attributes: List[str] = None):
+        """
+        Get recommendations for the current dataframe.
+        See the RecommenderEngine class for more information on how to enable and disable recommenders,
+        as well as how to configure them.
+
+        :param attributes: The attributes to recommend queries for. If None, the recommender will automatically select the attributes.
+
+        :return: A Tab widget containing the recommendations of all enabled recommenders.
+        """
+        if attributes is not None:
+            self._recommender.set_attributes(attributes)
+
+        ret_tab =  self._recommender.recommend()
+
+        # If the attributes were set, we need to restore the original attributes of the recommender.
+        if attributes is not None:
+            self._recommender.restore_attributes()
+
+        return ret_tab
 
     # We overwrite the constructor to ensure that an ExpDataFrame is returned when a new DataFrame is created.
     # This is necessary so that methods not overridden in this class, like iloc, return an ExpDataFrame.
@@ -490,7 +527,7 @@ class ExpDataFrame(pd.DataFrame):
         :return:Explain DataFrameGroupBy object that contains information about the groups.
         """
         try:
-            from pd_explain.explainable_group_by_dataframe import ExpDataFrameGroupBy
+            from pd_explain.core.explainable_group_by_dataframe import ExpDataFrameGroupBy
             # group_attributes = GroupBy.get_one_to_many_attributes(self, [by] if isinstance(by, str) else by)
             group_attributes = by
             tmp = pd.core.groupby.generic.DataFrameGroupBy
@@ -654,7 +691,8 @@ class ExpDataFrame(pd.DataFrame):
             # If no on is specified, we raise a warning to let the user know that the operation and explanation may not
             # work as expected.
             if on is None:
-                warnings.warn("No 'on' parameter specified in join operation. The operation and explanation may not work as expected.")
+                warnings.warn(
+                    "No 'on' parameter specified in join operation. The operation and explanation may not work as expected.")
 
             left_name = utils.get_calling_params_name(self)
             right_name = utils.get_calling_params_name(other)
@@ -666,6 +704,10 @@ class ExpDataFrame(pd.DataFrame):
 
             result_df = ExpDataFrame(pd.merge(self, right_df, on=on, left_on=left_on,
                                               right_on=right_on, how=how, suffixes=(lsuffix, rsuffix), sort=sort))
+
+            # Check if the resulting df is empty. If it is, we raise a warning to let the user know.
+            if result_df.empty:
+                warnings.warn("The resulting dataframe is empty. Check the join operation to ensure it is correct.")
 
             # This is a complete hack to fix the issue: applying suffixes to the columns of the resulting dataframe
             # causes the explanation to fail, since it can no longer match up the columns of the resulting dataframe
@@ -794,7 +836,12 @@ class ExpDataFrame(pd.DataFrame):
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
                 dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
-                consider='right', value=None, attr=None, ignore=[]):
+                consider='right', value=None, attr=None, ignore=[],
+                labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 5,
+                separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
+                visualization_dims: Literal[2, 3] = 2,
+                explanation_form: Literal['conjunctive', 'disjunctive'] = 'conjunctive',
+                select_columns: List[str] = None):
         """
         Generate explanation to series base on the operation lead to this series result
         :param schema: result columns, can change columns name and ignored columns
@@ -803,23 +850,28 @@ class ExpDataFrame(pd.DataFrame):
         :param figs_in_row: number of explanations figs in one row
         :param show_scores: show scores on explanation
         :param title: explanation title
-
+        :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'outlier'. Note that
+        'outlier' is only supported for series, not for dataframes.
+        :param corr_TH: correlation threshold
+        :param target: target value for the outlier explainer
+        :param dir: direction for the outlier explainer. Can be either 'high' or 'low'.
+        :param consider: which side of a join to consider for the explanation. Can be either 'left' or 'right'.
+        :param labels: cluster / group labels for the many to one explainer. Can either be a series or a column name.
+        If a column name is provided, the column must be present in the dataframe.
+        If you wish to explain the groups of a groupby operation, leave this parameter as None (so long as the last
+        operation was a groupby operation).
+        :param coverage_threshold: minimum coverage threshold for the many to one explainer
+        :param max_explanation_length: maximum explanation length for the many to one explainer
+        :param separation_threshold: maximum separation threshold for the many to one explainer
+        :param p_value: p-value for the many to one explainer. p-value is related to the explanation length.
+        :param use_pca_for_visualization: whether to use PCA for visualization in the many to one explainer. Leave on
+        if your data has more than 3 dimensions.
+        :param visualization_dims: number of PCA components to use for visualization in the many to one explainer. Can be 2 or 3.
+        :param explanation_form: mode of the explanation of the many to one explainer. Can be either 'conjunctive' or 'disjunctive'.
+        :param select_columns: List of columns to consider in the many to one explainer. If None, all columns are considered.
 
         :return: explanation figures
         """
-        if attributes is None:
-            attributes = []
-            if top_k is None:
-                top_k = 1
-        else:
-            if top_k is None:
-                top_k = len(attributes)
-
-        if schema is None:
-            schema = {}
-        if self.operation is None:
-            print('no operation was found.')
-            return
 
         # Ensure that the user does not get a non-informative error message if they try to use the outlier explainer.
         # Without this line, the user gets an AttributeError 'str' object has no attribute 'items',
@@ -827,6 +879,23 @@ class ExpDataFrame(pd.DataFrame):
         if str.lower(explainer) == 'outlier':
             raise ValueError("Outlier explainer is not supported for multi-attribute dataframes, only for series.")
 
-        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, figs_in_row=figs_in_row,
-                                      show_scores=show_scores, title=title, corr_TH=corr_TH, explainer=explainer,
-                                      consider=consider, cont=value, attr=attr, ignore=ignore)
+        factory = ExplainerFactory()
+        explainer = factory.create_explainer(explainer=explainer, operation=self.operation,
+                                             schema=schema, attributes=attributes, top_k=top_k, figs_in_row=figs_in_row,
+                                             show_scores=show_scores, title=title, corr_TH=corr_TH,
+                                             consider=consider, cont=value, attr=attr, ignore=ignore,
+                                             labels=labels, coverage_threshold=coverage_threshold,
+                                             max_explanation_length=max_explanation_length,
+                                             separation_threshold=separation_threshold, p_value=p_value,
+                                             use_pca_for_visualization=use_pca_for_visualization,
+                                             pca_components=visualization_dims,
+                                             target=target, dir=dir,
+                                             source_df=self, mode=explanation_form,
+                                             select_columns=select_columns
+                                             )
+        explanation = explainer.generate_explanation()
+
+        if explainer.can_visualize():
+            return explainer.visualize()
+
+        return explanation

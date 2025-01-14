@@ -5,7 +5,7 @@ from pandas.core.groupby.generic import DataFrameGroupBy, SeriesGroupBy
 from pandas._libs import lib
 
 from pd_explain import ExpDataFrame
-from pd_explain.explainable_group_by_series import ExpSeriesGroupBy
+from pd_explain.core.explainable_group_by_series import ExpSeriesGroupBy
 
 
 class ExpDataFrameGroupBy(DataFrameGroupBy):
@@ -38,7 +38,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         :param kwargs:
         :return: Explain Groupby Dataframe
         """
-        from pd_explain.explainable_data_frame import ExpDataFrame
+        from pd_explain.core.explainable_data_frame import ExpDataFrame
         result = ExpDataFrame(super().aggregate(func, engine, engine_kwargs, kwargs))
 
         if hasattr(self, 'original'):

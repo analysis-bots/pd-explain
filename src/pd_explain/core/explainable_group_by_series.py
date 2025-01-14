@@ -3,7 +3,7 @@ from __future__ import annotations
 from fedex_generator.Operations.GroupBy import GroupBy
 from pandas._libs import lib
 from pandas.core.groupby.generic import SeriesGroupBy
-from pd_explain.explainable_series import ExpSeries
+from pd_explain.core.explainable_series import ExpSeries
 
 
 class ExpSeriesGroupBy(SeriesGroupBy):
@@ -106,7 +106,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.median(numeric_only)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['median']},
@@ -143,7 +143,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.std(ddof, engine, engine_kwargs)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['std']},
@@ -183,7 +183,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.var(ddof, engine, engine_kwargs)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['var']},
@@ -208,7 +208,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.sem(ddof)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['sem']},
@@ -231,7 +231,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.size()
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['size']},
@@ -274,7 +274,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.sum(numeric_only, min_count, engine, engine_kwargs)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['sum']},
@@ -301,7 +301,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.prod(numeric_only, min_count)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['prod']},
@@ -328,7 +328,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.min(numeric_only, min_count)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['min']},
@@ -355,7 +355,7 @@ class ExpSeriesGroupBy(SeriesGroupBy):
 
         if hasattr(self, 'original'):
             original_result = self.original.max(numeric_only, min_count)
-            original_result.operation = GroupBy(source_df=None,
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['max']},

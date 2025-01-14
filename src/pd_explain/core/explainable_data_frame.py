@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from copy import copy
+from copy import copy as cpy
 
 import numpy as np
 import pandas as pd
@@ -151,7 +151,7 @@ class ExpDataFrame(pd.DataFrame):
             if self.operation is not None:
 
                 # Copy the operation, to avoid changing the original operation of the dataframe.
-                to_return.operation = copy(self.operation)
+                to_return.operation = cpy(self.operation)
 
                 # Filter and GroupBy operations: perform the same selection on the source dataframe.
                 if hasattr(to_return.operation, 'source_df') and to_return.operation.source_df is not None:
@@ -181,7 +181,7 @@ class ExpDataFrame(pd.DataFrame):
                      With deep=False neither the indices nor the data are copied.
         :return: explain dataframe copy
         """
-        return ExpDataFrame(super().copy(deep))
+        return super().copy(deep)
 
     def drop(
             self,
@@ -254,7 +254,7 @@ class ExpDataFrame(pd.DataFrame):
             if res.operation is not None:
                 # We copy the operation, as we don't want to change the original operation of the dataframe when not
                 # doing an inplace operation.
-                res.operation = copy(self.operation)
+                res.operation = cpy(self.operation)
                 # Filter and GroupBy operations have a source_df field that needs to be updated.
                 if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
                     res.operation.source_df = res.operation.source_df.drop(labels=labels, axis=axis, index=index,
@@ -340,7 +340,7 @@ class ExpDataFrame(pd.DataFrame):
             res = super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                                    copy=copy, inplace=inplace, level=level, errors=errors)
             if self.operation is not None:
-                res.operation = copy(self.operation)
+                res.operation = cpy(self.operation)
                 # Filter and GroupBy operations have a source_df field that needs to be updated.
                 if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
@@ -816,7 +816,7 @@ class ExpDataFrame(pd.DataFrame):
                         If None then the index name is repeated.
         :return: Explain DataFrame with the new index or None if inplace=True.
         """
-        return ExpDataFrame(super().reset_index(drop=drop))
+        return super().reset_index(drop=drop, inplace=inplace, level=level, col_level=col_level, col_fill=col_fill)
 
     def drop_duplicates(
             self,

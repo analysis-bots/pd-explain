@@ -809,8 +809,7 @@ class ExpDataFrame(pd.DataFrame):
                 labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 5,
                 separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
                 visualization_dims: Literal[2, 3] = 2,
-                explanation_form: Literal['conjunctive', 'disjunctive'] = 'conjunctive',
-                select_columns: List[str] = None):
+                explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj'):
         """
         Generate explanation to series base on the operation lead to this series result
         :param schema: result columns, can change columns name and ignored columns
@@ -836,8 +835,7 @@ class ExpDataFrame(pd.DataFrame):
         :param use_pca_for_visualization: whether to use PCA for visualization in the many to one explainer. Leave on
         if your data has more than 3 dimensions.
         :param visualization_dims: number of PCA components to use for visualization in the many to one explainer. Can be 2 or 3.
-        :param explanation_form: mode of the explanation of the many to one explainer. Can be either 'conjunctive' or 'disjunctive'.
-        :param select_columns: List of columns to consider in the many to one explainer. If None, all columns are considered.
+        :param explanation_form: mode of the explanation of the many to one explainer. Can be either 'conj' or 'disj' for conjunction or disjunction.
 
         :return: explanation figures
         """
@@ -859,8 +857,7 @@ class ExpDataFrame(pd.DataFrame):
                                              use_pca_for_visualization=use_pca_for_visualization,
                                              pca_components=visualization_dims,
                                              target=target, dir=dir,
-                                             source_df=self, mode=explanation_form,
-                                             select_columns=select_columns
+                                             source_df=self, explanation_form=explanation_form,
                                              )
         explanation = explainer.generate_explanation()
 

@@ -5,23 +5,18 @@ import pandas as pd
 from pandas import DataFrame, Series
 from warnings import warn
 from cluster_explorer import Explainer, condition_generator, str_rule_to_list, rule_to_human_readable
-from sklearn.decomposition import PCA
-from matplotlib import pyplot as plt
 import numpy as np
-from ipywidgets import Tab, HTML, HTMLMath, Output, VBox, HBox, Box, Layout
-from IPython.display import display
-import textwrap
 
 MAX_LABELS = 10
 
 
 class ManyToOneExplainer(ExplainerInterface):
 
-    def __init__(self, source_df: DataFrame, labels: Series | str | list[int], coverage_threshold: float = 0.6,
-                 max_explanation_length: int = 5, separation_threshold: float = 0.5, p_value: int = 0,
+    def __init__(self, source_df: DataFrame, labels: Series | str | list[int], coverage_threshold: float = 0.7,
+                 max_explanation_length: int = 3, separation_threshold: float = 0.3, p_value: int = 0,
                  use_pca_for_visualization: bool = True, pca_components: Literal[2, 3] = 2,
-                 explanation_form: Literal['conjunctive', 'disjunctive'] = 'conjunctive',
-                 select_columns=None, operation=None,
+                 explanation_form: Literal['conj', 'conjunction', 'disj', 'disjunction'] = 'conj',
+                 attributes: List[str] = None, operation=None,
                  *args, **kwargs):
 
         # Convert the source_df to a DataFrame object, to avoid overhead from overridden methods in ExpDataFrame,
@@ -29,23 +24,28 @@ class ManyToOneExplainer(ExplainerInterface):
         if type(source_df) != DataFrame:
             source_df = DataFrame(source_df)
 
-        if select_columns is not None and len(select_columns) > 0:
-            if isinstance(select_columns, str):
-                select_columns = [select_columns]
+        if attributes is not None and len(attributes) > 0:
+            if isinstance(attributes, str):
+                attributes = [attributes]
             # If the labels are in the dataframe, we add them to the columns to select, to not remove them.
             # They will be removed later, but removing them now would cause an error.
-            if isinstance(labels, str) and labels not in select_columns:
-                select_columns.append(labels)
-            source_df = source_df[select_columns]
+            if isinstance(labels, str) and labels not in attributes:
+                attributes.append(labels)
+            source_df = source_df[attributes]
 
         self._source_df = source_df
 
         if labels is None:
-            self._source_df, self._labels = self._create_groupby_labels(operation)
+            self._source_df, self._labels = self._create_groupby_labels(operation=operation)
         # If the labels are a string, we assume that the string is the name of the column that contains the labels.
         elif isinstance(labels, str):
             self._labels = source_df[labels]
             self._source_df = self._source_df.drop(labels, axis=1, inplace=False)
+        # If the labels are a list of strings, we assume that the strings are the names of the columns that contain the labels,
+        # and we treat it as a group-by on those columns.
+        elif isinstance(labels, list) and all(isinstance(label, str) for label in labels):
+            result_df = self._source_df.groupby(labels).mean(numeric_only=True)
+            self._source_df, self._labels = self._create_groupby_labels(source_df=self._source_df, result_df=result_df)
         # If the labels are a list of integers, we simply convert them to a Series object.
         elif not isinstance(labels, Series):
             self._labels = Series(labels)
@@ -87,25 +87,33 @@ class ManyToOneExplainer(ExplainerInterface):
         self._explainer = None
         self._ran_explainer = False
 
-    def _create_groupby_labels(self, operation) -> (DataFrame, Series):
+    def _create_groupby_labels(self, operation=None, source_df=None, result_df=None) -> (DataFrame, Series):
         """
         Create labels for the many-to-one explainer based on the last operation performed on the DataFrame.
         If the last operation is a groupby operation, the labels are the groups created by the groupby operation.
         Otherwise, the user must provide labels.
 
         :param operation: The last operation performed on the DataFrame.
+        :param source_df: Alternatively to providing an operation, you can provide the source DataFrame and the result DataFrame
+        of the groupby operation.
+        :param result_df: The result DataFrame of the groupby operation.
         :return: The source DataFrame from the operation and the labels.
         We return the source dataframe as well, because the source dataframe from the operation is prior to the
         groupby operation, and that is what interests us.
         """
-        if not "GroupBy" in operation.__repr__():
+        if operation and not "GroupBy" in operation.__repr__():
             raise ValueError(
                 "If the last operation performed on the DataFrame is not a groupby operation, you must provide labels.")
         else:
-            # Get the groupby attributes and the index values of the resulting DataFrame.
-            group_attributes = operation.result_df.index.names
-            index_values = operation.result_df.index.values
-            source_df = DataFrame(operation.source_df)
+            # Extract the source and result df from the operation, if one is provided.
+            if source_df is None:
+                source_df = DataFrame(operation.unsampled_source_df) if hasattr(operation, 'unsampled_source_df') else DataFrame(operation.source_df)
+                result_df = operation.unsampled_result_df if hasattr(operation, 'unsampled_result_df') else operation.result_df
+            elif source_df is None or result_df is None:
+                raise ValueError(
+                    "You must provide either an operation or the source and result DataFrames of a groupby operation.")
+            group_attributes = result_df.index.names
+            index_values = result_df.index.values
             # Create an array of all -1 values, the length of the original DataFrame, as a placeholder for the labels.
             labels = np.full(source_df.shape[0], -1, dtype='O')
             # Go over the index values and assign the group labels to the corresponding rows in the source DataFrame.
@@ -135,35 +143,7 @@ class ManyToOneExplainer(ExplainerInterface):
         return {label: label for label in self._labels.unique()}
 
     def can_visualize(self) -> bool:
-        return self._possible_to_visualize
-
-    def _plot_clusters(self, to_visualize: np.ndarray, cluster_labels: np.ndarray | Series):
-        """
-        Visualizes all clusters in the data each in a different color, in one plot.
-        """
-        # Create a 3D plot if the data is 3D, otherwise create a 2D plot.
-        if to_visualize.shape[1] == 3:
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-        else:
-            fig, ax = plt.subplots()
-
-        labels = cluster_labels.unique()
-        labels.sort()
-
-        for i, label in enumerate(labels):
-            try:
-                label_title = f"Cluster {int(label)}"
-            except ValueError:
-                label_title = f"{label}"
-            current_datapoints = to_visualize[cluster_labels == label]
-            if to_visualize.shape[1] == 3:
-                ax.scatter(current_datapoints[:, 0], current_datapoints[:, 1], current_datapoints[:, 2],
-                           label=label_title)
-            else:
-                ax.scatter(current_datapoints[:, 0], current_datapoints[:, 1], label=label_title)
-
-        return fig, ax
+        return self._ran_explainer
 
     def _convert_rules(self, rules: DataFrame, categorical_mapping: dict) -> DataFrame:
         """
@@ -172,7 +152,7 @@ class ManyToOneExplainer(ExplainerInterface):
         :param rules: The rules generated by the explainer.
         :return: The converted rules.
         """
-        converted_rules = DataFrame(columns=['Rule', 'Cluster', 'Explanation', 'Idx', 'Human Readable Rule'])
+        converted_rules = DataFrame(columns=['Cluster', 'Human Readable Rule', 'Coverage', 'Separation Error'])
         for explanation in rules.iterrows():
             # The explanation is a tuple, where the first element is the index and the second element is the explanation.
             idx = explanation[0]
@@ -180,137 +160,15 @@ class ManyToOneExplainer(ExplainerInterface):
             # We first convert the stringified rule to a list of conditions, create a binary array from the rule,
             # and finally we also convert it into a human readable format, then save everything.
             rule = str_rule_to_list(explanation['rule'])
-            rule_as_binary_np_array = condition_generator(data=self._source_df, rules=[rule])
             human_readable_rule = rule_to_human_readable(rule, categorical_mapping)
             cluster = explanation['Cluster']
-            converted_rules = pd.concat(
-                [converted_rules, DataFrame({'Rule': [rule_as_binary_np_array], 'Cluster': cluster,
-                                             'Explanation': explanation['rule'], 'Idx': idx,
-                                             'Human Readable Rule': human_readable_rule})])
+            coverage = explanation['coverage']
+            separation_error = explanation['separation_err']
+            converted_rules = pd.concat([converted_rules, DataFrame({'Cluster': [cluster],
+                                                                    'Human Readable Rule': [human_readable_rule],
+                                                                    'Coverage': [coverage],
+                                                                    'Separation Error': [separation_error]})])
         return converted_rules
-
-    def _create_general_tab(self, to_visualize: np.ndarray, cluster_labels: np.ndarray | Series) -> Tab:
-        """
-        Creates the initial tab of the visualizations, that contains:
-        1. A plot of all clusters in the data, each in a different color.
-        2. An explanation of the quality metrics used to evaluate the explanations.
-
-        :param to_visualize: The data to visualize.
-        :param cluster_labels: The labels of the clusters.
-        :return: The tab containing the visualizations.
-        """
-        out = Output()
-        with out:
-            fig, ax = self._plot_clusters(to_visualize, cluster_labels)
-            if len(cluster_labels.unique()) > MAX_LABELS:
-                ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-            else:
-                ax.legend(loc='upper right')
-            ax.set_title("All Clusters")
-            plt.show(fig)
-
-        general_tab = Tab()
-        metric_explanations_html = HTMLMath(f"""
-                    <h2>Explanation quality metrics</h2>
-                    <h4>Conciseness</h4>
-                    <p>Conciseness is a measure of how concise the explanation is.<br>
-                    It is calculated as the inverse of the number of conditions in the rule.
-                    A rule with fewer conditions is considered more concise and thus better.
-                    </p>
-                    <h4>Separation error</h4>
-                    <p>The ratio of points for which explanation $E_c$ holds, but those points are not in cluster / group $c$. 
-                    Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \\wedge CL(x) \\neq c \\ |}}{{|\\ x \\in X \\ | \\ E_c(x) = True\\ |}}$$
-                    The lower the separation error, the better the explanation is at separating the cluster from other points.
-                    </p>
-                    <h4>Coverage</h4>
-                    <p>The ratio of points for which explanation $E_c$ holds and those points are in cluster / group $c$.
-                    Mathematically, it is defined as: $$\\frac{{|\\ x \\in X \\ | \\ E_c (x) = True \\wedge CL(x) = c\\ |}}{{|\\ x \\in X \\ | \\ CL(x) = c \\ |}}$$
-                    The higher the coverage, the better.
-                    </p>
-                """)
-        general_tab.children = [Box(children=[out]), metric_explanations_html]
-        general_tab.set_title(0, "All Clusters Plot")
-        general_tab.set_title(1, "Explanation Metrics")
-
-        return general_tab
-
-    def _create_tab_for_cluster(self, cluster: str | int, rules: DataFrame, to_visualize: np.ndarray,
-                                cluster_title: str, ) -> HTML | Tab:
-        """
-        Create a tab for a specific cluster, containing sub-tabs for each rule that explains the cluster.
-
-        :param cluster: The cluster to create the tab for.
-        :param rules: The rules generated by the explainer and converted to a more suitable format.
-        :param to_visualize: The data to visualize.
-        :param cluster_title: The title of the cluster.
-
-        :return: The tab containing the explanations for the cluster, or an HTML element if no explanations were found.
-        """
-        cluster_tab = Tab()
-        cluster_explanations = self._explanations[self._explanations['Cluster'] == cluster]
-        cluster_rules = rules[rules['Cluster'] == cluster]
-        cluster_outputs = []
-
-        if cluster_explanations.empty:
-            res = HTML(f"<h2>No explanation found for {cluster_title}</h2>")
-            return res
-
-        # Go over the rules for each cluster, and plot the data, emphasizing the data points that are explained by
-        # each rule. Each of these plots go into a separate sub-tab.
-        for rule in cluster_rules.iterrows():
-            tab_hbox = HBox()
-            text_vbox = VBox(layout=Layout(width='32%', left='2%'))
-            rule_row = rule[1]
-            idx = rule_row['Idx']
-            rule = rule_row['Rule']
-            explanation_row = self._explanations.loc[idx]
-
-            # Get the data points that are explained by the rule.
-            explained_data_points = to_visualize[rule]
-
-            out = Output(layout=Layout(width='100%'))
-
-            # Visualize all the data, then add an "X" marker for the data points that are explained by the rule.
-            with out:
-                fig, ax = self._plot_clusters(to_visualize, self._labels)
-                ax.scatter(explained_data_points[:, 0], explained_data_points[:, 1], marker='X', c='black',
-                           label='Covered by rule')
-                # Add a legend with cluster labels + "X" for the explained data points.
-                if len(self._labels.unique()) > MAX_LABELS:
-                    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-                else:
-                    ax.legend(loc='upper right')
-                plt.show(fig)
-
-            human_readable_rule = rule_row['Human Readable Rule']
-            # To make the rule more readable, we add line breaks after "AND" and "OR".
-            # We also add a special token for splitting the rule into lines we can wrap.
-            if "AND" in human_readable_rule:
-                human_readable_rule = human_readable_rule.replace("AND", "AND<br>@@@")
-            if "OR" in human_readable_rule:
-                human_readable_rule = human_readable_rule.replace("OR", "OR<br>@@@")
-            human_readable_rule_split = human_readable_rule.split("@@@")
-            human_readable_rule_split = ["<br>".join(textwrap.wrap(line, width=40)) for line in
-                                         human_readable_rule_split]
-            human_readable_rule = "".join(human_readable_rule_split)
-
-            text_vbox.children = [HTML(f"""
-                        <h2>Rule:<br> {human_readable_rule}</h2><hr width='100%' size='2'>
-                        <h3>Conciseness: {explanation_row['conciseness']}</h3><br>
-                        <h3>Separation error: {explanation_row['separation_err']}</h3><br>
-                        <h3>Coverage: {explanation_row['coverage']}</h3><br>
-                        """)]
-            left_box = Box(children=[out], layout=Layout(max_width='60%'))
-            tab_hbox.children = [left_box, text_vbox]
-
-            cluster_outputs.append(tab_hbox)
-
-        # Add the explanations to the tab.
-        cluster_tab.children = cluster_outputs
-        for i, output in enumerate(cluster_outputs):
-            cluster_tab.set_title(i, f"Explanation {i + 1}")
-
-        return cluster_tab
 
     def _map_categorical_features_to_one_hot_encoded_df(self, categorical_features: List[str],
                                                         one_hot_encoded_df: DataFrame) -> dict:
@@ -347,67 +205,41 @@ class ManyToOneExplainer(ExplainerInterface):
         else:
             categorical_mapping = {}
 
-        # Since most dataframes are too high dimensional to visualize, we use PCA to reduce the dimensionality.
-        # The user can choose to use PCA for visualization or not.
-        if self._use_pca_for_visualization:
-            pca = PCA(n_components=self._pca_components)
-            # We use one-hot encoding for categorical data, as PCA requires numerical data.
-            to_visualize = pca.fit_transform(self._source_df)
-        else:
-            to_visualize = self._source_df
-
         converted_rules = self._convert_rules(self._explanations, categorical_mapping)
 
-        cluster_titles = []
-        cluster_titles.append("General")
         unique_cluster_labels = self._labels.unique()
         unique_cluster_labels.sort()
-        # Get a list of cluster titles, which will be used as the titles of the tabs.
-        # The title is either "Cluster {cluster_id}" if the cluster id is an int or the name of the cluster.
+
+
+        # Create a dataframe with a multi-index, where the first level is the cluster title, the second level is the
+        # rule, and the values are the rule quality metrics.
+        out_df = pd.DataFrame(columns=['Coverage', 'Separation Error'],
+                              index=pd.MultiIndex(levels=[[], []], codes=[[], []], names=['Group / Cluster', 'Explanation']))
+
+        # Fill in the dataframe with the rule quality metrics and rules.
+        for idx, row in converted_rules.iterrows():
+            out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Coverage'] = row['Coverage']
+            out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Separation Error'] = row['Separation Error']
+
+        # For any cluster that does not have a rule, we fill in the dataframe with NaN values, and set rule
+        # in that index to "No explanation found".
         for cluster in unique_cluster_labels:
-            try:
-                cluster_titles.append(f"Cluster {int(cluster)}")
-            except ValueError:
-                cluster_titles.append(f"{cluster}")
+            if cluster not in out_df.index.get_level_values(0):
+                out_df.loc[(cluster, "No explanation found"), 'Coverage'] = np.nan
+                out_df.loc[(cluster, "No explanation found"), 'Separation Error'] = np.nan
 
-        # Create the outer tab that contains all the cluster tabs.
-        cluster_tabs = Tab()
-        # Add the first, general tab that contains the plot of all clusters and the explanation of the metrics.
-        cluster_tabs_children = [self._create_general_tab(to_visualize, self._labels)]
-
-        # Populate the outer tab with a tab for each cluster, each tab containing tabs for each rule.
-        for i, cluster in enumerate(unique_cluster_labels):
-            cluster_tabs_children.append(
-                self._create_tab_for_cluster(cluster, converted_rules, to_visualize, cluster_titles[i + 1]))
-
-        cluster_tabs.children = cluster_tabs_children
-        # Give the tabs the appropriate titles.
-        for i, title in enumerate(cluster_titles):
-            cluster_tabs.set_title(i, title)
-
-        # A complete hack to make the tabs display correctly in Jupyter Lab, so they won't be squished.
-        display(
-            HTML(
-                """
-                <style>
-                .jupyter-widgets.widget-tab > .p-TabBar {
-                    overflow-x: auto;
-                    white-space: nowrap;
-                }
-                .jupyter-widgets.widget-tab > .p-TabBar .p-TabBar-tab {
-                    flex: 0 0 auto;
-                }
-                </style>
-                """
-            )
-        )
-
-        return cluster_tabs
+        return out_df
 
     def generate_explanation(self):
 
         # Create the explainer object and generate the explanations.
         self._explainer = Explainer(self._source_df, self._labels)
+        if self.explanation_form.startswith('conj'):
+            self.explanation_form = 'conjunction'
+        elif self.explanation_form.startswith('disj'):
+            self.explanation_form = 'disjunction'
+        else:
+            raise ValueError("Explanations must be either conjunctions or disjunctions.")
         self._explanations = self._explainer.generate_explanations(coverage_threshold=self._coverage_threshold,
                                                                    conciseness_threshold=self._conciseness_threshold,
                                                                    separation_threshold=self._separation_threshold,

@@ -806,7 +806,7 @@ class ExpDataFrame(pd.DataFrame):
                 dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
                 consider='right', value=None, attr=None, ignore=[],
-                labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 5,
+                labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 3,
                 separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
                 visualization_dims: Literal[2, 3] = 2,
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj'):

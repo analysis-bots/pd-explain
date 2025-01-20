@@ -160,7 +160,7 @@ class ManyToOneExplainer(ExplainerInterface):
             # We first convert the stringified rule to a list of conditions, create a binary array from the rule,
             # and finally we also convert it into a human readable format, then save everything.
             rule = str_rule_to_list(explanation['rule'])
-            human_readable_rule = rule_to_human_readable(rule, categorical_mapping)
+            human_readable_rule = rule_to_human_readable(rule, categorical_mapping, mode=self.explanation_form)
             cluster = explanation['Cluster']
             coverage = explanation['coverage']
             separation_error = explanation['separation_err']

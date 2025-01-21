@@ -14,7 +14,6 @@ class ManyToOneExplainer(ExplainerInterface):
 
     def __init__(self, source_df: DataFrame, labels: Series | str | list[int], coverage_threshold: float = 0.7,
                  max_explanation_length: int = 3, separation_threshold: float = 0.3, p_value: int = 0,
-                 use_pca_for_visualization: bool = True, pca_components: Literal[2, 3] = 2,
                  explanation_form: Literal['conj', 'conjunction', 'disj', 'disjunction'] = 'conj',
                  attributes: List[str] = None, operation=None,
                  *args, **kwargs):
@@ -64,11 +63,6 @@ class ManyToOneExplainer(ExplainerInterface):
             raise ValueError("The maximum explanation length must be at least 1.")
         if separation_threshold < 0 or separation_threshold > 1:
             raise ValueError("The separation threshold must be between 0 and 1.")
-        if use_pca_for_visualization and pca_components > 3:
-            raise ValueError("The number of PCA components must be at most 3. We do not support 4D or higher plots.")
-        if not use_pca_for_visualization and source_df.shape[1] > 3:
-            warn("The dataframe is too high dimensional to visualize. We recommend using PCA for visualization.")
-            self._possible_to_visualize = False
 
         self._coverage_threshold = coverage_threshold
         self._max_explanation_length = max_explanation_length
@@ -80,8 +74,6 @@ class ManyToOneExplainer(ExplainerInterface):
 
         self._p_value = p_value
 
-        self._use_pca_for_visualization = use_pca_for_visualization
-        self._pca_components = pca_components
         self._explanations = None
         self.explanation_form = explanation_form
         self._explainer = None

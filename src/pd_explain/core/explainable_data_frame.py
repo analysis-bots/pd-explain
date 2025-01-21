@@ -806,9 +806,8 @@ class ExpDataFrame(pd.DataFrame):
                 dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
                 consider='right', value=None, attr=None, ignore=[],
-                labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 3,
-                separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
-                visualization_dims: Literal[2, 3] = 2,
+                labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
+                separation_threshold: float = 0.3, p_value: int = 0,
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj'):
         """
         Generate explanation to series base on the operation lead to this series result
@@ -854,8 +853,6 @@ class ExpDataFrame(pd.DataFrame):
                                              labels=labels, coverage_threshold=coverage_threshold,
                                              max_explanation_length=max_explanation_length,
                                              separation_threshold=separation_threshold, p_value=p_value,
-                                             use_pca_for_visualization=use_pca_for_visualization,
-                                             pca_components=visualization_dims,
                                              target=target, dir=dir,
                                              source_df=self, explanation_form=explanation_form,
                                              )

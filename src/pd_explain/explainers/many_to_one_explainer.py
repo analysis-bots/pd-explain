@@ -18,7 +18,40 @@ class ManyToOneExplainer(ExplainerInterface):
                  max_explanation_length: int = 3, separation_threshold: float = 0.3, p_value: int = 1,
                  explanation_form: Literal['conj', 'conjunction', 'disj', 'disjunction'] = 'conj',
                  attributes: List[str] = None, operation=None, use_sampling: bool = True,
+                 prune_if_too_many_labels: bool = True, max_labels: int = MAX_LABELS,
                  *args, **kwargs):
+        """
+        Initialize the many-to-one explainer.
+        The many to one explainer utilizes cluster-explorer to generate explanations for many-to-one relationships,
+        be they clusters, groups created a groupby operation, existing labels, or any other kind of grouping.
+
+        :param source_df: The dataframe to explain.
+        :param labels: The labels to explain. This can be a Series object, a string representing the name of the column
+        containing the labels, or a list of integers.
+        :param coverage_threshold: The minimum coverage threshold for an explanation to be considered valid. Coverage is the
+        proportion of the data that is covered by the rule with respect to the cluster.
+        :param max_explanation_length: The maximum length of the explanation. This is the maximum number of conditions
+        that can be in a rule.
+        :param separation_threshold: The minimum separation threshold for an explanation to be considered valid. Separation
+        is the proportion of the data that is covered by the rule with outside the cluster.
+        :param p_value: A scaling value for the number of top attributes to consider when generating explanations. The
+        formula for the number is explanation_length * p_value. This is done to optimize runtime, since the algorithm's
+        runtime is dependent on the number of attributes. A higher p_value will result in more attributes being considered.
+        Default is 1.
+        :param explanation_form: The form of the explanations. This can be either 'conj' or 'conjunction' for conjunctions,
+        or 'disj' or 'disjunction' for disjunctions.
+        :param attributes: The attributes to consider when generating explanations. If not provided, all attributes will
+        be considered.
+        :param operation: The last operation performed on the DataFrame. This is used in case no labels are provided, in which
+        case, if the last operation is a groupby operation, the labels will be the groups created by the groupby operation.
+        :param use_sampling: Whether to sample the dataframe to reduce the number of rows and speed up explanation generation.
+        This is especially useful when the dataframe is very large, but may affect the quality of the explanations, although
+        the effect is usually negligible. Default is True.
+        :param prune_if_too_many_labels: Whether to prune the labels if there are too many of them. If there are more than
+        10 unique labels, the labels will be pruned to the top 10 most common labels. Default is True.
+        :param max_labels: The maximum number of unique labels to keep. Default is 10. Only used if prune_if_too_many_labels
+        is set to True.
+        """
 
         # Convert the source_df to a DataFrame object, to avoid overhead from overridden methods in ExpDataFrame,
         # as well as to avoid any bad interactions between those methods and the explainer.
@@ -57,6 +90,9 @@ class ManyToOneExplainer(ExplainerInterface):
         if self._source_df.shape[0] != len(self._labels):
             raise ValueError("The number of rows in the source DataFrame and the number of labels must be equal.")
 
+        # Drop labels with missing values, as well as the corresponding rows in the source DataFrame.
+        self._drop_na()
+
         self._possible_to_visualize = True
         self._mapping = self.create_mapping()
 
@@ -80,9 +116,45 @@ class ManyToOneExplainer(ExplainerInterface):
         self.explanation_form = explanation_form
         self._explainer = None
         self._ran_explainer = False
+        self._max_labels = max_labels
+
+        # Optional operations to speed up explanation generation.
+        if prune_if_too_many_labels:
+            self._prune_labels()
 
         if use_sampling:
             self._sample()
+
+
+    def _drop_na(self):
+        """
+        Drop labels with missing values, as well as the corresponding rows in the source DataFrame.
+        """
+        na_labels = self._labels[self._labels.isna()]
+        if not na_labels.empty:
+            warn(f"Dropping {len(na_labels)} labels with missing values.")
+            na_labels_indexes = na_labels.index
+            self._source_df = self._source_df.drop(na_labels_indexes)
+            self._labels = self._labels.drop(na_labels_indexes)
+            self._labels.reset_index(drop=True, inplace=True)
+            self._source_df.reset_index(drop=True, inplace=True)
+
+
+    def _prune_labels(self):
+        """
+        Prune the labels if there are too many of them.
+        If there are more than 10 unique labels, the labels will be pruned to the top 10 most common labels.
+        """
+        unique_labels = self._labels.unique()
+        if len(unique_labels) > self._max_labels:
+            warn(f"There are more than {self._max_labels} unique labels, and the option `prune_if_too_many_labels` is set to True. "
+                 f"Pruning the labels to the top {self._max_labels} most common labels.")
+            top_labels = self._labels.value_counts().index[:self._max_labels]
+            top_labels_indexes = self._labels.isin(top_labels)
+            self._source_df = self._source_df[top_labels_indexes]
+            self._labels = self._labels[top_labels_indexes]
+            self._labels.reset_index(drop=True, inplace=True)
+            self._source_df.reset_index(drop=True, inplace=True)
 
 
     def _sample(self, sample_size: int = DEFAULT_SAMPLE_SIZE):
@@ -119,8 +191,8 @@ class ManyToOneExplainer(ExplainerInterface):
         else:
             # Extract the source and result df from the operation, if one is provided.
             if source_df is None:
-                source_df = DataFrame(operation.unsampled_source_df) if hasattr(operation, 'unsampled_source_df') else DataFrame(operation.source_df)
-                result_df = operation.unsampled_result_df if hasattr(operation, 'unsampled_result_df') else operation.result_df
+                source_df = DataFrame(operation.source_df)
+                result_df = DataFrame(operation.result_df)
             elif source_df is None or result_df is None:
                 raise ValueError(
                     "You must provide either an operation or the source and result DataFrames of a groupby operation.")
@@ -252,6 +324,7 @@ class ManyToOneExplainer(ExplainerInterface):
             self.explanation_form = 'disjunction'
         else:
             raise ValueError("Explanations must be either conjunctions or disjunctions.")
+
         self._explanations = self._explainer.generate_explanations(coverage_threshold=self._coverage_threshold,
                                                                    conciseness_threshold=self._conciseness_threshold,
                                                                    separation_threshold=self._separation_threshold,

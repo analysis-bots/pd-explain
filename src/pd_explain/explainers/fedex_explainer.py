@@ -18,6 +18,24 @@ class FedexExplainer(ExplainerInterface):
                  figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
                  consider='right', value=None, attr=None, ignore=None, hold_out=None, control=None,
                  use_sampling: bool = True, *args, **kwargs):
+        """
+        Initialize the FedexExplainer object.
+        The FedexExplainer works as an interface for calling the explain method of the fedex explainer objects.
+
+        :param operation: The operation object to explain.
+        :param schema: The schema of the data.
+        :param attributes: The attributes to consider in the explanation.
+        :param top_k: The number of top explanations to generate.
+        :param explainer: The type of explainer to use. Can be 'fedex', 'outlier', or 'shapley'.
+        :param target: The target value for the outlier explanation.
+        :param dir: The direction of the outlier explanation. Can be 'high' or 'low'.
+        :param figs_in_row: The number of figures to display in a row.
+        :param show_scores: Whether to show the scores in the explanation.
+        :param title: The title of the explanation.
+        :param corr_TH: The correlation threshold. Attributes with a correlation above this threshold will be ignored.
+        :param consider: The side of the join to consider in the explanation.
+        :param use_sampling: Whether to use sampling to speed up the explanation generation process. Default is True.
+        """
 
         if operation is None:
             raise ValueError('All fedex explainers and outlier explainer require an operation object')

@@ -810,6 +810,7 @@ class ExpDataFrame(pd.DataFrame):
                 labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
                 separation_threshold: float = 0.3, p_value: int = 1,
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',
+                prune_if_too_many_labels: bool = True, max_labels: int = 10,
                 use_sampling: None | bool = None):
         """
         Generate explanation to series base on the operation lead to this series result
@@ -834,11 +835,14 @@ class ExpDataFrame(pd.DataFrame):
         :param separation_threshold: maximum separation threshold for the many to one explainer
         :param p_value: p-value for the many to one explainer. p-value is related to the explanation length.
         :param explanation_form: mode of the explanation of the many to one explainer. Can be either 'conj' or 'disj' for conjunction or disjunction.
+        :param prune_if_too_many_labels: Whether to prune the labels to the top k most common labels if there are too many labels
+        when using the many to one explainer. Defaults to True.
+        :param max_labels: The maximum number of labels to keep when pruning the labels. Defaults to 10. Only used if
+        prune_if_too_many_labels is True.
         :param use_sampling: Whether or not to use sampling when generating an explanation. This can massively speed up
         the explanation generation process, but may result in less accurate explanations. We use sampling methods that
         we have empirically tested to only minimally affect the accuracy of the explanations. Defaults to None, in which
         case the value set in the global configuration is used (which defaults to True).
-
 
         :return: explanation figures
         """
@@ -861,6 +865,7 @@ class ExpDataFrame(pd.DataFrame):
                                              separation_threshold=separation_threshold, p_value=p_value,
                                              target=target, dir=dir,
                                              source_df=self, explanation_form=explanation_form,
+                                             prune_if_too_many_labels=prune_if_too_many_labels, max_labels=max_labels,
                                              use_sampling=use_sampling
                                              )
         explanation = explainer.generate_explanation()

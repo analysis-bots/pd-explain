@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
 from pd_explain.explainers import ExplainerFactory
+from pd_explain.utils.global_values import get_use_sampling_value
 
 import numpy as np
 
@@ -128,7 +129,7 @@ class ExpSeries(pd.Series):
                 df_in_exc = df_in[(df_in[attr] < bin.left) | (df_in[attr] > bin.right)]
                 # print(df_in_exc.head())
                 inf = self.calc_influence_std(df_agg, df_in_exc, g_att, g_agg, target) / (
-                            df_in.id.count() / df_in_exc.id.count())
+                        df_in.id.count() / df_in_exc.id.count())
                 if inf > top_inf:
                     top_inf = inf
                     top_bin = bin
@@ -173,13 +174,13 @@ class ExpSeries(pd.Series):
 
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1, figs_in_row: int = 2,
                 explainer='fedex',
-                target=None, dir: Literal["high", "low", 1, -1]=None, control=None, hold_out=[],
+                target=None, dir: Literal["high", "low", 1, -1] = None, control=None, hold_out=[],
                 show_scores: bool = False, title: str = None,
                 labels=None, coverage_threshold: float = 0.6, max_explanation_length: int = 5,
                 separation_threshold: float = 0.5, p_value: int = 0, use_pca_for_visualization: bool = True,
                 visualization_dims: Literal[2, 3] = 2,
                 explanation_form: Literal['conjunctive', 'disjunctive'] = 'conjunctive',
-                select_columns: List[str] = None
+                use_sampling: None | bool = None
                 ):
         """
         Generate explanation to series base on the operation lead to this series result
@@ -194,9 +195,15 @@ class ExpSeries(pd.Series):
         :param target: outlier target value to explain
         :param dir: direction of the outlier. Can be 'high' or 'low' (or corresponding integer values 1 and -1) when using
                     the outlier explainer. Default is None.
+        :param use_sampling: Whether or not to use sampling when generating an explanation. This can massively speed up
+        the explanation generation process, but may result in less accurate explanations. We use sampling methods that
+        we have empirically tested to only minimally affect the accuracy of the explanations. Defaults to None, in which
+        case the value set in the global configuration is used (which defaults to True).
 
         :return: explanation figures
         """
+
+        use_sampling = use_sampling if use_sampling is not None else get_use_sampling_value()
 
         factory = ExplainerFactory()
         explainer = factory.create_explainer(
@@ -209,7 +216,7 @@ class ExpSeries(pd.Series):
             separation_threshold=separation_threshold, p_value=p_value,
             use_pca_for_visualization=use_pca_for_visualization,
             pca_components=visualization_dims,
-            explanation_form=explanation_form, select_columns=select_columns
+            explanation_form=explanation_form, use_sampling=use_sampling
         )
 
         explanation = explainer.generate_explanation()

@@ -35,6 +35,7 @@ from typing import (
     List, Callable, Literal, )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
 from pd_explain.explainers import ExplainerFactory
+from pd_explain.utils.global_values import get_use_sampling_value
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
@@ -807,8 +808,9 @@ class ExpDataFrame(pd.DataFrame):
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
                 consider='right', value=None, attr=None, ignore=[],
                 labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
-                separation_threshold: float = 0.3, p_value: int = 0,
-                explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj'):
+                separation_threshold: float = 0.3, p_value: int = 1,
+                explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',
+                use_sampling: None | bool = None):
         """
         Generate explanation to series base on the operation lead to this series result
         :param schema: result columns, can change columns name and ignored columns
@@ -831,10 +833,12 @@ class ExpDataFrame(pd.DataFrame):
         :param max_explanation_length: maximum explanation length for the many to one explainer
         :param separation_threshold: maximum separation threshold for the many to one explainer
         :param p_value: p-value for the many to one explainer. p-value is related to the explanation length.
-        :param use_pca_for_visualization: whether to use PCA for visualization in the many to one explainer. Leave on
-        if your data has more than 3 dimensions.
-        :param visualization_dims: number of PCA components to use for visualization in the many to one explainer. Can be 2 or 3.
         :param explanation_form: mode of the explanation of the many to one explainer. Can be either 'conj' or 'disj' for conjunction or disjunction.
+        :param use_sampling: Whether or not to use sampling when generating an explanation. This can massively speed up
+        the explanation generation process, but may result in less accurate explanations. We use sampling methods that
+        we have empirically tested to only minimally affect the accuracy of the explanations. Defaults to None, in which
+        case the value set in the global configuration is used (which defaults to True).
+
 
         :return: explanation figures
         """
@@ -844,6 +848,8 @@ class ExpDataFrame(pd.DataFrame):
         # which provides no information to the user.
         if str.lower(explainer) == 'outlier':
             raise ValueError("Outlier explainer is not supported for multi-attribute dataframes, only for series.")
+
+        use_sampling = use_sampling if use_sampling is not None else get_use_sampling_value()
 
         factory = ExplainerFactory()
         explainer = factory.create_explainer(explainer=explainer, operation=self.operation,
@@ -855,6 +861,7 @@ class ExpDataFrame(pd.DataFrame):
                                              separation_threshold=separation_threshold, p_value=p_value,
                                              target=target, dir=dir,
                                              source_df=self, explanation_form=explanation_form,
+                                             use_sampling=use_sampling
                                              )
         explanation = explainer.generate_explanation()
 

@@ -8,14 +8,16 @@ from cluster_explorer import Explainer, condition_generator, str_rule_to_list, r
 import numpy as np
 
 MAX_LABELS = 10
+DEFAULT_SAMPLE_SIZE = 5000
+RANDOM_SEED = 42
 
 
 class ManyToOneExplainer(ExplainerInterface):
 
     def __init__(self, source_df: DataFrame, labels: Series | str | list[int], coverage_threshold: float = 0.7,
-                 max_explanation_length: int = 3, separation_threshold: float = 0.3, p_value: int = 0,
+                 max_explanation_length: int = 3, separation_threshold: float = 0.3, p_value: int = 1,
                  explanation_form: Literal['conj', 'conjunction', 'disj', 'disjunction'] = 'conj',
-                 attributes: List[str] = None, operation=None,
+                 attributes: List[str] = None, operation=None, use_sampling: bool = True,
                  *args, **kwargs):
 
         # Convert the source_df to a DataFrame object, to avoid overhead from overridden methods in ExpDataFrame,
@@ -52,6 +54,9 @@ class ManyToOneExplainer(ExplainerInterface):
         else:
             self._labels = labels
 
+        if self._source_df.shape[0] != len(self._labels):
+            raise ValueError("The number of rows in the source DataFrame and the number of labels must be equal.")
+
         self._possible_to_visualize = True
         self._mapping = self.create_mapping()
 
@@ -69,15 +74,30 @@ class ManyToOneExplainer(ExplainerInterface):
         self._separation_threshold = separation_threshold
         self._conciseness_threshold = 1 / self._max_explanation_length
 
-        if p_value == 0:
-            p_value = max_explanation_length
-
         self._p_value = p_value
 
         self._explanations = None
         self.explanation_form = explanation_form
         self._explainer = None
         self._ran_explainer = False
+
+        if use_sampling:
+            self._sample()
+
+
+    def _sample(self, sample_size: int = DEFAULT_SAMPLE_SIZE):
+        """
+        Sample the dataframe, to reduce the number of rows and speed up explanation generation.
+        This is especially useful when the dataframe is very large, but may affect the quality of the explanations.
+        """
+        if self._source_df.shape[0] > sample_size:
+            generator = np.random.default_rng(RANDOM_SEED)
+            uniform_indexes = generator.choice(self._source_df.index, size=sample_size, replace=False)
+            self._source_df = self._source_df.loc[uniform_indexes]
+            self._source_df.reset_index(drop=True, inplace=True)
+            self._labels = self._labels.loc[uniform_indexes]
+            self._labels.reset_index(drop=True, inplace=True)
+
 
     def _create_groupby_labels(self, operation=None, source_df=None, result_df=None) -> (DataFrame, Series):
         """

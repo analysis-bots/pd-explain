@@ -11,11 +11,16 @@ class FedexExplainer(ExplainerInterface):
     of the explainer object.
     """
 
-    def __init__(self, operation=None, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex',
+    def __init__(self, operation=None, schema: dict = None, attributes: List = None, top_k: int = None,
+                 explainer='fedex',
                  target=None,
                  dir=None,
                  figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
-                 consider='right', value=None, attr=None, ignore=None, hold_out=None, control=None, *args, **kwargs):
+                 consider='right', value=None, attr=None, ignore=None, hold_out=None, control=None,
+                 use_sampling: bool = True, *args, **kwargs):
+
+        if operation is None:
+            raise ValueError('All fedex explainers and outlier explainer require an operation object')
 
         if hold_out is None:
             hold_out = []
@@ -43,13 +48,12 @@ class FedexExplainer(ExplainerInterface):
 
         # Convert the source_df and result_df to DataFrame objects, to avoid overhead from overridden methods
         # in ExpDataFrame, as well as to avoid any bad interactions between those methods and the explainer.
-        if operation is not None:
-            if hasattr(operation, 'source_df'):
-                operation.source_df = DataFrame(operation.source_df) if operation.source_df is not None else None
-            elif hasattr(operation, 'left_df'):
-                operation.left_df = DataFrame(operation.left_df) if operation.left_df is not None else None
-                operation.right_df = DataFrame(operation.right_df) if operation.right_df is not None else None
-            operation.result_df = DataFrame(operation.result_df) if operation.result_df is not None else None
+        if hasattr(operation, 'source_df'):
+            operation.source_df = DataFrame(operation.source_df) if operation.source_df is not None else None
+        elif hasattr(operation, 'left_df'):
+            operation.left_df = DataFrame(operation.left_df) if operation.left_df is not None else None
+            operation.right_df = DataFrame(operation.right_df) if operation.right_df is not None else None
+        operation.result_df = DataFrame(operation.result_df) if operation.result_df is not None else None
 
         self._schema = schema
         self._attributes = attributes
@@ -69,6 +73,7 @@ class FedexExplainer(ExplainerInterface):
         self._hold_out = hold_out
         self._control = control
         self._results = None
+        self._use_sampling = use_sampling
 
     def generate_explanation(self):
         if self._operation is None:
@@ -81,17 +86,17 @@ class FedexExplainer(ExplainerInterface):
                 target=self._target, dir=self._dir,
                 control=self._control, hold_out=self._hold_out, figs_in_row=self._figs_in_row,
                 show_scores=self._show_scores, title=self._title, corr_TH=self._corr_TH,
-                consider=self._consider, cont=self._value, attr=self._attr, ignore=self._ignore
+                consider=self._consider, cont=self._value, attr=self._attr, ignore=self._ignore,
+                use_sampling=self._use_sampling
             )
 
         else:
             self._results = self._operation.explain(
                 schema=self._schema, attributes=self._attributes, top_k=self._top_k,
                 figs_in_row=self._figs_in_row, show_scores=self._show_scores, title=self._title, corr_TH=self._corr_TH,
-                explainer=self._explainer, consider=self._consider, cont=self._value, attr=self._attr, ignore=self._ignore
+                explainer=self._explainer, consider=self._consider, cont=self._value, attr=self._attr,
+                ignore=self._ignore, use_sampling=self._use_sampling
             )
-
-
 
         return self._results
 

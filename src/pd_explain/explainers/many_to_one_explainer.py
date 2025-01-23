@@ -233,7 +233,7 @@ class ManyToOneExplainer(ExplainerInterface):
         We return the source dataframe as well, because the source dataframe from the operation is prior to the
         groupby operation, and that is what interests us.
         """
-        if operation is None or operation is not None and not "GroupBy" in operation.__repr__():
+        if source_df is None and (operation is None or operation is not None and not "GroupBy" in operation.__repr__()):
             raise ValueError(
                 "If this dataframe is not the result of a groupby operation, you must provide the labels.")
         else:

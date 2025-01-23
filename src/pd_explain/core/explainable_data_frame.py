@@ -811,6 +811,8 @@ class ExpDataFrame(pd.DataFrame):
                 separation_threshold: float = 0.3, p_value: int = 1,
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',
                 prune_if_too_many_labels: bool = True, max_labels: int = 10,
+                bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
+                labels_name: str = 'label',
                 use_sampling: None | bool = None):
         """
         Generate explanation to series base on the operation lead to this series result
@@ -839,6 +841,13 @@ class ExpDataFrame(pd.DataFrame):
         when using the many to one explainer. Defaults to True.
         :param max_labels: The maximum number of labels to keep when pruning the labels. Defaults to 10. Only used if
         prune_if_too_many_labels is True.
+        :param bin_numeric: Whether or not to bin numeric labels when using the many to one explainer. Defaults to False.
+        Numeric labels will be binned only if the number of unique labels is greater than num_bins.
+        :param num_bins: The number of bins to use when binning numeric labels. Defaults to 10.
+        :param binning_method: The method to use when binning numeric labels. Can be either 'quantile' or 'uniform'.
+        :param labels_name: The name of the column containing the labels. Only useful if the labels provided are an
+        array and bin_numeric is True. Will be used as the name of the new column containing the binned labels, instead
+        of a default name. Defaults to 'label'.
         :param use_sampling: Whether or not to use sampling when generating an explanation. This can massively speed up
         the explanation generation process, but may result in less accurate explanations. We use sampling methods that
         we have empirically tested to only minimally affect the accuracy of the explanations. Defaults to None, in which
@@ -866,6 +875,8 @@ class ExpDataFrame(pd.DataFrame):
                                              target=target, dir=dir,
                                              source_df=self, explanation_form=explanation_form,
                                              prune_if_too_many_labels=prune_if_too_many_labels, max_labels=max_labels,
+                                             bin_numeric=bin_numeric, num_bins=num_bins, binning_method=binning_method,
+                                             labels_name=labels_name,
                                              use_sampling=use_sampling
                                              )
         explanation = explainer.generate_explanation()

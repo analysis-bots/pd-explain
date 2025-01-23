@@ -3,7 +3,6 @@ from typing import Literal, List
 from .explainer_interface import ExplainerInterface
 import pandas as pd
 from pandas import DataFrame, Series
-from warnings import warn
 from cluster_explorer import Explainer, condition_generator, str_rule_to_list, rule_to_human_readable
 import numpy as np
 
@@ -14,11 +13,13 @@ RANDOM_SEED = 42
 
 class ManyToOneExplainer(ExplainerInterface):
 
-    def __init__(self, source_df: DataFrame, labels: Series | str | list[int], coverage_threshold: float = 0.7,
+    def __init__(self, source_df: DataFrame, labels: Series | str | list[int] | None, coverage_threshold: float = 0.7,
                  max_explanation_length: int = 3, separation_threshold: float = 0.3, p_value: int = 1,
                  explanation_form: Literal['conj', 'conjunction', 'disj', 'disjunction'] = 'conj',
                  attributes: List[str] = None, operation=None, use_sampling: bool = True,
                  prune_if_too_many_labels: bool = True, max_labels: int = MAX_LABELS,
+                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
+                 labels_name: str = 'label',
                  *args, **kwargs):
         """
         Initialize the many-to-one explainer.
@@ -51,6 +52,13 @@ class ManyToOneExplainer(ExplainerInterface):
         10 unique labels, the labels will be pruned to the top 10 most common labels. Default is True.
         :param max_labels: The maximum number of unique labels to keep. Default is 10. Only used if prune_if_too_many_labels
         is set to True.
+        :param bin_numeric: Whether to bin numeric labels into discrete intervals. Labels are binned into num_bins intervals,
+        using the specified binning method. Labels are considered numeric if they are of type int or float, and have more
+        than num_bins unique values. Default is False.
+        :param num_bins: The number of bins to create for the numeric labels. Default is 10.
+        :param binning_method: The method to use for binning the numeric labels. This can be either 'uniform' or 'quantile'.
+        Default is 'quantile'.
+        :param labels_name: A name to give the labels when binning them, if there is none to begin with. Default is 'label'.
         """
 
         # Convert the source_df to a DataFrame object, to avoid overhead from overridden methods in ExpDataFrame,
@@ -68,6 +76,10 @@ class ManyToOneExplainer(ExplainerInterface):
             source_df = source_df[attributes]
 
         self._source_df = source_df
+        self._num_bins = num_bins
+        self._binning_method = binning_method
+        self._bin_numeric = bin_numeric
+        self._labels_name = labels_name if labels_name is not None else 'label'
 
         if labels is None:
             self._source_df, self._labels = self._create_groupby_labels(operation=operation)
@@ -94,6 +106,10 @@ class ManyToOneExplainer(ExplainerInterface):
         self._drop_na()
 
         self._possible_to_visualize = True
+
+        if bin_numeric:
+            self._labels = self._bin_numeric_labels(self._labels)
+
         self._mapping = self.create_mapping()
 
         if p_value < 0:
@@ -125,6 +141,40 @@ class ManyToOneExplainer(ExplainerInterface):
         if use_sampling:
             self._sample()
 
+    def _interval_to_str(self, intervals: Series, attribute_name: str) -> Series:
+        """
+        Convert the intervals to strings, so that they can be used in the explanations.
+        """
+        return intervals.apply(lambda
+                                   x: f"{x.left} {'<=' if x.closed == 'left' else '<'} {attribute_name} {'<=' if x.closed == 'right' else '<'} {x.right}")
+
+    def _bin_numeric_labels(self, labels: Series) -> Series:
+        """
+        Bins numeric labels into discrete intervals.
+        Labels are binned into num_bins intervals, using the specified binning method.
+        Labels are considered numeric if they are:
+        1. Of type int or float.
+        2. Have more than num_bins unique values.
+        """
+        # Check if the labels are numeric.
+        dtype = str(labels.dtype)
+        if dtype.startswith('int') or dtype.startswith('float'):
+            unique_labels = labels.unique()
+            # If the labels are numeric and have more than num_bins unique values, we bin them.
+            if len(unique_labels) > self._num_bins:
+                if self._binning_method == 'uniform':
+                    bins = pd.cut(labels, bins=self._num_bins, retbins=False, duplicates='drop')
+                elif self._binning_method == 'quantile':
+                    bins = pd.qcut(labels, q=self._num_bins, retbins=False, duplicates='drop')
+                else:
+                    raise ValueError("The binning method must be either 'uniform' or 'quantile'.")
+                # After binning, we convert the intervals to meaningful strings.
+                attribute_name = labels.name if labels.name is not None else self._labels_name
+                str_intervals = self._interval_to_str(bins, attribute_name)
+                # Then we return the binned labels.
+                print(f"Attribute '{attribute_name}' in labels has more than specified number of {self._num_bins} unique values. Binning the attribute.\n")
+                return str_intervals
+        return labels
 
     def _drop_na(self):
         """
@@ -132,30 +182,29 @@ class ManyToOneExplainer(ExplainerInterface):
         """
         na_labels = self._labels[self._labels.isna()]
         if not na_labels.empty:
-            warn(f"Dropping {len(na_labels)} labels with missing values.")
+            print(f"Dropping {len(na_labels)} labels with missing values.\n")
             na_labels_indexes = na_labels.index
             self._source_df = self._source_df.drop(na_labels_indexes)
             self._labels = self._labels.drop(na_labels_indexes)
             self._labels.reset_index(drop=True, inplace=True)
             self._source_df.reset_index(drop=True, inplace=True)
 
-
     def _prune_labels(self):
         """
         Prune the labels if there are too many of them.
-        If there are more than 10 unique labels, the labels will be pruned to the top 10 most common labels.
+        If there are more than k unique labels, the labels will be pruned to the top k most common labels.
         """
         unique_labels = self._labels.unique()
         if len(unique_labels) > self._max_labels:
-            warn(f"There are more than {self._max_labels} unique labels, and the option `prune_if_too_many_labels` is set to True. "
-                 f"Pruning the labels to the top {self._max_labels} most common labels.")
+            print(
+                f"There are more than the specified max number of {self._max_labels} unique labels, and the option `prune_if_too_many_labels` is set to True. "
+                f"Pruning the labels to the top {self._max_labels} most common labels.\n")
             top_labels = self._labels.value_counts().index[:self._max_labels]
             top_labels_indexes = self._labels.isin(top_labels)
             self._source_df = self._source_df[top_labels_indexes]
             self._labels = self._labels[top_labels_indexes]
             self._labels.reset_index(drop=True, inplace=True)
             self._source_df.reset_index(drop=True, inplace=True)
-
 
     def _sample(self, sample_size: int = DEFAULT_SAMPLE_SIZE):
         """
@@ -169,7 +218,6 @@ class ManyToOneExplainer(ExplainerInterface):
             self._source_df.reset_index(drop=True, inplace=True)
             self._labels = self._labels.loc[uniform_indexes]
             self._labels.reset_index(drop=True, inplace=True)
-
 
     def _create_groupby_labels(self, operation=None, source_df=None, result_df=None) -> (DataFrame, Series):
         """
@@ -185,9 +233,9 @@ class ManyToOneExplainer(ExplainerInterface):
         We return the source dataframe as well, because the source dataframe from the operation is prior to the
         groupby operation, and that is what interests us.
         """
-        if operation and not "GroupBy" in operation.__repr__():
+        if operation is None or operation is not None and not "GroupBy" in operation.__repr__():
             raise ValueError(
-                "If the last operation performed on the DataFrame is not a groupby operation, you must provide labels.")
+                "If this dataframe is not the result of a groupby operation, you must provide the labels.")
         else:
             # Extract the source and result df from the operation, if one is provided.
             if source_df is None:
@@ -197,12 +245,23 @@ class ManyToOneExplainer(ExplainerInterface):
                 raise ValueError(
                     "You must provide either an operation or the source and result DataFrames of a groupby operation.")
             group_attributes = result_df.index.names
-            index_values = result_df.index.values
+            # index_values = result_df.index.values
             # Create an array of all -1 values, the length of the original DataFrame, as a placeholder for the labels.
             labels = np.full(source_df.shape[0], -1, dtype='O')
             # Go over the index values and assign the group labels to the corresponding rows in the source DataFrame.
             source_group_attributes_only = source_df[group_attributes]
-            for i, group in enumerate(index_values):
+
+            if self._bin_numeric:
+                # If any of the group attributes are numeric, we bin them into intervals.
+                # The bin_numeric method does both the checking and the binning. Non numeric attributes are not affected.
+                for attribute in group_attributes:
+                    source_group_attributes_only.loc[:, attribute] = self._bin_numeric_labels(source_group_attributes_only[attribute])
+                # Change the groups to match the binning.
+                groups = set(source_group_attributes_only[group_attributes].apply(lambda x: tuple(x), axis=1))
+            else:
+                groups = result_df.index.values
+
+            for i, group in enumerate(groups):
                 group_indices = source_group_attributes_only.index[
                     source_group_attributes_only[group_attributes].eq(group).all(axis=1)].values
                 labels[group_indices] = str(group)
@@ -249,9 +308,9 @@ class ManyToOneExplainer(ExplainerInterface):
             coverage = explanation['coverage']
             separation_error = explanation['separation_err']
             converted_rules = pd.concat([converted_rules, DataFrame({'Cluster': [cluster],
-                                                                    'Human Readable Rule': [human_readable_rule],
-                                                                    'Coverage': [coverage],
-                                                                    'Separation Error': [separation_error]})])
+                                                                     'Human Readable Rule': [human_readable_rule],
+                                                                     'Coverage': [coverage],
+                                                                     'Separation Error': [separation_error]})])
         return converted_rules
 
     def _map_categorical_features_to_one_hot_encoded_df(self, categorical_features: List[str],
@@ -291,14 +350,14 @@ class ManyToOneExplainer(ExplainerInterface):
 
         converted_rules = self._convert_rules(self._explanations, categorical_mapping)
 
-        unique_cluster_labels = self._labels.unique()
+        unique_cluster_labels = list(self._labels.unique())
         unique_cluster_labels.sort()
-
 
         # Create a dataframe with a multi-index, where the first level is the cluster title, the second level is the
         # rule, and the values are the rule quality metrics.
         out_df = pd.DataFrame(columns=['Coverage', 'Separation Error'],
-                              index=pd.MultiIndex(levels=[[], []], codes=[[], []], names=['Group / Cluster', 'Explanation']))
+                              index=pd.MultiIndex(levels=[[], []], codes=[[], []],
+                                                  names=['Group / Cluster', 'Explanation']))
 
         # Fill in the dataframe with the rule quality metrics and rules.
         for idx, row in converted_rules.iterrows():

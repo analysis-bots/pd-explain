@@ -270,6 +270,17 @@ class ManyToOneExplainer(ExplainerInterface):
             # an explanation saying the best rule is "groupby_attribute == group", which is not very informative.
             source_df = source_df.drop(group_attributes, axis=1, inplace=False)
 
+            # We drop rows with missing values in the labels, as they cannot be explained.
+            missing_values_indexes = np.where(labels == -1)[0]
+            if len(missing_values_indexes) > 0:
+                print(f"There are {len(missing_values_indexes)} rows with missing values in the labels."
+                      f" Dropping them, as they could not be associated with a group.\n")
+                source_df = source_df.drop(missing_values_indexes)
+                labels = labels[labels != -1]
+                labels = Series(labels)
+                labels.reset_index(drop=True, inplace=True)
+                source_df.reset_index(drop=True, inplace=True)
+
             return source_df, Series(labels)
 
     def create_mapping(self) -> dict:

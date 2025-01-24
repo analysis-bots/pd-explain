@@ -172,7 +172,8 @@ class ManyToOneExplainer(ExplainerInterface):
                 attribute_name = labels.name if labels.name is not None else self._labels_name
                 str_intervals = self._interval_to_str(bins, attribute_name)
                 # Then we return the binned labels.
-                print(f"Attribute '{attribute_name}' in labels has more than specified number of {self._num_bins} unique values. Binning the attribute.\n")
+                print(
+                    f"Attribute '{attribute_name}' in labels has more than specified number of {self._num_bins} unique values. Binning the attribute.\n")
                 return str_intervals
         return labels
 
@@ -197,8 +198,7 @@ class ManyToOneExplainer(ExplainerInterface):
         unique_labels = self._labels.unique()
         if len(unique_labels) > self._max_labels:
             print(
-                f"There are more than the specified max number of {self._max_labels} unique labels, and the option `prune_if_too_many_labels` is set to True. "
-                f"Pruning the labels to the top {self._max_labels} most common labels.\n")
+                f"There are more than the specified max number of {self._max_labels} unique labels, and the option `prune_if_too_many_labels` is set to True. Pruning the labels to the top {self._max_labels} most common labels.\n")
             top_labels = self._labels.value_counts().index[:self._max_labels]
             top_labels_indexes = self._labels.isin(top_labels)
             self._source_df = self._source_df[top_labels_indexes]
@@ -255,7 +255,8 @@ class ManyToOneExplainer(ExplainerInterface):
                 # If any of the group attributes are numeric, we bin them into intervals.
                 # The bin_numeric method does both the checking and the binning. Non numeric attributes are not affected.
                 for attribute in group_attributes:
-                    source_group_attributes_only.loc[:, attribute] = self._bin_numeric_labels(source_group_attributes_only[attribute])
+                    source_group_attributes_only.loc[:, attribute] = self._bin_numeric_labels(
+                        source_group_attributes_only[attribute])
                 # Change the groups to match the binning.
                 groups = set(source_group_attributes_only[group_attributes].apply(lambda x: tuple(x), axis=1))
             else:
@@ -270,11 +271,12 @@ class ManyToOneExplainer(ExplainerInterface):
             # an explanation saying the best rule is "groupby_attribute == group", which is not very informative.
             source_df = source_df.drop(group_attributes, axis=1, inplace=False)
 
-            # We drop rows with missing values in the labels, as they cannot be explained.
+            # Indexes where the labels are missing are rows where at-least 1 of the labels is missing, and thus
+            # could not be associated with a group.
             missing_values_indexes = np.where(labels == -1)[0]
             if len(missing_values_indexes) > 0:
-                print(f"There are {len(missing_values_indexes)} rows with missing values in the labels."
-                      f" Dropping them, as they could not be associated with a group.\n")
+                print(
+                    f"There are {len(missing_values_indexes)} rows with missing values in the labels. Dropping them, as they could not be associated with a group.\n")
                 source_df = source_df.drop(missing_values_indexes)
                 labels = labels[labels != -1]
                 labels = Series(labels)

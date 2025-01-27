@@ -42,6 +42,7 @@ setup(
         'singleton-decorator',
         'matplotlib',
         'fedex-generator>=0.0.7',
+        'cluster-explorer>=0.0.1',
     ]
 
 )

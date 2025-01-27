@@ -28,7 +28,7 @@ from typing import (
     Union,
     List, Callable,
 )
-from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
+from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype, DropKeep
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/pd-explain/src")
@@ -88,6 +88,11 @@ class ExpDataFrame(pd.DataFrame):
             return df
 
         return _c
+
+
+    @property
+    def _constructor_sliced(self) -> Callable[..., ExpSeries]:
+        return ExpSeries
 
     def __getitem__(self, key):
         """
@@ -778,8 +783,21 @@ class ExpDataFrame(pd.DataFrame):
 
     def drop_duplicates(
             self,
+            subset: Hashable | Sequence[Hashable] | None = None,
+            *,
+            keep: DropKeep = "first",
+            inplace: bool = False,
+            ignore_index: bool = False,
     ) -> ExpDataFrame | None:
-        return ExpDataFrame(super().drop_duplicates())
+        # Drop duplicates does not interact well with __get_item__ in ExpDataFrame. So, we cast it back to a normal
+        # DataFrame, drop the duplicates, and then cast it back to an ExpDataFrame.
+        res_df = DataFrame(self)
+        res_df = res_df.drop_duplicates(subset=subset, keep=keep, inplace=inplace, ignore_index=ignore_index)
+        res_df = ExpDataFrame(res_df)
+        res_df.operation = self.operation
+        res_df.explanation = self.explanation
+        res_df.filter_items = self.filter_items
+        return res_df
 
     def __repr__(self):
         """

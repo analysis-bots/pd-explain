@@ -456,3 +456,41 @@ def test_max_should_work(dataset_name, column, groupby_columns, numeric_only):
     # The test fails if we do not call to_frame because the result_df is a series, even though it is the correct result.
     assert exp_groupby_res.operation.result_df.equals(exp_groupby_res.to_frame())
     assert exp_groupby_res.operation.group_attributes == groupby_columns
+
+
+def test_drop_duplicates_should_work():
+    """
+    Test that the drop_duplicates method works as expected.
+    """
+    dataset, exp_dataset = get_dataset("houses")
+    dataset, exp_dataset = dataset[["Neighborhood"]].squeeze(), exp_dataset[["Neighborhood"]].squeeze()
+    # Drop duplicates
+    exp_res = exp_dataset.drop_duplicates()
+    res = dataset.drop_duplicates()
+    # Check that the results are the same
+    assert exp_res.equals(res)
+    # Check that the result is an instance of ExpSeries
+    assert isinstance(exp_res, pd_explain.ExpSeries)
+    # Check that the operation is correct
+    assert exp_res.operation is None
+    assert exp_dataset.operation is None
+
+
+def test_drop_duplicates_after_operation_should_work():
+    """
+    Test that the drop_duplicates method works as expected after an operation.
+    """
+    dataset, exp_dataset = get_dataset("houses")
+    dataset, exp_dataset = dataset[["Neighborhood"]].squeeze(), exp_dataset[["Neighborhood"]].squeeze()
+    # Perform a filter operation
+    dataset = dataset[dataset == "CollgCr"]
+    exp_dataset = exp_dataset[exp_dataset == "CollgCr"]
+    # Drop duplicates
+    exp_res = exp_dataset.drop_duplicates()
+    res = dataset.drop_duplicates()
+    # Check that the results are the same
+    assert exp_res.equals(res)
+    # Check that the result is an instance of ExpSeries
+    assert isinstance(exp_res, pd_explain.ExpSeries)
+    # Check that the operation is correct
+    assert exp_res.operation == exp_dataset.operation

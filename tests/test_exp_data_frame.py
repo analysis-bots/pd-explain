@@ -1057,4 +1057,44 @@ def test_get_item_illegal_column_should_fail():
         exp_dataset['not_a_column']
 
 
+def test_drop_duplicates_should_work():
+    """
+    Test that the drop_duplicates method works as expected.
+    """
+    dataset, exp_dataset = get_dataset('adults')
+    # Drop duplicates
+    exp_dataset_dropped = exp_dataset.drop_duplicates()
+    dataset_dropped = dataset.drop_duplicates()
+    # Check that the results are the same
+    assert exp_dataset_dropped.equals(dataset_dropped)
+    # Check that the result is still an ExpDataFrame
+    assert isinstance(exp_dataset_dropped, pd_explain.ExpDataFrame)
+    # Check that the original dataframe is not affected
+    assert exp_dataset.equals(dataset)
+    # Check that the internal state is unchanged
+    assert exp_dataset_dropped.operation is None
+    assert exp_dataset.operation is None
+
+
+def test_drop_duplicates_after_operation_should_work():
+    """
+    Tests that the drop_duplicates method works as expected after an operation has been performed.
+    """
+    dataset, exp_dataset = get_dataset('adults')
+    # Perform an operation
+    exp_dataset = exp_dataset[exp_dataset['age'] > 30]
+    dataset = dataset[dataset['age'] > 30]
+    # Drop duplicates
+    exp_dataset_dropped = exp_dataset.drop_duplicates()
+    dataset_dropped = dataset.drop_duplicates()
+    # Check that the results are the same
+    assert exp_dataset_dropped.equals(dataset_dropped)
+    # Check that the result is still an ExpDataFrame
+    assert isinstance(exp_dataset_dropped, pd_explain.ExpDataFrame)
+    # Check that the original dataframe is not affected
+    assert exp_dataset.equals(dataset)
+    # Check that the internal state is unchanged
+    assert exp_dataset_dropped.operation is not None
+
+
 

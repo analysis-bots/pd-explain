@@ -91,7 +91,26 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         :return: DataFrame
         """
-        return super().nunique(dropna)
+        try:
+            result = ExpDataFrame(super().nunique(dropna))
+            agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
+            result.name = '_'.join([agg_attr, 'nunique'])
+
+            if hasattr(self, 'original'):
+                original_result = self.original.nunique(dropna)
+                original_result.operation = GroupBy(source_df=self.operation.source_df,
+                                                    source_scheme={},
+                                                    group_attributes=self.group_attributes,
+                                                    agg_dict={agg_attr: ['nunique']},
+                                                    result_df=result,
+                                                    source_name=self.source_name)
+                return original_result
+
+        except Exception as error:
+            print(error)
+            result = super().nunique(dropna)
+
+        return result
 
     def count(self):
         """
@@ -103,7 +122,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         try:
             result = ExpDataFrame(super().count())
-            agg_attr = result.name if hasattr(result, 'name') else 'All'
+            agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
             result.name = '_'.join([agg_attr, 'count'])
 
             if hasattr(self, 'original'):
@@ -144,7 +163,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         """
         try:
             result = ExpDataFrame(super().mean(numeric_only, engine, engine_kwargs))
-            agg_attr = result.name if hasattr(result, 'name') else 'All'
+            agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
             result.name = '_'.join([agg_attr, 'mean'])
             # result.operation = self.operation
 
@@ -175,7 +194,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         """
         try:
             result = ExpDataFrame(super().median(numeric_only))
-            agg_attr = result.name if hasattr(result, 'name') else 'All'
+            agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
             result.name = '_'.join([agg_attr, 'median'])
 
             if hasattr(self, 'original'):
@@ -198,6 +217,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             ddof: int = 1,
             engine: str | None = None,
             engine_kwargs: dict[str, bool] | None = None,
+            numeric_only: bool | lib.NoDefault = lib.no_default,
     ):
         """
         Compute standard deviation of groups, excluding missing values.
@@ -216,8 +236,8 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
                                 {{'nopython': True, 'nogil': False, 'parallel': False}}
         :return: Standard deviation of values within each group.
         """
-        result = ExpDataFrame(super().std(ddof, engine, engine_kwargs))
-        agg_attr = result.name if hasattr(result, 'name') else 'All'
+        result = ExpDataFrame(super().std(ddof, engine, engine_kwargs, numeric_only=numeric_only))
+        agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
         result.name = '_'.join([agg_attr, 'std'])
 
         if hasattr(self, 'original'):
@@ -237,6 +257,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             ddof: int = 1,
             engine: str | None = None,
             engine_kwargs: dict[str, bool] | None = None,
+            numeric_only: bool | lib.NoDefault = lib.no_default,
     ):
         """
         Compute variance of groups, excluding missing values.
@@ -256,12 +277,12 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
                                 {{'nopython': True, 'nogil': False, 'parallel': False}}
         :return: Variance of values within each group.
         """
-        result = ExpDataFrame(super().var(ddof, engine, engine_kwargs))
-        agg_attr = result.name if hasattr(result, 'name') else 'All'
+        result = ExpDataFrame(super().var(ddof, engine, engine_kwargs, numeric_only=numeric_only))
+        agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
         result.name = '_'.join([agg_attr, 'var'])
 
         if hasattr(self, 'original'):
-            original_result = self.original.var(ddof, engine, engine_kwargs)
+            original_result = self.original.var(ddof, engine, engine_kwargs, numeric_only=numeric_only)
             original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
@@ -272,7 +293,10 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
 
         return result
 
-    def sem(self, ddof: int = 1):
+    def sem(self,
+            ddof: int = 1,
+            numeric_only: bool | lib.NoDefault = lib.no_default
+            ):
         """
         Compute standard error of the mean of groups, excluding missing values.
         For multiple groupings, the result index will be a MultiIndex.
@@ -281,8 +305,8 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         :param ddof: Degrees of freedom.
         :return:Standard error of the mean of values within each group.
         """
-        result = ExpDataFrame(super().sem(ddof))
-        agg_attr = result.name if hasattr(result, 'name') else 'All'
+        result = ExpDataFrame(super().sem(ddof, numeric_only=numeric_only))
+        agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
         result.name = '_'.join([agg_attr, 'sem'])
 
         if hasattr(self, 'original'):
@@ -305,7 +329,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         :return: group sizes
         """
         result = ExpDataFrame(super().size())
-        agg_attr = result.name if hasattr(result, 'name') else 'All'
+        agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
         result.name = '_'.join([agg_attr, 'size'])
 
         if hasattr(self, 'original'):
@@ -348,7 +372,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         :return: Computed sum of values within each group.
         """
         result = ExpDataFrame(super().sum(numeric_only, min_count, engine, engine_kwargs))
-        agg_attr = result.name if hasattr(result, 'name') else 'All'
+        agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
         result.name = '_'.join([agg_attr, 'sum'])
 
         if hasattr(self, 'original'):
@@ -375,7 +399,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         :return: Computed prod of values within each group.
         """
         result = ExpDataFrame(super().prod(numeric_only, min_count))
-        agg_attr = result.name if hasattr(result, 'name') else 'All'
+        agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
         result.name = '_'.join([agg_attr, 'prod'])
 
         if hasattr(self, 'original'):
@@ -402,7 +426,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         :return: Computed min of values within each group.
         """
         result = ExpDataFrame(super().min(numeric_only, min_count))
-        agg_attr = result.name if hasattr(result, 'name') else 'All'
+        agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
         result.name = '_'.join([agg_attr, 'min'])
 
         if hasattr(self, 'original'):
@@ -433,8 +457,8 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
                           If fewer than min_count non-NA values are present the result will be NA.
         :return: Computed max of values within each group.
         """
-        result = ExpDataFrame(super().max())
-        agg_attr = result.name if hasattr(result, 'name') else 'All'
+        result = ExpDataFrame(super().max(numeric_only=numeric_only))
+        agg_attr = result.name if hasattr(result, 'name') and not 'name' in result.columns else 'All'
         result.name = '_'.join([agg_attr, 'max'])
 
         if hasattr(self, 'original'):

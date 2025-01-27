@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import List, Literal
+from typing import List, Literal, Callable
 
 import pandas as pd
-from pandas._typing import Dtype
+from pandas._typing import Dtype, DropKeep
 import matplotlib.pyplot as plt
 from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
@@ -46,6 +46,23 @@ class ExpSeries(pd.Series):
         self.explanation = None
         self.operation = None
         self.filter_items = []
+
+
+    # We overwrite the constructor to ensure that an ExpSeries is returned when a new Series is created.
+    # This is necessary so that methods not overridden in this class, like iloc, return a Series.
+    @property
+    def _constructor(self) -> Callable[..., pd.Series]:
+
+        # We define a new constructor that returns a Series, with the same properties as the original dataframe.
+        def _c(*args, **kwargs):
+            s = ExpSeries(*args, **kwargs)
+            s.operation = self.operation
+            s.explanation = self.explanation
+            s.filter_items = self.filter_items
+            return s
+
+        return _c
+
 
     def std_int(self, df, target):
         return abs(df[target].mean() - df.mean()) / df.std()
@@ -168,8 +185,12 @@ class ExpSeries(pd.Series):
 
     def drop_duplicates(
             self,
+            *,
+            keep: DropKeep = "first",
+            inplace: bool = False,
+            ignore_index: bool = False,
     ):
-        return ExpSeries(super().drop_duplicates())
+        return super().drop_duplicates(keep=keep, inplace=inplace, ignore_index=ignore_index)
 
     def explain(self, schema: dict = None, attributes: List = None, top_k: int = 1, figs_in_row: int = 2,
                 explainer='fedex',

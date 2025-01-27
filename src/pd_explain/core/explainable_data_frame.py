@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from copy import copy
+from copy import copy as cpy
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,6 @@ from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
-from cluster_explorer import Explainer, condition_generator, str_rule_to_list, rule_to_human_readable
 from typing import (
     Hashable,
     Sequence,
@@ -31,6 +30,7 @@ from typing import (
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
 from pd_explain.explainers import ExplainerFactory
 from pd_explain.utils.global_values import get_use_sampling_value
+from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype, DropKeep
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
@@ -91,6 +91,11 @@ class ExpDataFrame(pd.DataFrame):
 
         return _c
 
+
+    @property
+    def _constructor_sliced(self) -> Callable[..., ExpSeries]:
+        return ExpSeries
+
     def __getitem__(self, key):
         """
         Get item from dataframe, save the item key
@@ -116,7 +121,7 @@ class ExpDataFrame(pd.DataFrame):
             if self.operation is not None:
 
                 # Copy the operation, to avoid changing the original operation of the dataframe.
-                to_return.operation = copy(self.operation)
+                to_return.operation = cpy(self.operation)
 
                 # Filter and GroupBy operations: perform the same selection on the source dataframe.
                 if hasattr(to_return.operation, 'source_df') and to_return.operation.source_df is not None:
@@ -146,7 +151,7 @@ class ExpDataFrame(pd.DataFrame):
                      With deep=False neither the indices nor the data are copied.
         :return: explain dataframe copy
         """
-        return ExpDataFrame(super().copy(deep))
+        return super().copy(deep)
 
     def drop(
             self,
@@ -219,7 +224,7 @@ class ExpDataFrame(pd.DataFrame):
             if res.operation is not None:
                 # We copy the operation, as we don't want to change the original operation of the dataframe when not
                 # doing an inplace operation.
-                res.operation = copy(self.operation)
+                res.operation = cpy(self.operation)
                 # Filter and GroupBy operations have a source_df field that needs to be updated.
                 if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
                     res.operation.source_df = res.operation.source_df.drop(labels=labels, axis=axis, index=index,
@@ -305,7 +310,7 @@ class ExpDataFrame(pd.DataFrame):
             res = super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                                    copy=copy, inplace=inplace, level=level, errors=errors)
             if self.operation is not None:
-                res.operation = copy(self.operation)
+                res.operation = cpy(self.operation)
                 # Filter and GroupBy operations have a source_df field that needs to be updated.
                 if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
@@ -781,12 +786,25 @@ class ExpDataFrame(pd.DataFrame):
                         If None then the index name is repeated.
         :return: Explain DataFrame with the new index or None if inplace=True.
         """
-        return ExpDataFrame(super().reset_index(drop=drop))
+        return super().reset_index(drop=drop, inplace=inplace, level=level, col_level=col_level, col_fill=col_fill)
 
     def drop_duplicates(
             self,
+            subset: Hashable | Sequence[Hashable] | None = None,
+            *,
+            keep: DropKeep = "first",
+            inplace: bool = False,
+            ignore_index: bool = False,
     ) -> ExpDataFrame | None:
-        return ExpDataFrame(super().drop_duplicates())
+        # Drop duplicates does not interact well with __get_item__ in ExpDataFrame. So, we cast it back to a normal
+        # DataFrame, drop the duplicates, and then cast it back to an ExpDataFrame.
+        res_df = DataFrame(self)
+        res_df = res_df.drop_duplicates(subset=subset, keep=keep, inplace=inplace, ignore_index=ignore_index)
+        res_df = ExpDataFrame(res_df)
+        res_df.operation = self.operation
+        res_df.explanation = self.explanation
+        res_df.filter_items = self.filter_items
+        return res_df
 
     def __repr__(self):
         """

@@ -7,3 +7,4 @@ matplotlib>=3.5.1
 setuptools>=60.2.0
 fedex-generator>=0.0.7
 cluster-explorer >= 0.0.1
+pytest>=6.2.4

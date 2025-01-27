@@ -28,7 +28,7 @@ datasets = load_datasets()
 exp_datasets = {}
 
 from pd_explain import ExpDataFrame
-from pd_explain.utils import to_explainable
+from pd_explain import to_explainable
 
 
 def get_dataset(name) -> (pd.DataFrame, ExpDataFrame):

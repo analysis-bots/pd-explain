@@ -162,6 +162,7 @@ class ExpDataFrame(pd.DataFrame):
             level: Level | None = None,
             inplace: bool = False,
             errors: str = "raise",
+            update_operation: bool = True,
     ) -> ExpDataFrame | None:
         """
         Drop specified labels from rows or columns.
@@ -177,78 +178,74 @@ class ExpDataFrame(pd.DataFrame):
         :param level: For MultiIndex, level from which the labels will be removed.
         :param inplace: If False, return a copy. Otherwise, do operation inplace and return None.
         :param errors: If ‘ignore’, suppress error and only existing labels are dropped.
+        :param update_operation: Whether to update operations with the rename applied. This is for internal usage,
+        to prevent recursive calls. Users should not set this to False when calling rename.
 
         :return: Explain DataFrame without the removed index or column labels or None if inplace=True.
         """
         if inplace:
-            # Perform the dropping, and set res to None as we are doing the operation inplace.
             super(ExpDataFrame, self).drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
                                            inplace=inplace, errors=errors)
             res = self
-            # When doing an inplace drop, we need to update the source dataframe of the operation.
-            # Otherwise, the operation may use the old dataframes or cause an error.
-            # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
-            if self.operation is not None:
-                # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
-                    self.operation.source_df.drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
-                                                  inplace=inplace, errors=errors)
-                # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
-                    # The reason for the try-except block is that the drop operation may fail if the labels are not in
-                    # the dataframe. This is because we don't know which dataframe the label the user dropped is in.
-                    # Therefore, we need to try dropping the label in both dataframes and simply ignore the error
-                    # from the dataframe that doesn't contain the label, or we can try and write a more complex logic
-                    # to figure out which dataframe the label is in. I have chosen the simpler, former solution.
-                    # If the user drops a label that is not in either dataframe, the operation will fail above, when
-                    # the drop is called on self.
-                    try:
-                        self.operation.left_df.drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
-                                                    inplace=inplace, errors=errors)
-                    except KeyError:
-                        pass
-                    try:
-                        self.operation.right_df.drop(labels=labels, axis=axis, index=index, columns=columns,
-                                                     level=level,
-                                                     inplace=inplace, errors=errors)
-                    except KeyError:
-                        pass
-                self.operation.result_df = self
-
         else:
-            # If the operation is not inplace, we can just return the new dataframe.
-            # However, we need to make sure to update the operation of the new dataframe, as otherwise we may get a
-            # no operation found error.
             res = super(ExpDataFrame, self).drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
                                                  inplace=inplace, errors=errors)
-            if res.operation is not None:
-                # We copy the operation, as we don't want to change the original operation of the dataframe when not
-                # doing an inplace operation.
-                res.operation = cpy(self.operation)
-                # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
+
+        # Set the result dataframe of the operation to the new dataframe.
+        if res.operation is not None:
+            res.operation.result_df = res
+
+        # If needed, update the operation, so it will use the new dataframe.
+        if res.operation is not None and update_operation:
+            # We copy the operation, as we don't want to change the original operation of the dataframe when not
+            # doing an inplace operation.
+            res.operation = cpy(self.operation)
+            # Filter and GroupBy operations have a source_df field that needs to be updated.
+            if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
+                # update_operation is our own addition, so we can't pass it to the original rename method, if the
+                # df is not an ExpDataFrame.
+                if isinstance(res.operation.source_df, ExpDataFrame):
+                    # We always set update_operation to False, as we don't want to update other dataframes' operations.
+                    # We also always set inplace to False, as we don't want to change the original dataframe.
                     res.operation.source_df = res.operation.source_df.drop(labels=labels, axis=axis, index=index,
                                                                            columns=columns, level=level,
-                                                                           inplace=inplace,
+                                                                           inplace=False,
+                                                                           errors=errors, update_operation=False)
+                else:
+                    res.operation.source_df = res.operation.source_df.drop(labels=labels, axis=axis, index=index,
+                                                                           columns=columns, level=level,
+                                                                           inplace=False,
                                                                            errors=errors)
-                # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
-                    # See the comment above, in the inplace block, for an explanation of the try-except block.
-                    try:
+            # Join operations have a left_df and right_df field that needs to be updated.
+            elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
+                # The drop operation may cause a KeyError if the labels are not found in the dataframe.
+                # In joins, we don't know if the labels are in the left or right dataframe, so we need to try both.
+                try:
+                    if isinstance(res.operation.left_df, ExpDataFrame):
                         res.operation.left_df = res.operation.left_df.drop(labels=labels, axis=axis, index=index,
                                                                            columns=columns, level=level,
-                                                                           inplace=inplace,
+                                                                           inplace=False,
+                                                                           errors=errors, update_operation=False)
+                    else:
+                        res.operation.left_df = res.operation.left_df.drop(labels=labels, axis=axis, index=index,
+                                                                           columns=columns, level=level,
+                                                                           inplace=False,
                                                                            errors=errors)
-                    except KeyError:
-                        pass
-                    try:
+                except KeyError:
+                    pass
+                try:
+                    if isinstance(res.operation.right_df, ExpDataFrame):
                         res.operation.right_df = res.operation.right_df.drop(labels=labels, axis=axis, index=index,
                                                                              columns=columns, level=level,
-                                                                             inplace=inplace,
+                                                                             inplace=False,
+                                                                             errors=errors, update_operation=False)
+                    else:
+                        res.operation.right_df = res.operation.right_df.drop(labels=labels, axis=axis, index=index,
+                                                                             columns=columns, level=level,
+                                                                             inplace=False,
                                                                              errors=errors)
-                    except KeyError:
-                        pass
-                res.operation.result_df = res
+                except KeyError:
+                    pass
 
         return res if not inplace else None
 
@@ -261,7 +258,9 @@ class ExpDataFrame(pd.DataFrame):
                copy: bool = True,
                inplace: bool = False,
                level: Level | None = None,
-               errors: str = "ignore", ) -> ExpDataFrame | None:
+               errors: str = "ignore",
+               update_operation: bool = True,
+               ) -> ExpDataFrame | None:
         """
         Alter axes labels.
         Function / dict values must be unique (1-to-1). Labels not contained in a dict / Series will be left as-is.
@@ -279,58 +278,65 @@ class ExpDataFrame(pd.DataFrame):
         :param errors: If ‘raise’, raise a KeyError when a dict-like mapper, index,
                        or columns contains labels that are not present in the Index being transformed.
                        If ‘ignore’, existing keys will be renamed and extra keys will be ignored.
+        :param update_operation: Whether to update operations with the rename applied. This is for internal usage,
+        to prevent recursive calls. Users should not set this to False when calling rename.
 
         :return: Explain DataFrame with the renamed axis labels or None if inplace=True.
         """
         if inplace:
-            # Perform the renaming, and set res to None as we are doing the operation inplace.
             super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                              copy=copy, inplace=inplace, level=level, errors=errors)
             res = self
-            # When doing an inplace rename, we need to update the source dataframe of the operation.
-            # Otherwise, the operation may use the old dataframes or cause an error.
-            # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
-            if self.operation is not None:
-                # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
-                    self.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                    copy=copy, inplace=inplace, level=level, errors=errors)
-                # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
-                    self.operation.left_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                  copy=copy, inplace=inplace, level=level, errors=errors)
-                    self.operation.right_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                   copy=copy, inplace=inplace, level=level, errors=errors)
-
-                self.operation.result_df = self
         else:
-            # If the operation is not inplace, we can just return the new dataframe.
-            # However, we need to make sure to update the operation of the new dataframe, as otherwise we may get a
-            # no operation found error.
             res = super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                                    copy=copy, inplace=inplace, level=level, errors=errors)
-            if self.operation is not None:
-                res.operation = cpy(self.operation)
-                # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
+
+        if res.operation is not None:
+            res.operation.result_df = res
+
+        # Update the operation, if needed.
+        if res.operation is not None and update_operation:
+
+            # Update the columns of the operation, if the columns were renamed.
+            res.operation = cpy(self.operation)
+            # Filter and GroupBy operations have a source_df field that needs to be updated.
+            if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
+                # update_operation is our own addition, so we can't pass it to the original rename method, if the
+                # df is not an ExpDataFrame.
+                if isinstance(res.operation.source_df, ExpDataFrame):
+                    # We always set update_operation to False, as we don't want to update other dataframes' operations.
+                    # We also always set inplace to False, as we don't want to change the original dataframe.
+                    res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
+                                                                           columns=columns, axis=axis,
+                                                                           copy=copy, inplace=False, level=level,
+                                                                           errors=errors, update_operation=False)
+                else:
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
                                                                              columns=columns, axis=axis,
-                                                                             copy=copy, inplace=inplace, level=level,
+                                                                             copy=copy, inplace=False, level=level,
                                                                              errors=errors)
-                # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
+            # Join operations have a left_df and right_df field that needs to be updated.
+            elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
+                if isinstance(res.operation.left_df, ExpDataFrame):
                     res.operation.left_df = res.operation.left_df.rename(mapper=mapper, index=index, columns=columns,
-                                                                         axis=axis, copy=copy, inplace=inplace,
+                                                                         axis=axis, copy=copy, inplace=False,
+                                                                         level=level,
+                                                                         errors=errors, update_operation=False)
+                else:
+                    res.operation.left_df = res.operation.left_df.rename(mapper=mapper, index=index, columns=columns,
+                                                                         axis=axis, copy=copy, inplace=False,
                                                                          level=level,
                                                                          errors=errors)
+                if isinstance(res.operation.right_df, ExpDataFrame):
                     res.operation.right_df = res.operation.right_df.rename(mapper=mapper, index=index, columns=columns,
-                                                                           axis=axis, copy=copy, inplace=inplace,
+                                                                           axis=axis, copy=copy, inplace=False,
+                                                                           level=level,
+                                                                           errors=errors, update_operation=False)
+                else:
+                    res.operation.right_df = res.operation.right_df.rename(mapper=mapper, index=index, columns=columns,
+                                                                           axis=axis, copy=copy, inplace=False,
                                                                            level=level,
                                                                            errors=errors)
-                res.operation.result_df = res
-
-        # Finally, update the attribute name in the operation if it was renamed.
-        if res.operation is not None:
 
             # Filter and join operations have an attribute field that needs to be updated.
             if hasattr(res.operation, 'attribute'):
@@ -689,8 +695,8 @@ class ExpDataFrame(pd.DataFrame):
             left_df = self.copy()
             right_df = right_df.copy()
 
-            left_df.rename(columns={col: col + lsuffix for col in coinciding_cols}, inplace=True)
-            right_df.rename(columns={col: col + rsuffix for col in coinciding_cols}, inplace=True)
+            left_df = left_df.rename(columns={col: col + lsuffix for col in coinciding_cols}, inplace=False, update_operation=False)
+            right_df = right_df.rename(columns={col: col + rsuffix for col in coinciding_cols}, inplace=False, update_operation=False)
 
             result_df.operation = Join(left_df, right_df, None, on, result_df, left_name, right_name)
 

@@ -810,48 +810,57 @@ class ExpDataFrame(pd.DataFrame):
                 labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
                 separation_threshold: float = 0.3, p_value: int = 1,
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',
-                prune_if_too_many_labels: bool = True, max_labels: int = 10,
+                prune_if_too_many_labels: bool = True, max_labels: int = 10, pruning_method='largest',
                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
                 labels_name: str = 'label',
                 use_sampling: None | bool = None):
         """
-        Generate explanation to series base on the operation lead to this series result
-        :param schema: result columns, can change columns name and ignored columns
-        :param attributes: list of specific columns to consider in the explanation
-        :param top_k: number of explanations
-        :param figs_in_row: number of explanations figs in one row
-        :param show_scores: show scores on explanation
-        :param title: explanation title
-        :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'outlier'. Note that
-        'outlier' is only supported for series, not for dataframes.
-        :param corr_TH: correlation threshold
-        :param target: target value for the outlier explainer
-        :param dir: direction for the outlier explainer. Can be either 'high' or 'low'.
-        :param consider: which side of a join to consider for the explanation. Can be either 'left' or 'right'.
-        :param labels: cluster / group labels for the many to one explainer. Can either be a series or a column name.
-        If a column name is provided, the column must be present in the dataframe.
-        If you wish to explain the groups of a groupby operation, leave this parameter as None (so long as the last
-        operation was a groupby operation).
-        :param coverage_threshold: minimum coverage threshold for the many to one explainer
-        :param max_explanation_length: maximum explanation length for the many to one explainer
-        :param separation_threshold: maximum separation threshold for the many to one explainer
-        :param p_value: p-value for the many to one explainer. p-value is related to the explanation length.
-        :param explanation_form: mode of the explanation of the many to one explainer. Can be either 'conj' or 'disj' for conjunction or disjunction.
-        :param prune_if_too_many_labels: Whether to prune the labels to the top k most common labels if there are too many labels
-        when using the many to one explainer. Defaults to True.
-        :param max_labels: The maximum number of labels to keep when pruning the labels. Defaults to 10. Only used if
-        prune_if_too_many_labels is True.
-        :param bin_numeric: Whether or not to bin numeric labels when using the many to one explainer. Defaults to False.
-        Numeric labels will be binned only if the number of unique labels is greater than num_bins.
-        :param num_bins: The number of bins to use when binning numeric labels. Defaults to 10.
-        :param binning_method: The method to use when binning numeric labels. Can be either 'quantile' or 'uniform'.
-        :param labels_name: The name of the column containing the labels. Only useful if the labels provided are an
-        array and bin_numeric is True. Will be used as the name of the new column containing the binned labels, instead
-        of a default name. Defaults to 'label'.
-        :param use_sampling: Whether or not to use sampling when generating an explanation. This can massively speed up
+        Generate an explanation for the dataframe.
+
+        :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'shapley', 'outlier'. Note
+        that 'outlier' is only supported for series, not for dataframes.
+        :param attributes: All explainers. Which columns to consider in the explanation.
+        :param use_sampling: All explainers. Whether or not to use sampling when generating an explanation. This can massively speed up
         the explanation generation process, but may result in less accurate explanations. We use sampling methods that
         we have empirically tested to only minimally affect the accuracy of the explanations. Defaults to None, in which
         case the value set in the global configuration is used (which defaults to True).
+        :param schema: Fedex explainer. Result columns, can change columns name and ignored columns.
+        :param top_k: Fedex explainer. Number of explanations.
+        :param figs_in_row: Fedex explainer. Number of explanations figs in one row.
+        :param show_scores: Fedex explainer. show scores on explanation.
+        :param title: Fedex / outlier / shapley explainers. explanation title.
+        :param corr_TH: Fedex explainer. Correlation threshold, above this threshold the columns are considered correlated.
+        :param target: Outlier explainer. Target value for the outlier explainer
+        :param dir: Outlier explainer. Direction for the outlier explainer. Can be either 'high' or 'low'.
+        :param consider: Fedex explainer. Which side of a join to consider for the explanation. Can be either 'left' or 'right'.
+        :param labels: Many to one explainer. Cluster / group labels. Can either be a series or a column name.
+        If a column name is provided, the column must be present in the dataframe.
+        If you wish to explain the groups of a groupby operation, leave this parameter as None while calling explain on the
+        groupy result. The labels will be automatically extracted from the groupby operation.
+        :param coverage_threshold: Many to one explainer. Minimum coverage threshold. Coverage is
+        defined as the % of the data in the group that is explained by the explanation. Defaults to 0.7.
+        :param max_explanation_length: Many to one explainer. Maximum explanation length permitted. Defaults to 3.
+        :param separation_threshold: Many to one explainer. Maximum separation threshold. Separation error is defined as the
+        % of the data in groups other than the one being explained that is explained by the explanation. Defaults to 0.3.
+        :param p_value: Many to one explainer. A scaling factor for the maximum number of attributes that will be considered
+        as candidates for the explanation. n_attr = max_explanation_length * p_value. Setting this to a higher value may
+        result in a more accurate explanation, but will also increase the computation time. Defaults to 1.
+        :param explanation_form: Many to one explainer. The form of the explanation. Can be either 'conj' or 'disj', for
+        conjunction and disjunction respectively. Defaults to 'conj'.
+        :param prune_if_too_many_labels: Many to one explainer. If True, the labels will be pruned if there are too many
+        labels to consider. Defaults to True.
+        :param max_labels: Many to one explainer. The maximum number of labels permitted. Above this number, the labels
+        will be pruned if prune_if_too_many_labels is True. Defaults to 10.
+        :param pruning_method: Many to one explainer. The method to use when selecting which labels to prune. Cab be
+        'largest' - where the k labels with the most values are kept, 'smallest', 'random', 'max_dist' - where the k labels
+        with the highest distance between their means * group size are kept, 'min_dist', 'max_silhouette' - where the k groups with the
+        highest silhouette score * group size are kept, or 'min_silhouette'. Defaults to 'largest'.
+        :param bin_numeric: Many to one explainer. Whether or not to bin numeric labels, if there are more labels than
+        the specified number of bins. Defaults to False.
+        :param num_bins: Many to one explainer. The number of bins to use when binning numeric labels. Defaults to 10.
+        :param binning_method: The method to use when binning numeric labels. Can be either 'quantile' or 'uniform'.
+        :param labels_name: Many to one explainer. How to call the labels column in the explanation, if binning was used
+        and the labels column did not have a name. Defaults to 'label'.
 
         :return: explanation figures
         """
@@ -875,6 +884,7 @@ class ExpDataFrame(pd.DataFrame):
                                              target=target, dir=dir,
                                              source_df=self, explanation_form=explanation_form,
                                              prune_if_too_many_labels=prune_if_too_many_labels, max_labels=max_labels,
+                                             pruning_method=pruning_method,
                                              bin_numeric=bin_numeric, num_bins=num_bins, binning_method=binning_method,
                                              labels_name=labels_name,
                                              use_sampling=use_sampling

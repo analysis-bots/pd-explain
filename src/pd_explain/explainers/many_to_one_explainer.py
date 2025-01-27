@@ -5,6 +5,9 @@ import pandas as pd
 from pandas import DataFrame, Series
 from cluster_explorer import Explainer, condition_generator, str_rule_to_list, rule_to_human_readable
 import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.metrics.pairwise import euclidean_distances
+from sklearn.metrics import silhouette_samples
 
 MAX_LABELS = 10
 DEFAULT_SAMPLE_SIZE = 5000
@@ -17,7 +20,7 @@ class ManyToOneExplainer(ExplainerInterface):
                  max_explanation_length: int = 3, separation_threshold: float = 0.3, p_value: int = 1,
                  explanation_form: Literal['conj', 'conjunction', 'disj', 'disjunction'] = 'conj',
                  attributes: List[str] = None, operation=None, use_sampling: bool = True,
-                 prune_if_too_many_labels: bool = True, max_labels: int = MAX_LABELS,
+                 prune_if_too_many_labels: bool = True, max_labels: int = MAX_LABELS, pruning_method: str = 'largest',
                  bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
                  labels_name: str = 'label',
                  *args, **kwargs):
@@ -105,6 +108,13 @@ class ManyToOneExplainer(ExplainerInterface):
         # Drop labels with missing values, as well as the corresponding rows in the source DataFrame.
         self._drop_na()
 
+        # Check that the dataframe is not empty after all the operations.
+        if self._source_df.empty:
+            raise ValueError("The dataframe is empty. Please check that: \n"
+                             "1. The dataframe is not empty to begin with.\n"
+                             "2. The labels do not contain all missing values.\n"
+                             "3. That you did not pass a dataframe / series with 1 attribute, and the labels as a string with the name of that attribute.\n")
+
         self._possible_to_visualize = True
 
         if bin_numeric:
@@ -133,6 +143,7 @@ class ManyToOneExplainer(ExplainerInterface):
         self._explainer = None
         self._ran_explainer = False
         self._max_labels = max_labels
+        self._pruning_method = pruning_method
 
         # Optional operations to speed up explanation generation.
         if prune_if_too_many_labels:
@@ -198,9 +209,64 @@ class ManyToOneExplainer(ExplainerInterface):
         unique_labels = self._labels.unique()
         if len(unique_labels) > self._max_labels:
             print(
-                f"There are more than the specified max number of {self._max_labels} unique labels, and the option `prune_if_too_many_labels` is set to True. Pruning the labels to the top {self._max_labels} most common labels.\n")
-            top_labels = self._labels.value_counts().index[:self._max_labels]
-            top_labels_indexes = self._labels.isin(top_labels)
+                f"There are more than the specified max number of {self._max_labels} unique labels, and the option `prune_if_too_many_labels` is set to True. Pruning the labels to the top {self._max_labels} most common labels using method {self._pruning_method}\n")
+            value_counts = self._labels.value_counts()
+            if self._pruning_method == 'largest':
+                top_labels = value_counts.index[:self._max_labels]
+                top_labels_indexes = self._labels.isin(top_labels)
+            elif self._pruning_method == 'smallest':
+                top_labels = value_counts.index[-self._max_labels:]
+                top_labels_indexes = self._labels.isin(top_labels)
+            elif self._pruning_method == 'random':
+                top_labels = value_counts.sample(self._max_labels).index
+                top_labels_indexes = self._labels.isin(top_labels)
+            else:
+                label_proprtional_size = value_counts / len(self._labels)
+                decomposed = pd.DataFrame(
+                    PCA(n_components=min(3, self._source_df.shape[1])).fit_transform(pd.get_dummies(self._source_df)))
+                if self._pruning_method == 'max_dist' or self._pruning_method == 'min_dist':
+                    decomposed['label'] = self._labels
+                    # Perform dimensionality reduction to at most 3 dimensions, and compute the means of each cluster
+                    cluster_means = decomposed.groupby('label').mean()
+                    # Compute the average distance between each cluster's center to all other clusters
+                    average_distances = np.zeros(len(cluster_means))
+                    for i in range(len(cluster_means)):
+                        other_clusters = cluster_means.loc[cluster_means.index != i]
+                        distances = euclidean_distances(cluster_means.loc[i].values.reshape(1, -1), other_clusters)
+                        average_distances[i] = distances.mean()
+                    # Multiply by the size of the cluster, to give more weight to larger clusters and not give
+                    # a large weight to a small cluster that is far away from the other clusters.
+                    average_distances *= label_proprtional_size
+                    average_distances = pd.Series(average_distances)
+                    if self._pruning_method == 'max_dist':
+                        average_distances = average_distances.sort_values(ascending=False)
+                    else:
+                        average_distances = average_distances.sort_values(ascending=True)
+                    top_labels = average_distances.index[:self._max_labels]
+                    top_labels_indexes = self._labels.isin(top_labels)
+                elif self._pruning_method == 'max_silhouette' or self._pruning_method == 'min_silhouette':
+                    # Sample the data to speed up the computation of the silhouette scores, because otherwise
+                    # it would take too long.
+                    generator = np.random.default_rng(RANDOM_SEED)
+                    random_indexes = generator.choice(decomposed.index, size=min(DEFAULT_SAMPLE_SIZE, len(decomposed)),
+                                                        replace=False)
+                    decomposed = decomposed.loc[random_indexes]
+                    labels = self._labels.loc[random_indexes]
+                    scores = silhouette_samples(decomposed, labels)
+                    scores = pd.DataFrame(scores, index=decomposed.index)
+                    # Compute the mean silhouette score for each cluster, and multiply by the size of the cluster.
+                    scores['label'] = labels
+                    scores = scores.groupby('label').mean()
+                    scores = scores.squeeze()
+                    scores *= label_proprtional_size
+                    if self._pruning_method == 'max_silhouette':
+                        scores = scores.sort_values(ascending=False)
+                    else:
+                        scores = scores.sort_values(ascending=True)
+                    top_labels = scores.index[:self._max_labels]
+                    top_labels_indexes = self._labels.isin(top_labels)
+                else:
+                    raise ValueError("Pruning method must be either 'largest', 'silhouette' or 'max_dist'.")
             self._source_df = self._source_df[top_labels_indexes]
             self._labels = self._labels[top_labels_indexes]
             self._labels.reset_index(drop=True, inplace=True)

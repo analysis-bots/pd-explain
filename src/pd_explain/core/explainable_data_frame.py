@@ -6,14 +6,9 @@ from copy import copy
 import numpy as np
 import pandas as pd
 from matplotlib.axis import Axis
-from pandas import DataFrame, Series
+from pandas import DataFrame
 from pandas._libs.lib import no_default
-from sklearn.decomposition import PCA
-from ipywidgets import Tab, VBox, HBox, Output, Box, HTML, Layout, HTMLMath
-import matplotlib.pyplot as plt
-from IPython.display import display
 
-# importing sys
 import sys
 
 # adding Folder_2/subfolder to the system path

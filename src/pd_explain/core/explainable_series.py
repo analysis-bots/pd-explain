@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import List, Literal
 
 import pandas as pd
-from pandas import DataFrame
 from pandas._typing import Dtype
 import matplotlib.pyplot as plt
 from fedex_generator.Operations.BJoin import BJoin

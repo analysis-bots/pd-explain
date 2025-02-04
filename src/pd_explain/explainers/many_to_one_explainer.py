@@ -22,7 +22,7 @@ class ManyToOneExplainer(ExplainerInterface):
                  attributes: List[str] = None, operation=None, use_sampling: bool = True,
                  prune_if_too_many_labels: bool = True, max_labels: int = MAX_LABELS, pruning_method: str = 'largest',
                  bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
-                 labels_name: str = 'label',
+                 labels_name: str = 'label', sample_size: int = DEFAULT_SAMPLE_SIZE,
                  *args, **kwargs):
         """
         Initialize the many-to-one explainer.
@@ -62,6 +62,8 @@ class ManyToOneExplainer(ExplainerInterface):
         :param binning_method: The method to use for binning the numeric labels. This can be either 'uniform' or 'quantile'.
         Default is 'quantile'.
         :param labels_name: A name to give the labels when binning them, if there is none to begin with. Default is 'label'.
+        :param sample_size: The size of the sample to use when sampling the dataframe. Can be a percentage of the dataframe
+        size if below 1. Default is 5000.
         """
 
         # Convert the source_df to a DataFrame object, to avoid overhead from overridden methods in ExpDataFrame,
@@ -95,7 +97,15 @@ class ManyToOneExplainer(ExplainerInterface):
         elif isinstance(labels, list) and all(isinstance(label, str) for label in labels):
             result_df = self._source_df.groupby(labels).mean(numeric_only=True)
             self._source_df, self._labels = self._create_groupby_labels(source_df=self._source_df, result_df=result_df)
-        # If the labels are a list of integers, we simply convert them to a Series object.
+        # In case the labels are a dataframe with multiple columns, we aggregate the labels into a single column.
+        elif isinstance(labels, pd.DataFrame) and labels.shape[1] > 1:
+            # Copy the labels to avoid modifying the original dataframe.
+            labels = labels.copy()
+            # This nonsensical column name is used to avoid conflicts with existing columns in the dataframe.
+            # Because surely, no one would name a column in an actual dataset like this.
+            labels['true_labels_for_many_to_one_explainer'] = labels.apply(lambda x: str(tuple(x)), axis=1)
+            self._labels = labels['true_labels_for_many_to_one_explainer']
+        # If the labels are any other list of values, we simply convert them to a series object.
         elif not isinstance(labels, Series):
             self._labels = Series(labels)
         # If the labels are already a Series object, we simply use them as they are.
@@ -144,13 +154,14 @@ class ManyToOneExplainer(ExplainerInterface):
         self._ran_explainer = False
         self._max_labels = max_labels
         self._pruning_method = pruning_method
+        self._sample_size = sample_size
 
         # Optional operations to speed up explanation generation.
         if prune_if_too_many_labels:
             self._prune_labels()
 
         if use_sampling:
-            self._sample()
+            self._sample(sample_size=self._sample_size)
 
     def _interval_to_str(self, intervals: Series, attribute_name: str) -> Series:
         """
@@ -277,6 +288,14 @@ class ManyToOneExplainer(ExplainerInterface):
         Sample the dataframe, to reduce the number of rows and speed up explanation generation.
         This is especially useful when the dataframe is very large, but may affect the quality of the explanations.
         """
+        if sample_size <= 0:
+            raise ValueError("Sample size must be a positive number.")
+        if 0 < sample_size < 1:
+            sample_size = self._source_df.shape[0] * sample_size
+        # If the sample size is below the default sample size, we use the default sample size.
+        if sample_size < DEFAULT_SAMPLE_SIZE:
+            print(f"Sample size is below the default sample size of {DEFAULT_SAMPLE_SIZE}. Using the default sample size.\n")
+            sample_size = DEFAULT_SAMPLE_SIZE
         if self._source_df.shape[0] > sample_size:
             generator = np.random.default_rng(RANDOM_SEED)
             uniform_indexes = generator.choice(self._source_df.index, size=sample_size, replace=False)

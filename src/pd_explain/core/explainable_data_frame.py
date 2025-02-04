@@ -822,8 +822,8 @@ class ExpDataFrame(pd.DataFrame):
     def present_deleted_correlated(self, figs_in_row: int = 2):  #####
         return self.operation.present_deleted_correlated(figs_in_row=figs_in_row)
 
-    def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
-                dir=None,
+    def explain(self, schema: dict = None, attributes: List = None, use_sampling: bool | None = None,
+                sample_size: int | float = 5000, top_k: int = None, explainer='fedex', target=None, dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
                 consider='right', value=None, attr=None, ignore=[],
                 labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
@@ -831,8 +831,7 @@ class ExpDataFrame(pd.DataFrame):
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',
                 prune_if_too_many_labels: bool = True, max_labels: int = 10, pruning_method='largest',
                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
-                labels_name: str = 'label',
-                use_sampling: None | bool = None):
+                labels_name: str = 'label'):
         """
         Generate an explanation for the dataframe.
 
@@ -843,6 +842,9 @@ class ExpDataFrame(pd.DataFrame):
         the explanation generation process, but may result in less accurate explanations. We use sampling methods that
         we have empirically tested to only minimally affect the accuracy of the explanations. Defaults to None, in which
         case the value set in the global configuration is used (which defaults to True).
+        :param sample_size: All explainers. The number of samples to use when use_sampling is True. Can be either an integer or a float.
+        If it is an integer, that number of samples will be used. If it is a float, it will be interpreted as a percentage
+        of the total number of samples. Defaults to 5000, which is also the minimum value.
         :param schema: Fedex explainer. Result columns, can change columns name and ignored columns.
         :param top_k: Fedex explainer. Number of explanations.
         :param figs_in_row: Fedex explainer. Number of explanations figs in one row.
@@ -906,7 +908,7 @@ class ExpDataFrame(pd.DataFrame):
                                              pruning_method=pruning_method,
                                              bin_numeric=bin_numeric, num_bins=num_bins, binning_method=binning_method,
                                              labels_name=labels_name,
-                                             use_sampling=use_sampling
+                                             use_sampling=use_sampling, sample_size=sample_size
                                              )
         explanation = explainer.generate_explanation()
 

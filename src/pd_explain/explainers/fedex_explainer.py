@@ -17,7 +17,7 @@ class FedexExplainer(ExplainerInterface):
                  dir=None,
                  figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
                  consider='right', value=None, attr=None, ignore=None, hold_out=None, control=None,
-                 use_sampling: bool = True, *args, **kwargs):
+                 use_sampling: bool = True, sample_size = 5000, *args, **kwargs):
         """
         Initialize the FedexExplainer object.
         The FedexExplainer works as an interface for calling the explain method of the fedex explainer objects.
@@ -92,6 +92,7 @@ class FedexExplainer(ExplainerInterface):
         self._control = control
         self._results = None
         self._use_sampling = use_sampling
+        self._sample_size = sample_size
 
     def generate_explanation(self):
         if self._operation is None:
@@ -105,7 +106,7 @@ class FedexExplainer(ExplainerInterface):
                 control=self._control, hold_out=self._hold_out, figs_in_row=self._figs_in_row,
                 show_scores=self._show_scores, title=self._title, corr_TH=self._corr_TH,
                 consider=self._consider, cont=self._value, attr=self._attr, ignore=self._ignore,
-                use_sampling=self._use_sampling
+                use_sampling=self._use_sampling, sample_size=self._sample_size
             )
 
         else:
@@ -113,7 +114,7 @@ class FedexExplainer(ExplainerInterface):
                 schema=self._schema, attributes=self._attributes, top_k=self._top_k,
                 figs_in_row=self._figs_in_row, show_scores=self._show_scores, title=self._title, corr_TH=self._corr_TH,
                 explainer=self._explainer, consider=self._consider, cont=self._value, attr=self._attr,
-                ignore=self._ignore, use_sampling=self._use_sampling
+                ignore=self._ignore, use_sampling=self._use_sampling, sample_size=self._sample_size
             )
 
         return self._results

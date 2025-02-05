@@ -202,7 +202,8 @@ class ExpSeries(pd.Series):
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',
                 prune_if_too_many_labels: bool = True, max_labels: int = 10, pruning_method='largest',
                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
-                labels_name: str = 'label',
+                labels_name: str = 'label', explain_errors=True,
+                error_explanation_threshold: float = 0.05,
                 ):
         """
         Generate an explanation for the dataframe.
@@ -251,6 +252,12 @@ class ExpSeries(pd.Series):
         :param binning_method: The method to use when binning numeric labels. Can be either 'quantile' or 'uniform'.
         :param labels_name: Many to one explainer. How to call the labels column in the explanation, if binning was used
         and the labels column did not have a name. Defaults to 'label'.
+        :param explain_errors: Many to one explainer. Whether or not to explain where the separation error originates from
+        for each explanation. Defaults to True.
+        :param error_explanation_threshold: Many to one explainer. The threshold for how much a group needs to contribute
+        to the separation error to be included in the explanation. Groups that contribute less than this threshold will
+        be aggregated into a single group. Defaults to 0.05.
+
 
         :return: explanation figures
         """
@@ -269,7 +276,8 @@ class ExpSeries(pd.Series):
             prune_if_too_many_labels=prune_if_too_many_labels, max_labels=max_labels,
             pruning_method=pruning_method, bin_numeric=bin_numeric, num_bins=num_bins,
             binning_method=binning_method, labels_name=labels_name,
-            explanation_form=explanation_form, use_sampling=use_sampling
+            explanation_form=explanation_form, use_sampling=use_sampling,
+            explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold
         )
 
         explanation = explainer.generate_explanation()

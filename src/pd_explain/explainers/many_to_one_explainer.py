@@ -462,10 +462,10 @@ class ManyToOneExplainer(ExplainerInterface):
         group_counts_high = group_counts_high.sort_values(ascending=False)
         error_explanation = ""
         for group, count in group_counts_high.items():
-            error_explanation += f"{count * 100:.2f}% of the error originates from group {group}, "
+            error_explanation += f"{count * 100:.2f}% from group {group}, "
         if other_errors > 0:
             num_low_groups = group_counts_low.shape[0]
-            error_explanation += f"{other_errors * 100:.2f}% of the error originates from {num_low_groups} other labels, each of which has less than {self._error_explanation_threshold * 100}% of the points.  "
+            error_explanation += f"{other_errors * 100:.2f}% from {num_low_groups} other group(s), each individually causing less than {self._error_explanation_threshold * 100:.2f}% of the error.  "
         error_explanation = error_explanation[:-2]
         return error_explanation
 
@@ -483,8 +483,6 @@ class ManyToOneExplainer(ExplainerInterface):
 
         :return: The DataFrame with the error explanations.
         """
-        import time
-        start_time = time.time()
         if "Rule Binary Array" not in converted_rules_df.columns:
             raise ValueError("The DataFrame must have a 'Rule Binary Array' column to explain the errors.")
         if "Cluster" not in converted_rules_df.columns:
@@ -516,7 +514,6 @@ class ManyToOneExplainer(ExplainerInterface):
                 # Create the error explanation
                 error_explanation = self._create_error_explanation_text(group_counts)
                 converted_rules_df.loc[idx, 'Error Explanation'] = error_explanation
-        print(f"Time taken to explain errors: {time.time() - start_time} seconds.")
         return converted_rules_df
 
 
@@ -546,7 +543,7 @@ class ManyToOneExplainer(ExplainerInterface):
         # Create a dataframe with a multi-index, where the first level is the cluster title, the second level is the
         # rule, and the values are the rule quality metrics.
         if self._explain_errors:
-            columns = ['Coverage', 'Separation Error', 'Error Explanation']
+            columns = ['Coverage', 'Separation Error', 'Separation Error Origins']
         else:
             columns = ['Coverage', 'Separation Error']
         out_df = pd.DataFrame(columns=columns,
@@ -561,7 +558,7 @@ class ManyToOneExplainer(ExplainerInterface):
             out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Coverage'] = row['Coverage']
             out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Separation Error'] = row['Separation Error']
             if self._explain_errors:
-                out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Error Explanation'] = row['Error Explanation']
+                out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Separation Error Origins'] = row['Error Explanation']
 
         # For any cluster that does not have a rule, we fill in the dataframe with NaN values, and set rule
         # in that index to "No explanation found".
@@ -570,7 +567,7 @@ class ManyToOneExplainer(ExplainerInterface):
                 out_df.loc[(cluster, "No explanation found"), 'Coverage'] = np.nan
                 out_df.loc[(cluster, "No explanation found"), 'Separation Error'] = np.nan
                 if self._explain_errors:
-                    out_df.loc[(cluster, "No explanation found"), 'Error Explanation'] = np.nan
+                    out_df.loc[(cluster, "No explanation found"), 'Separation Error Origins'] = np.nan
 
         return out_df
 

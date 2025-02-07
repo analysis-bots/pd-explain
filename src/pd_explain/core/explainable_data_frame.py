@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from copy import copy
+from copy import copy as cpy
 
 import numpy as np
 import pandas as pd
@@ -9,13 +9,13 @@ from matplotlib.axis import Axis
 from pandas import DataFrame
 from pandas._libs.lib import no_default
 
-# importing sys
 import sys
 
 # adding Folder_2/subfolder to the system path
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator-1/src/')
-sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/FEDEx_Generator/src")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\FEDEx_Generator\\src")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\cluster-explorer\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
@@ -26,14 +26,16 @@ from typing import (
     Hashable,
     Sequence,
     Union,
-    List, Callable,
-)
+    List, Callable, Literal, )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
+from pd_explain.explainers import ExplainerFactory
+from pd_explain.utils.global_values import get_use_sampling_value
+from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype, DropKeep
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
-sys.path.insert(0, "C:/Users/Yuval/PycharmProjects/pd-explain/src")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
-from pd_explain.explainable_series import ExpSeries
+from pd_explain.core.explainable_series import ExpSeries
 
 
 class ExpDataFrame(pd.DataFrame):
@@ -89,6 +91,11 @@ class ExpDataFrame(pd.DataFrame):
 
         return _c
 
+
+    @property
+    def _constructor_sliced(self) -> Callable[..., ExpSeries]:
+        return ExpSeries
+
     def __getitem__(self, key):
         """
         Get item from dataframe, save the item key
@@ -114,7 +121,7 @@ class ExpDataFrame(pd.DataFrame):
             if self.operation is not None:
 
                 # Copy the operation, to avoid changing the original operation of the dataframe.
-                to_return.operation = copy(self.operation)
+                to_return.operation = cpy(self.operation)
 
                 # Filter and GroupBy operations: perform the same selection on the source dataframe.
                 if hasattr(to_return.operation, 'source_df') and to_return.operation.source_df is not None:
@@ -144,7 +151,7 @@ class ExpDataFrame(pd.DataFrame):
                      With deep=False neither the indices nor the data are copied.
         :return: explain dataframe copy
         """
-        return ExpDataFrame(super().copy(deep))
+        return super().copy(deep)
 
     def drop(
             self,
@@ -155,6 +162,7 @@ class ExpDataFrame(pd.DataFrame):
             level: Level | None = None,
             inplace: bool = False,
             errors: str = "raise",
+            update_operation: bool = True,
     ) -> ExpDataFrame | None:
         """
         Drop specified labels from rows or columns.
@@ -170,78 +178,74 @@ class ExpDataFrame(pd.DataFrame):
         :param level: For MultiIndex, level from which the labels will be removed.
         :param inplace: If False, return a copy. Otherwise, do operation inplace and return None.
         :param errors: If ‘ignore’, suppress error and only existing labels are dropped.
+        :param update_operation: Whether to update operations with the rename applied. This is for internal usage,
+        to prevent recursive calls. Users should not set this to False when calling rename.
 
         :return: Explain DataFrame without the removed index or column labels or None if inplace=True.
         """
         if inplace:
-            # Perform the dropping, and set res to None as we are doing the operation inplace.
             super(ExpDataFrame, self).drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
                                            inplace=inplace, errors=errors)
             res = self
-            # When doing an inplace drop, we need to update the source dataframe of the operation.
-            # Otherwise, the operation may use the old dataframes or cause an error.
-            # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
-            if self.operation is not None:
-                # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
-                    self.operation.source_df.drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
-                                                  inplace=inplace, errors=errors)
-                # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
-                    # The reason for the try-except block is that the drop operation may fail if the labels are not in
-                    # the dataframe. This is because we don't know which dataframe the label the user dropped is in.
-                    # Therefore, we need to try dropping the label in both dataframes and simply ignore the error
-                    # from the dataframe that doesn't contain the label, or we can try and write a more complex logic
-                    # to figure out which dataframe the label is in. I have chosen the simpler, former solution.
-                    # If the user drops a label that is not in either dataframe, the operation will fail above, when
-                    # the drop is called on self.
-                    try:
-                        self.operation.left_df.drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
-                                                    inplace=inplace, errors=errors)
-                    except KeyError:
-                        pass
-                    try:
-                        self.operation.right_df.drop(labels=labels, axis=axis, index=index, columns=columns,
-                                                     level=level,
-                                                     inplace=inplace, errors=errors)
-                    except KeyError:
-                        pass
-                self.operation.result_df = self
-
         else:
-            # If the operation is not inplace, we can just return the new dataframe.
-            # However, we need to make sure to update the operation of the new dataframe, as otherwise we may get a
-            # no operation found error.
             res = super(ExpDataFrame, self).drop(labels=labels, axis=axis, index=index, columns=columns, level=level,
                                                  inplace=inplace, errors=errors)
-            if res.operation is not None:
-                # We copy the operation, as we don't want to change the original operation of the dataframe when not
-                # doing an inplace operation.
-                res.operation = copy(self.operation)
-                # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
+
+        # Set the result dataframe of the operation to the new dataframe.
+        if res.operation is not None:
+            res.operation.result_df = res
+
+        # If needed, update the operation, so it will use the new dataframe.
+        if res.operation is not None and update_operation:
+            # We copy the operation, as we don't want to change the original operation of the dataframe when not
+            # doing an inplace operation.
+            res.operation = cpy(self.operation)
+            # Filter and GroupBy operations have a source_df field that needs to be updated.
+            if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
+                # update_operation is our own addition, so we can't pass it to the original rename method, if the
+                # df is not an ExpDataFrame.
+                if isinstance(res.operation.source_df, ExpDataFrame):
+                    # We always set update_operation to False, as we don't want to update other dataframes' operations.
+                    # We also always set inplace to False, as we don't want to change the original dataframe.
                     res.operation.source_df = res.operation.source_df.drop(labels=labels, axis=axis, index=index,
                                                                            columns=columns, level=level,
-                                                                           inplace=inplace,
+                                                                           inplace=False,
+                                                                           errors=errors, update_operation=False)
+                else:
+                    res.operation.source_df = res.operation.source_df.drop(labels=labels, axis=axis, index=index,
+                                                                           columns=columns, level=level,
+                                                                           inplace=False,
                                                                            errors=errors)
-                # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
-                    # See the comment above, in the inplace block, for an explanation of the try-except block.
-                    try:
+            # Join operations have a left_df and right_df field that needs to be updated.
+            elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
+                # The drop operation may cause a KeyError if the labels are not found in the dataframe.
+                # In joins, we don't know if the labels are in the left or right dataframe, so we need to try both.
+                try:
+                    if isinstance(res.operation.left_df, ExpDataFrame):
                         res.operation.left_df = res.operation.left_df.drop(labels=labels, axis=axis, index=index,
                                                                            columns=columns, level=level,
-                                                                           inplace=inplace,
+                                                                           inplace=False,
+                                                                           errors=errors, update_operation=False)
+                    else:
+                        res.operation.left_df = res.operation.left_df.drop(labels=labels, axis=axis, index=index,
+                                                                           columns=columns, level=level,
+                                                                           inplace=False,
                                                                            errors=errors)
-                    except KeyError:
-                        pass
-                    try:
+                except KeyError:
+                    pass
+                try:
+                    if isinstance(res.operation.right_df, ExpDataFrame):
                         res.operation.right_df = res.operation.right_df.drop(labels=labels, axis=axis, index=index,
                                                                              columns=columns, level=level,
-                                                                             inplace=inplace,
+                                                                             inplace=False,
+                                                                             errors=errors, update_operation=False)
+                    else:
+                        res.operation.right_df = res.operation.right_df.drop(labels=labels, axis=axis, index=index,
+                                                                             columns=columns, level=level,
+                                                                             inplace=False,
                                                                              errors=errors)
-                    except KeyError:
-                        pass
-                res.operation.result_df = res
+                except KeyError:
+                    pass
 
         return res if not inplace else None
 
@@ -254,7 +258,9 @@ class ExpDataFrame(pd.DataFrame):
                copy: bool = True,
                inplace: bool = False,
                level: Level | None = None,
-               errors: str = "ignore", ) -> ExpDataFrame | None:
+               errors: str = "ignore",
+               update_operation: bool = True,
+               ) -> ExpDataFrame | None:
         """
         Alter axes labels.
         Function / dict values must be unique (1-to-1). Labels not contained in a dict / Series will be left as-is.
@@ -272,58 +278,65 @@ class ExpDataFrame(pd.DataFrame):
         :param errors: If ‘raise’, raise a KeyError when a dict-like mapper, index,
                        or columns contains labels that are not present in the Index being transformed.
                        If ‘ignore’, existing keys will be renamed and extra keys will be ignored.
+        :param update_operation: Whether to update operations with the rename applied. This is for internal usage,
+        to prevent recursive calls. Users should not set this to False when calling rename.
 
         :return: Explain DataFrame with the renamed axis labels or None if inplace=True.
         """
         if inplace:
-            # Perform the renaming, and set res to None as we are doing the operation inplace.
             super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                              copy=copy, inplace=inplace, level=level, errors=errors)
             res = self
-            # When doing an inplace rename, we need to update the source dataframe of the operation.
-            # Otherwise, the operation may use the old dataframes or cause an error.
-            # Please note that this can cause a recursive call, as the source_df should also be an ExpDataFrame.
-            if self.operation is not None:
-                # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(self.operation, 'source_df') and self.operation.source_df is not None:
-                    self.operation.source_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                    copy=copy, inplace=inplace, level=level, errors=errors)
-                # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(self.operation, 'left_df') and self.operation.left_df is not None:
-                    self.operation.left_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                  copy=copy, inplace=inplace, level=level, errors=errors)
-                    self.operation.right_df.rename(mapper=mapper, index=index, columns=columns, axis=axis,
-                                                   copy=copy, inplace=inplace, level=level, errors=errors)
-
-                self.operation.result_df = self
         else:
-            # If the operation is not inplace, we can just return the new dataframe.
-            # However, we need to make sure to update the operation of the new dataframe, as otherwise we may get a
-            # no operation found error.
             res = super(ExpDataFrame, self).rename(mapper=mapper, index=index, columns=columns, axis=axis,
                                                    copy=copy, inplace=inplace, level=level, errors=errors)
-            if self.operation is not None:
-                res.operation = copy(self.operation)
-                # Filter and GroupBy operations have a source_df field that needs to be updated.
-                if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
+
+        if res.operation is not None:
+            res.operation.result_df = res
+
+        # Update the operation, if needed.
+        if res.operation is not None and update_operation:
+
+            # Update the columns of the operation, if the columns were renamed.
+            res.operation = cpy(self.operation)
+            # Filter and GroupBy operations have a source_df field that needs to be updated.
+            if hasattr(res.operation, 'source_df') and res.operation.source_df is not None:
+                # update_operation is our own addition, so we can't pass it to the original rename method, if the
+                # df is not an ExpDataFrame.
+                if isinstance(res.operation.source_df, ExpDataFrame):
+                    # We always set update_operation to False, as we don't want to update other dataframes' operations.
+                    # We also always set inplace to False, as we don't want to change the original dataframe.
+                    res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
+                                                                           columns=columns, axis=axis,
+                                                                           copy=copy, inplace=False, level=level,
+                                                                           errors=errors, update_operation=False)
+                else:
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
                                                                              columns=columns, axis=axis,
-                                                                             copy=copy, inplace=inplace, level=level,
+                                                                             copy=copy, inplace=False, level=level,
                                                                              errors=errors)
-                # Join operations have a left_df and right_df field that needs to be updated.
-                elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
+            # Join operations have a left_df and right_df field that needs to be updated.
+            elif hasattr(res.operation, 'left_df') and res.operation.left_df is not None:
+                if isinstance(res.operation.left_df, ExpDataFrame):
                     res.operation.left_df = res.operation.left_df.rename(mapper=mapper, index=index, columns=columns,
-                                                                         axis=axis, copy=copy, inplace=inplace,
+                                                                         axis=axis, copy=copy, inplace=False,
+                                                                         level=level,
+                                                                         errors=errors, update_operation=False)
+                else:
+                    res.operation.left_df = res.operation.left_df.rename(mapper=mapper, index=index, columns=columns,
+                                                                         axis=axis, copy=copy, inplace=False,
                                                                          level=level,
                                                                          errors=errors)
+                if isinstance(res.operation.right_df, ExpDataFrame):
                     res.operation.right_df = res.operation.right_df.rename(mapper=mapper, index=index, columns=columns,
-                                                                           axis=axis, copy=copy, inplace=inplace,
+                                                                           axis=axis, copy=copy, inplace=False,
+                                                                           level=level,
+                                                                           errors=errors, update_operation=False)
+                else:
+                    res.operation.right_df = res.operation.right_df.rename(mapper=mapper, index=index, columns=columns,
+                                                                           axis=axis, copy=copy, inplace=False,
                                                                            level=level,
                                                                            errors=errors)
-                res.operation.result_df = res
-
-        # Finally, update the attribute name in the operation if it was renamed.
-        if res.operation is not None:
 
             # Filter and join operations have an attribute field that needs to be updated.
             if hasattr(res.operation, 'attribute'):
@@ -490,7 +503,7 @@ class ExpDataFrame(pd.DataFrame):
         :return:Explain DataFrameGroupBy object that contains information about the groups.
         """
         try:
-            from pd_explain.explainable_group_by_dataframe import ExpDataFrameGroupBy
+            from pd_explain.core.explainable_group_by_dataframe import ExpDataFrameGroupBy
             # group_attributes = GroupBy.get_one_to_many_attributes(self, [by] if isinstance(by, str) else by)
             group_attributes = by
             tmp = pd.core.groupby.generic.DataFrameGroupBy
@@ -654,7 +667,8 @@ class ExpDataFrame(pd.DataFrame):
             # If no on is specified, we raise a warning to let the user know that the operation and explanation may not
             # work as expected.
             if on is None:
-                warnings.warn("No 'on' parameter specified in join operation. The operation and explanation may not work as expected.")
+                warnings.warn(
+                    "No 'on' parameter specified in join operation. The operation and explanation may not work as expected.")
 
             left_name = utils.get_calling_params_name(self)
             right_name = utils.get_calling_params_name(other)
@@ -667,6 +681,10 @@ class ExpDataFrame(pd.DataFrame):
             result_df = ExpDataFrame(pd.merge(self, right_df, on=on, left_on=left_on,
                                               right_on=right_on, how=how, suffixes=(lsuffix, rsuffix), sort=sort))
 
+            # Check if the resulting df is empty. If it is, we raise a warning to let the user know.
+            if result_df.empty:
+                warnings.warn("The resulting dataframe is empty. Check the join operation to ensure it is correct.")
+
             # This is a complete hack to fix the issue: applying suffixes to the columns of the resulting dataframe
             # causes the explanation to fail, since it can no longer match up the columns of the resulting dataframe
             # with the columns of the original dataframes. This is a temporary fix until a better solution is found.
@@ -677,8 +695,8 @@ class ExpDataFrame(pd.DataFrame):
             left_df = self.copy()
             right_df = right_df.copy()
 
-            left_df.rename(columns={col: col + lsuffix for col in coinciding_cols}, inplace=True)
-            right_df.rename(columns={col: col + rsuffix for col in coinciding_cols}, inplace=True)
+            left_df = left_df.rename(columns={col: col + lsuffix for col in coinciding_cols}, inplace=False, update_operation=False)
+            right_df = right_df.rename(columns={col: col + rsuffix for col in coinciding_cols}, inplace=False, update_operation=False)
 
             result_df.operation = Join(left_df, right_df, None, on, result_df, left_name, right_name)
 
@@ -774,12 +792,25 @@ class ExpDataFrame(pd.DataFrame):
                         If None then the index name is repeated.
         :return: Explain DataFrame with the new index or None if inplace=True.
         """
-        return ExpDataFrame(super().reset_index(drop=drop))
+        return super().reset_index(drop=drop, inplace=inplace, level=level, col_level=col_level, col_fill=col_fill)
 
     def drop_duplicates(
             self,
+            subset: Hashable | Sequence[Hashable] | None = None,
+            *,
+            keep: DropKeep = "first",
+            inplace: bool = False,
+            ignore_index: bool = False,
     ) -> ExpDataFrame | None:
-        return ExpDataFrame(super().drop_duplicates())
+        # Drop duplicates does not interact well with __get_item__ in ExpDataFrame. So, we cast it back to a normal
+        # DataFrame, drop the duplicates, and then cast it back to an ExpDataFrame.
+        res_df = DataFrame(self)
+        res_df = res_df.drop_duplicates(subset=subset, keep=keep, inplace=inplace, ignore_index=ignore_index)
+        res_df = ExpDataFrame(res_df)
+        res_df.operation = self.operation
+        res_df.explanation = self.explanation
+        res_df.filter_items = self.filter_items
+        return res_df
 
     def __repr__(self):
         """
@@ -791,35 +822,75 @@ class ExpDataFrame(pd.DataFrame):
     def present_deleted_correlated(self, figs_in_row: int = 2):  #####
         return self.operation.present_deleted_correlated(figs_in_row=figs_in_row)
 
-    def explain(self, schema: dict = None, attributes: List = None, top_k: int = None, explainer='fedex', target=None,
-                dir=None,
+    def explain(self, schema: dict = None, attributes: List = None, use_sampling: bool | None = None,
+                sample_size: int | float = 5000, top_k: int = None, explainer='fedex', target=None, dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
-                consider='right', value=None, attr=None, ignore=[]):
+                consider='right', value=None, attr=None, ignore=[],
+                labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
+                separation_threshold: float = 0.3, p_value: int = 1,
+                explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',
+                prune_if_too_many_labels: bool = True, max_labels: int = 10, pruning_method='largest',
+                bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
+                labels_name: str = 'label', explain_errors=True,
+                error_explanation_threshold: float = 0.05,):
         """
-        Generate explanation to series base on the operation lead to this series result
-        :param schema: result columns, can change columns name and ignored columns
-        :param attributes: list of specific columns to consider in the explanation
-        :param top_k: number of explanations
-        :param figs_in_row: number of explanations figs in one row
-        :param show_scores: show scores on explanation
-        :param title: explanation title
+        Generate an explanation for the dataframe.
 
+        :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'shapley', 'outlier'. Note
+        that 'outlier' is only supported for series, not for dataframes.
+        :param attributes: All explainers. Which columns to consider in the explanation.
+        :param use_sampling: All explainers. Whether or not to use sampling when generating an explanation. This can massively speed up
+        the explanation generation process, but may result in less accurate explanations. We use sampling methods that
+        we have empirically tested to only minimally affect the accuracy of the explanations. Defaults to None, in which
+        case the value set in the global configuration is used (which defaults to True).
+        :param sample_size: All explainers. The number of samples to use when use_sampling is True. Can be either an integer or a float.
+        If it is an integer, that number of samples will be used. If it is a float, it will be interpreted as a percentage
+        of the total number of samples. Defaults to 5000, which is also the minimum value.
+        :param schema: Fedex explainer. Result columns, can change columns name and ignored columns.
+        :param top_k: Fedex explainer. Number of explanations.
+        :param figs_in_row: Fedex explainer. Number of explanations figs in one row.
+        :param show_scores: Fedex explainer. show scores on explanation.
+        :param title: Fedex / outlier / shapley explainers. explanation title.
+        :param corr_TH: Fedex explainer. Correlation threshold, above this threshold the columns are considered correlated.
+        :param target: Outlier explainer. Target value for the outlier explainer
+        :param dir: Outlier explainer. Direction for the outlier explainer. Can be either 'high' or 'low'.
+        :param consider: Fedex explainer. Which side of a join to consider for the explanation. Can be either 'left' or 'right'.
+        :param labels: Many to one explainer. Cluster / group labels. Can either be a series or a column name.
+        If a column name is provided, the column must be present in the dataframe.
+        If you wish to explain the groups of a groupby operation, leave this parameter as None while calling explain on the
+        groupy result. The labels will be automatically extracted from the groupby operation.
+        :param coverage_threshold: Many to one explainer. Minimum coverage threshold. Coverage is
+        defined as the % of the data in the group that is explained by the explanation. Defaults to 0.7.
+        :param max_explanation_length: Many to one explainer. Maximum explanation length permitted. Defaults to 3.
+        :param separation_threshold: Many to one explainer. Maximum separation threshold. Separation error is defined as the
+        % of the data in groups other than the one being explained that is explained by the explanation. Defaults to 0.3.
+        :param p_value: Many to one explainer. A scaling factor for the maximum number of attributes that will be considered
+        as candidates for the explanation. n_attr = max_explanation_length * p_value. Setting this to a higher value may
+        result in a more accurate explanation, but will also increase the computation time. Defaults to 1.
+        :param explanation_form: Many to one explainer. The form of the explanation. Can be either 'conj' or 'disj', for
+        conjunction and disjunction respectively. Defaults to 'conj'.
+        :param prune_if_too_many_labels: Many to one explainer. If True, the labels will be pruned if there are too many
+        labels to consider. Defaults to True.
+        :param max_labels: Many to one explainer. The maximum number of labels permitted. Above this number, the labels
+        will be pruned if prune_if_too_many_labels is True. Defaults to 10.
+        :param pruning_method: Many to one explainer. The method to use when selecting which labels to prune. Cab be
+        'largest' - where the k labels with the most values are kept, 'smallest', 'random', 'max_dist' - where the k labels
+        with the highest distance between their means * group size are kept, 'min_dist', 'max_silhouette' - where the k groups with the
+        highest silhouette score * group size are kept, or 'min_silhouette'. Defaults to 'largest'.
+        :param bin_numeric: Many to one explainer. Whether or not to bin numeric labels, if there are more labels than
+        the specified number of bins. Defaults to False.
+        :param num_bins: Many to one explainer. The number of bins to use when binning numeric labels. Defaults to 10.
+        :param binning_method: The method to use when binning numeric labels. Can be either 'quantile' or 'uniform'.
+        :param labels_name: Many to one explainer. How to call the labels column in the explanation, if binning was used
+        and the labels column did not have a name. Defaults to 'label'.
+        :param explain_errors: Many to one explainer. Whether or not to explain where the separation error originates from
+        for each explanation. Defaults to True.
+        :param error_explanation_threshold: Many to one explainer. The threshold for how much a group needs to contribute
+        to the separation error to be included in the explanation. Groups that contribute less than this threshold will
+        be aggregated into a single group. Defaults to 0.05.
 
         :return: explanation figures
         """
-        if attributes is None:
-            attributes = []
-            if top_k is None:
-                top_k = 1
-        else:
-            if top_k is None:
-                top_k = len(attributes)
-
-        if schema is None:
-            schema = {}
-        if self.operation is None:
-            print('no operation was found.')
-            return
 
         # Ensure that the user does not get a non-informative error message if they try to use the outlier explainer.
         # Without this line, the user gets an AttributeError 'str' object has no attribute 'items',
@@ -827,6 +898,28 @@ class ExpDataFrame(pd.DataFrame):
         if str.lower(explainer) == 'outlier':
             raise ValueError("Outlier explainer is not supported for multi-attribute dataframes, only for series.")
 
-        return self.operation.explain(schema=schema, attributes=attributes, top_k=top_k, figs_in_row=figs_in_row,
-                                      show_scores=show_scores, title=title, corr_TH=corr_TH, explainer=explainer,
-                                      consider=consider, cont=value, attr=attr, ignore=ignore)
+        use_sampling = use_sampling if use_sampling is not None else get_use_sampling_value()
+
+        factory = ExplainerFactory()
+        explainer = factory.create_explainer(explainer=explainer, operation=self.operation,
+                                             schema=schema, attributes=attributes, top_k=top_k, figs_in_row=figs_in_row,
+                                             show_scores=show_scores, title=title, corr_TH=corr_TH,
+                                             consider=consider, cont=value, attr=attr, ignore=ignore,
+                                             labels=labels, coverage_threshold=coverage_threshold,
+                                             max_explanation_length=max_explanation_length,
+                                             separation_threshold=separation_threshold, p_value=p_value,
+                                             target=target, dir=dir,
+                                             source_df=self, explanation_form=explanation_form,
+                                             prune_if_too_many_labels=prune_if_too_many_labels, max_labels=max_labels,
+                                             pruning_method=pruning_method,
+                                             bin_numeric=bin_numeric, num_bins=num_bins, binning_method=binning_method,
+                                             labels_name=labels_name,
+                                             use_sampling=use_sampling, sample_size=sample_size,
+                                             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold
+                                             )
+        explanation = explainer.generate_explanation()
+
+        if explainer.can_visualize():
+            return explainer.visualize()
+
+        return explanation

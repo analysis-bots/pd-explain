@@ -296,7 +296,7 @@ class ManyToOneExplainer(ExplainerInterface):
         if sample_size <= 0:
             raise ValueError("Sample size must be a positive number.")
         if 0 < sample_size < 1:
-            sample_size = self._source_df.shape[0] * sample_size
+            sample_size = int(self._source_df.shape[0] * sample_size)
         # If the sample size is below the default sample size, we use the default sample size.
         if sample_size < DEFAULT_SAMPLE_SIZE:
             print(f"Sample size is below the default sample size of {DEFAULT_SAMPLE_SIZE}. Using the default sample size.\n")

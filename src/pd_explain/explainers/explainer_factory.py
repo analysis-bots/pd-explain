@@ -1,5 +1,7 @@
-from .fedex_explainer import FedexExplainer
-from .many_to_one_explainer import ManyToOneExplainer
+from pd_explain.explainers.fedex_explainer import FedexExplainer
+from pd_explain.explainers.many_to_one_explainer import ManyToOneExplainer
+from pd_explain.explainers.outlier_explainer import OutlierExplainerInterface as OutlierExplainer
+
 from singleton_decorator import singleton
 
 @singleton
@@ -17,8 +19,11 @@ class ExplainerFactory:
         :param kwargs: The arguments to pass to the explainer.
         :return: The explainer object.
         """
-        if explainer == "fedex" or explainer == 'outlier' or explainer == 'shapley':
+        explainer = explainer.lower()
+        if explainer == "fedex" or explainer == 'shapley':
             return FedexExplainer(explainer=explainer,*args, **kwargs)
+        elif explainer == 'outlier':
+            return OutlierExplainer(*args, **kwargs)
         elif explainer.replace("_", " ") == "many to one":
             return ManyToOneExplainer(*args, **kwargs)
         else:

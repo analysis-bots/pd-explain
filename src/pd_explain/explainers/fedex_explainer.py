@@ -12,11 +12,8 @@ class FedexExplainer(ExplainerInterface):
     """
 
     def __init__(self, operation=None, schema: dict = None, attributes: List = None, top_k: int = None,
-                 explainer='fedex',
-                 target=None,
-                 dir=None,
-                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
-                 consider='right', value=None, attr=None, ignore=None, hold_out=None, control=None,
+                 explainer='fedex', figs_in_row: int = 2, show_scores: bool = False, title: str = None,
+                 corr_TH: float = 0.7, consider='right', value=None, attr=None, ignore=None,
                  use_sampling: bool = True, sample_size = 5000, *args, **kwargs):
         """
         Initialize the FedexExplainer object.
@@ -38,20 +35,7 @@ class FedexExplainer(ExplainerInterface):
         """
 
         if operation is None:
-            raise ValueError('All fedex explainers and outlier explainer require an operation object')
-
-        if hold_out is None:
-            hold_out = []
-        if ignore is None:
-            ignore = []
-
-        if explainer == 'outlier':
-            if dir is None:
-                raise ValueError('dir must be provided for outlier explanation')
-            if dir not in ['high', 'low', 1, -1]:
-                raise ValueError('dir must be either high or low or the corresponding integer values 1 and -1')
-            if target is None:
-                raise ValueError('target value must be provided for outlier explanation')
+            raise ValueError('All fedex explainers require an operation object')
 
         if schema is None:
             schema = {}
@@ -77,8 +61,6 @@ class FedexExplainer(ExplainerInterface):
         self._attributes = attributes
         self._top_k = top_k
         self._explainer = explainer
-        self._target = target
-        self._dir = dir
         self._figs_in_row = figs_in_row
         self._show_scores = show_scores
         self._title = title
@@ -88,8 +70,6 @@ class FedexExplainer(ExplainerInterface):
         self._attr = attr
         self._ignore = ignore
         self._operation = operation
-        self._hold_out = hold_out
-        self._control = control
         self._results = None
         self._use_sampling = use_sampling
         self._sample_size = sample_size
@@ -98,16 +78,6 @@ class FedexExplainer(ExplainerInterface):
         if self._operation is None:
             self._results = "No operation was found."
             return self._results
-
-        if self._explainer == 'outlier':
-            self._results = self._operation.explain(
-                schema=self._schema, attributes=self._attributes, top_k=self._top_k, explainer=self._explainer,
-                target=self._target, dir=self._dir,
-                control=self._control, hold_out=self._hold_out, figs_in_row=self._figs_in_row,
-                show_scores=self._show_scores, title=self._title, corr_TH=self._corr_TH,
-                consider=self._consider, cont=self._value, attr=self._attr, ignore=self._ignore,
-                use_sampling=self._use_sampling, sample_size=self._sample_size
-            )
 
         else:
             self._results = self._operation.explain(

@@ -50,7 +50,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['count']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -86,7 +89,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['mean']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -111,7 +117,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['median']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -150,7 +159,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['std']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -191,7 +203,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['var']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -216,7 +231,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['sem']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -239,7 +257,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['size']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -282,7 +303,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['sum']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -309,7 +333,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['prod']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -336,7 +363,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['min']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result
@@ -363,7 +393,10 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                                                 group_attributes=self.group_attributes,
                                                 agg_dict={agg_attr: ['max']},
                                                 result_df=result.to_frame(),
-                                                source_name=self.source_name)
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
             return original_result
 
         return result

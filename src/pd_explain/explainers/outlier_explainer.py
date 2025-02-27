@@ -53,7 +53,14 @@ class OutlierExplainerInterface(ExplainerInterface):
         # Like the above, converting to a DataFrame in case we get an ExpSeries or ExpDataFrame
         self._df_in = DataFrame(operation.source_df)
         self._g_att = g_attr
-        self._g_agg = agg_attr
+        if agg_attr in self._df_in.columns:
+            self._g_agg = agg_attr
+        else:
+            agg_attr = agg_attr + "_" + agg_method
+            if agg_attr in self._df_in.columns:
+                self._g_agg = agg_attr
+            else:
+                raise ValueError(f"Could not find the aggregation attribute {agg_attr} in the DataFrame")
         self._agg_method = agg_method
         self._target = target
         if dir == "low":

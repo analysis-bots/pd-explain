@@ -1,6 +1,7 @@
 from .explainer_interface import ExplainerInterface
 from typing import List
 from pandas import DataFrame
+from copy import deepcopy
 
 
 class FedexExplainer(ExplainerInterface):
@@ -50,6 +51,7 @@ class FedexExplainer(ExplainerInterface):
 
         # Convert the source_df and result_df to DataFrame objects, to avoid overhead from overridden methods
         # in ExpDataFrame, as well as to avoid any bad interactions between those methods and the explainer.
+        operation = deepcopy(operation)
         if hasattr(operation, 'source_df'):
             operation.source_df = DataFrame(operation.source_df) if operation.source_df is not None else None
         elif hasattr(operation, 'left_df'):

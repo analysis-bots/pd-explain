@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/FEDEx_Generator-1/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\FEDEx_Generator\\src")
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\cluster-explorer\\src")
-sys.path.insert(0, "C:\\Users\Yuval\\PycharmProjects\\ExternalExplainers\\src")
+sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\ExternalExplainers\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/FEDEx_Generator-1/src')
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
@@ -109,6 +109,10 @@ class ExpDataFrame(pd.DataFrame):
             if self.filter_items is None:
                 self.filter_items = []
             self.filter_items.append(key)
+        if isinstance(key, list):
+            if self.filter_items is None:
+                self.filter_items = []
+            self.filter_items.extend(key)
         to_return = super().__getitem__(key)
 
         # Convert the result to an explainable dataframe or series if it is not already.
@@ -119,12 +123,14 @@ class ExpDataFrame(pd.DataFrame):
 
         # If the item is an explainable dataframe or series, we want to update its operation.
         if isinstance(to_return, ExpDataFrame) or isinstance(to_return, ExpSeries):
-            if self.operation is not None:
+            # We only want to make the updates if the operation is not None, and if the get_item is a column
+            # selection, not a row selection (a filter operation).
+            if self.operation is not None and (isinstance(key, str) or isinstance(key, list)):
 
                 # Copy the operation, to avoid changing the original operation of the dataframe.
                 to_return.operation = cpy(self.operation)
 
-                # Filter and GroupBy operations: perform the same selection on the source dataframe.
+                # Filter and GroupBy operations: perform the same selection on the source dataframe
                 if hasattr(to_return.operation, 'source_df') and to_return.operation.source_df is not None:
                     to_return.operation.source_df = to_return.operation.source_df.__getitem__(key)
 

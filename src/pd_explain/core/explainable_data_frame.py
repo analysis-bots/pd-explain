@@ -830,7 +830,9 @@ class ExpDataFrame(pd.DataFrame):
         return self.operation.present_deleted_correlated(figs_in_row=figs_in_row)
 
     def explain(self, schema: dict = None, attributes: List = None, use_sampling: bool | None = None,
-                sample_size: int | float = 5000, top_k: int = None, explainer='fedex', target=None, dir=None,
+                sample_size: int | float = 5000, top_k: int = None,
+                explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley']='fedex',
+                target=None, dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
                 consider='right', value=None, attr=None, ignore=[],
                 labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,

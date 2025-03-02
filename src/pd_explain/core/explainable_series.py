@@ -194,7 +194,7 @@ class ExpSeries(pd.Series):
 
     def explain(self, schema: dict = None, attributes: List = None, use_sampling: None | bool = None,
                 sample_size: int | float = 5000, top_k: int = 1, figs_in_row: int = 2,
-                explainer='fedex',
+                explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley']='fedex',
                 target=None, dir: Literal["high", "low", 1, -1] = None, control=None, hold_out=[],
                 show_scores: bool = False, title: str = None,
                 labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
@@ -277,6 +277,7 @@ class ExpSeries(pd.Series):
             pruning_method=pruning_method, bin_numeric=bin_numeric, num_bins=num_bins,
             binning_method=binning_method, labels_name=labels_name,
             explanation_form=explanation_form, use_sampling=use_sampling,
+            sample_size=sample_size,
             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold
         )
 
@@ -286,3 +287,11 @@ class ExpSeries(pd.Series):
             return explainer.visualize()
 
         return explanation
+
+    def to_html(self, *args, **kwargs):
+        """
+        Render the Series to a HTML table.
+        We do it this way because for an unknown reason, the default for series does not always work.
+        This way, we instead get the usual table that we get for a DataFrame.
+        """
+        return self.to_frame().to_html(*args, **kwargs)

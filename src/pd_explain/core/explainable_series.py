@@ -202,7 +202,7 @@ class ExpSeries(pd.Series):
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',
                 prune_if_too_many_labels: bool = True, max_labels: int = 10, pruning_method='largest',
                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
-                labels_name: str = 'label', explain_errors=True,
+                label_name: str = 'label', explain_errors=True,
                 error_explanation_threshold: float = 0.05,
                 ):
         """
@@ -250,7 +250,7 @@ class ExpSeries(pd.Series):
         the specified number of bins. Defaults to False.
         :param num_bins: Many to one explainer. The number of bins to use when binning numeric labels. Defaults to 10.
         :param binning_method: The method to use when binning numeric labels. Can be either 'quantile' or 'uniform'.
-        :param labels_name: Many to one explainer. How to call the labels column in the explanation, if binning was used
+        :param label_name: Many to one explainer. How to call the labels column in the explanation, if binning was used
         and the labels column did not have a name. Defaults to 'label'.
         :param explain_errors: Many to one explainer. Whether or not to explain where the separation error originates from
         for each explanation. Defaults to True.
@@ -275,7 +275,7 @@ class ExpSeries(pd.Series):
             separation_threshold=separation_threshold, p_value=p_value,
             prune_if_too_many_labels=prune_if_too_many_labels, max_labels=max_labels,
             pruning_method=pruning_method, bin_numeric=bin_numeric, num_bins=num_bins,
-            binning_method=binning_method, labels_name=labels_name,
+            binning_method=binning_method, label_name=label_name,
             explanation_form=explanation_form, use_sampling=use_sampling,
             sample_size=sample_size,
             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold

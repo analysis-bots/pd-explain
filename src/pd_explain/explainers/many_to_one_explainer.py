@@ -23,7 +23,7 @@ class ManyToOneExplainer(ExplainerInterface):
                  attributes: List[str] = None, operation=None, use_sampling: bool = True,
                  prune_if_too_many_labels: bool = True, max_labels: int = MAX_LABELS, pruning_method: str = 'largest',
                  bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
-                 labels_name: str = 'label', sample_size: int = DEFAULT_SAMPLE_SIZE, explain_errors=True,
+                 label_name: str = 'label', sample_size: int = DEFAULT_SAMPLE_SIZE, explain_errors=True,
                  error_explanation_threshold: float = DEFAULT_ERROR_EXPLANATION_THRESHOLD,
                  *args, **kwargs):
         """
@@ -63,7 +63,7 @@ class ManyToOneExplainer(ExplainerInterface):
         :param num_bins: The number of bins to create for the numeric labels. Default is 10.
         :param binning_method: The method to use for binning the numeric labels. This can be either 'uniform' or 'quantile'.
         Default is 'quantile'.
-        :param labels_name: A name to give the labels when binning them, if there is none to begin with. Default is 'label'.
+        :param label_name: A name to give the labels when binning them, if there is none to begin with. Default is 'label'.
         :param sample_size: The size of the sample to use when sampling the dataframe. Can be a percentage of the dataframe
         size if below 1. Default is 5000.
         :param explain_errors: Whether the explainer should add another column, explaining where the separation error comes from.
@@ -87,7 +87,7 @@ class ManyToOneExplainer(ExplainerInterface):
         self._num_bins = num_bins
         self._binning_method = binning_method
         self._bin_numeric = bin_numeric
-        self._labels_name = labels_name if labels_name is not None else 'label'
+        self._label_name = label_name if label_name is not None else 'label'
 
         if labels is None:
             self._source_df, self._labels = self._create_groupby_labels(operation=operation)
@@ -196,7 +196,7 @@ class ManyToOneExplainer(ExplainerInterface):
                 else:
                     raise ValueError("The binning method must be either 'uniform' or 'quantile'.")
                 # After binning, we convert the intervals to meaningful strings.
-                attribute_name = labels.name if labels.name is not None else self._labels_name
+                attribute_name = labels.name if labels.name is not None else self._label_name
                 str_intervals = self._interval_to_str(bins, attribute_name)
                 # Then we return the binned labels.
                 print(
@@ -252,7 +252,7 @@ class ManyToOneExplainer(ExplainerInterface):
                         average_distances[i] = distances.mean()
                     # Multiply by the size of the cluster, to give more weight to larger clusters and not give
                     # a large weight to a small cluster that is far away from the other clusters.
-                    average_distances *= label_proprtional_size
+                    # average_distances *= label_proprtional_size
                     average_distances = pd.Series(average_distances)
                     if self._pruning_method == 'max_dist':
                         average_distances = average_distances.sort_values(ascending=False)
@@ -274,7 +274,7 @@ class ManyToOneExplainer(ExplainerInterface):
                     scores['label'] = labels
                     scores = scores.groupby('label').mean()
                     scores = scores.squeeze()
-                    scores *= label_proprtional_size
+                    # scores *= label_proprtional_size
                     if self._pruning_method == 'max_silhouette':
                         scores = scores.sort_values(ascending=False)
                     else:
@@ -401,7 +401,6 @@ class ManyToOneExplainer(ExplainerInterface):
         converted_rules = DataFrame(columns=['Cluster', 'Human Readable Rule', 'Coverage', 'Separation Error', 'Rule Binary Array', 'Error Explanation'])
         for explanation in rules.iterrows():
             # The explanation is a tuple, where the first element is the index and the second element is the explanation.
-            idx = explanation[0]
             explanation = explanation[1]
             # We first convert the stringified rule to a list of conditions, create a binary array from the rule,
             # and finally we also convert it into a human readable format, then save everything.

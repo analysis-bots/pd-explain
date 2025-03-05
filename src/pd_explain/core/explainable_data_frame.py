@@ -843,7 +843,7 @@ class ExpDataFrame(pd.DataFrame):
                 label_name: str = 'label', explain_errors=True,
                 error_explanation_threshold: float = 0.05, ):
         """
-        Generate an explanation for the dataframe.
+        Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
 
         :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'shapley', 'outlier'. Note
         that 'outlier' is only supported for series, not for dataframes.
@@ -898,7 +898,7 @@ class ExpDataFrame(pd.DataFrame):
         to the separation error to be included in the explanation. Groups that contribute less than this threshold will
         be aggregated into a single group. Defaults to 0.05.
 
-        :return: explanation figures
+        :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.
         """
 
         # Ensure that the user does not get a non-informative error message if they try to use the outlier explainer.

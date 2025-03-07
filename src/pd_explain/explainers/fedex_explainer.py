@@ -3,6 +3,8 @@ from typing import List
 from pandas import DataFrame
 from copy import deepcopy
 
+from fedex_generator.Operations.Filter import Filter
+
 
 class FedexExplainer(ExplainerInterface):
     """
@@ -51,6 +53,7 @@ class FedexExplainer(ExplainerInterface):
 
         # Convert the source_df and result_df to DataFrame objects, to avoid overhead from overridden methods
         # in ExpDataFrame, as well as to avoid any bad interactions between those methods and the explainer.
+        original_operation = operation
         operation = deepcopy(operation)
         if hasattr(operation, 'source_df'):
             operation.source_df = DataFrame(operation.source_df) if operation.source_df is not None else None
@@ -59,6 +62,7 @@ class FedexExplainer(ExplainerInterface):
             operation.right_df = DataFrame(operation.right_df) if operation.right_df is not None else None
         operation.result_df = DataFrame(operation.result_df) if operation.result_df is not None else None
 
+        self._original_operation = original_operation
         self._schema = schema
         self._attributes = attributes
         self._top_k = top_k
@@ -88,6 +92,11 @@ class FedexExplainer(ExplainerInterface):
                 explainer=self._explainer, consider=self._consider, cont=self._value, attr=self._attr,
                 ignore=self._ignore, use_sampling=self._use_sampling, sample_size=self._sample_size
             )
+
+        if type(self._operation) == Filter:
+            self._original_operation.cor_deleted_atts = self._operation.cor_deleted_atts
+            self._original_operation.not_presented = self._operation.not_presented
+            self._original_operation.corr = self._operation.corr
 
         return self._results
 

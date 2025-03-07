@@ -1,5 +1,10 @@
+"""
+Tests for the pd_explain.core.ExpSeries class, as well as the groupby operations that return an ExpSeries
+(thus also testing the pd_explain.core.ExpSeriesGroupBy class).
+"""
+
 import pytest
-from tests.test_utils import get_dataset, op_table
+from test_utils import get_dataset, op_table
 import pandas as pd
 import pd_explain
 

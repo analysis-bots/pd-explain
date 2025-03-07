@@ -1,7 +1,10 @@
-from copy import copy
+"""
+Tests for the pd_explain.core.ExpDataFrame class, as well as indirectly testing
+the related pd_explain.core.ExpDataFrameGroupBy class (during the group-by functions tests).
+"""
 
 import pytest
-from tests.test_utils import get_dataset, op_table
+from test_utils import get_dataset, op_table
 import pandas as pd
 import pd_explain
 

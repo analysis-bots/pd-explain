@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fedex_generator.Operations.GroupBy import GroupBy
+from pandas import Series, DataFrame
 from pandas._libs import lib
 from pandas.core.groupby.generic import SeriesGroupBy
 from pd_explain.core.explainable_series import ExpSeries
@@ -31,6 +32,34 @@ class ExpSeriesGroupBy(SeriesGroupBy):
                          selection=selection, as_index=as_index
                          , sort=sort,
                          group_keys=group_keys, observed=observed)
+
+
+    def nunique(self, dropna: bool = True) -> Series | DataFrame:
+        """
+        Compute count of distinct observations.
+        Add operation groupby to the result object.
+
+        :param dropna: Don’t include NaN in the counts.
+        :return: Count of distinct observations for each group.
+        """
+        result = ExpSeries(super().nunique(dropna))
+        agg_attr = result.name
+        result.name = '_'.join([agg_attr, 'nunique'])
+
+        if hasattr(self, 'original'):
+            original_result = self.original.nunique(dropna)
+            original_result.operation = GroupBy(source_df=self.operation.source_df,
+                                                source_scheme={},
+                                                group_attributes=self.group_attributes,
+                                                agg_dict={agg_attr: ['nunique']},
+                                                result_df=result.to_frame(),
+                                                source_name=self.source_name,
+                                                column_mapping={
+                                                    result.name: agg_attr
+                                                })
+            return original_result
+
+        return result
 
     def count(self):
         """

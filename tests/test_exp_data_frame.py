@@ -1,6 +1,11 @@
 """
 Tests for the pd_explain.core.ExpDataFrame class, as well as indirectly testing
 the related pd_explain.core.ExpDataFrameGroupBy class (during the group-by functions tests).
+
+To anyone revisiting this in the future: There is quite a mess here because I wrote a test function for
+every aggregation method, before I realized in the future that it is possible to do a double
+parametrization with pytest. I will leave this as is for now, but it is possible to refactor this
+to be much cleaner and more concise.
 """
 
 import pytest

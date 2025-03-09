@@ -499,3 +499,26 @@ def test_drop_duplicates_after_operation_should_work():
     assert isinstance(exp_res, pd_explain.ExpSeries)
     # Check that the operation is correct
     assert exp_res.operation == exp_dataset.operation
+
+@pytest.mark.parametrize("dataset_name, column, query", [
+    ("houses", "SalePrice", ('>', 214000)),
+    ("adults", "age", ('<', 30)),
+    ("clients_data", "Customer_Age", ('>', 40)),
+    ("spotify", "key", ('==', 5))
+])
+def test_filter_should_work(dataset_name, column, query):
+    """
+    Tests that the filter method works as expected, and produces the same results as the pandas filter method.
+    """
+    # Get the dataset and the explainable dataset
+    dataset, exp_dataset = get_dataset(dataset_name)
+    dataset, exp_dataset = dataset[[column]].squeeze(), exp_dataset[[column]].squeeze()
+    # Perform the filter operation on the dataset and the explainable dataset
+    query_op = op_table[query[0]]
+    query_val = query[1]
+    exp_res = exp_dataset[query_op(exp_dataset, query_val)]
+    res = dataset[query_op(dataset, query_val)]
+    # Check that the results are the same
+    assert exp_res.equals(res)
+    # Check that the result is an instance of ExpSeries
+    assert isinstance(exp_res, pd_explain.ExpSeries)

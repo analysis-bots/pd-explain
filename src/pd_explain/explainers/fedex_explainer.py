@@ -17,7 +17,7 @@ class FedexExplainer(ExplainerInterface):
     def __init__(self, operation=None, schema: dict = None, attributes: List = None, top_k: int = None,
                  explainer='fedex', figs_in_row: int = 2, show_scores: bool = False, title: str = None,
                  corr_TH: float = 0.7, consider='right', value=None, attr=None, ignore=None,
-                 use_sampling: bool = True, sample_size = 5000, *args, **kwargs):
+                 use_sampling: bool = True, sample_size = 5000, debug_mode: bool = False, *args, **kwargs):
         """
         Initialize the FedexExplainer object.
         The FedexExplainer works as an interface for calling the explain method of the fedex explainer objects.
@@ -35,6 +35,7 @@ class FedexExplainer(ExplainerInterface):
         :param corr_TH: The correlation threshold. Attributes with a correlation above this threshold will be ignored.
         :param consider: The side of the join to consider in the explanation.
         :param use_sampling: Whether to use sampling to speed up the explanation generation process. Default is True.
+        :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
         """
 
         if operation is None:
@@ -79,6 +80,7 @@ class FedexExplainer(ExplainerInterface):
         self._results = None
         self._use_sampling = use_sampling
         self._sample_size = sample_size
+        self._debug_mode = debug_mode
 
     def generate_explanation(self):
         if self._operation is None:
@@ -90,7 +92,8 @@ class FedexExplainer(ExplainerInterface):
                 schema=self._schema, attributes=self._attributes, top_k=self._top_k,
                 figs_in_row=self._figs_in_row, show_scores=self._show_scores, title=self._title, corr_TH=self._corr_TH,
                 explainer=self._explainer, consider=self._consider, cont=self._value, attr=self._attr,
-                ignore=self._ignore, use_sampling=self._use_sampling, sample_size=self._sample_size
+                ignore=self._ignore, use_sampling=self._use_sampling, sample_size=self._sample_size,
+                debug_mode=self._debug_mode
             )
 
         if type(self._operation) == Filter:

@@ -841,7 +841,7 @@ class ExpDataFrame(pd.DataFrame):
                 prune_if_too_many_labels: bool = True, max_labels: int = 10, pruning_method='largest',
                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
                 label_name: str = 'label', explain_errors=True,
-                error_explanation_threshold: float = 0.05, ):
+                error_explanation_threshold: float = 0.05, debug_mode: bool = False):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
 
@@ -897,6 +897,7 @@ class ExpDataFrame(pd.DataFrame):
         :param error_explanation_threshold: Many to one explainer. The threshold for how much a group needs to contribute
         to the separation error to be included in the explanation. Groups that contribute less than this threshold will
         be aggregated into a single group. Defaults to 0.05.
+        :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
 
         :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.
         """
@@ -924,7 +925,8 @@ class ExpDataFrame(pd.DataFrame):
                                              bin_numeric=bin_numeric, num_bins=num_bins, binning_method=binning_method,
                                              label_name=label_name,
                                              use_sampling=use_sampling, sample_size=sample_size,
-                                             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold
+                                             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold,
+                                             debug_mode=debug_mode
                                              )
         explanation = explainer.generate_explanation()
 

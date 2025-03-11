@@ -195,7 +195,7 @@ class ExpSeries(pd.Series):
     def explain(self, schema: dict = None, attributes: List = None, use_sampling: None | bool = None,
                 sample_size: int | float = 5000, top_k: int = 1, figs_in_row: int = 2,
                 explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley']='fedex',
-                target=None, dir: Literal["high", "low", 1, -1] = None, control=None, hold_out=[],
+                target=None, dir: Literal["high", "low", 1, -1] = None, control=None, hold_out=None,
                 show_scores: bool = False, title: str = None,
                 labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
                 separation_threshold: float = 0.3, p_value: int = 1,

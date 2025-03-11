@@ -51,6 +51,8 @@ class FedexExplainer(ExplainerInterface):
         else:
             if top_k is None:
                 top_k = len(attributes)
+        if ignore is None:
+            ignore = []
 
         # Convert the source_df and result_df to DataFrame objects, to avoid overhead from overridden methods
         # in ExpDataFrame, as well as to avoid any bad interactions between those methods and the explainer.

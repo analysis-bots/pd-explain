@@ -834,7 +834,7 @@ class ExpDataFrame(pd.DataFrame):
                 explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley']='fedex',
                 target=None, dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
-                consider='right', value=None, attr=None, ignore=[],
+                consider='right', value=None, attr=None, ignore=None,
                 labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
                 separation_threshold: float = 0.3, p_value: int = 1,
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',

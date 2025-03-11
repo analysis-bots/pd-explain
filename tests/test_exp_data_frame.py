@@ -9,7 +9,7 @@ to be much cleaner and more concise.
 """
 
 import pytest
-from test_utils import get_dataset, op_table
+from tests.test_utils import get_dataset, op_table
 import pandas as pd
 import pd_explain
 

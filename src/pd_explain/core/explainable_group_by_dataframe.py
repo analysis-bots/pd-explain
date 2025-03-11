@@ -8,6 +8,11 @@ from typing import Literal
 from pd_explain import ExpDataFrame
 from pd_explain.core.explainable_group_by_series import ExpSeriesGroupBy
 
+# These used to be in the __getitem__ method, but doing it that way made it so the classes could end up
+# remaining wrong in multi-threaded environments.
+tmp_dataframe = pd.core.groupby.generic.DataFrameGroupBy
+tmp_series = pd.core.groupby.generic.SeriesGroupBy
+
 
 class ExpDataFrameGroupBy(DataFrameGroupBy):
     """
@@ -63,25 +68,26 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         :param key: item key
         :return: item as ExplainDataFrameGroupBy or ExplainSeriesGroupBy
         """
-        tmp_dataframe = pd.core.groupby.generic.DataFrameGroupBy
-        tmp_series = pd.core.groupby.generic.SeriesGroupBy
         pd.core.groupby.generic.DataFrameGroupBy = ExpDataFrameGroupBy
         pd.core.groupby.generic.SeriesGroupBy = ExpSeriesGroupBy
 
-        item = super().__getitem__(key)
-        if hasattr(self, 'group_attributes'):
-            item.group_attributes = self.group_attributes
+        try:
+            item = super().__getitem__(key)
+            if hasattr(self, 'group_attributes'):
+                item.group_attributes = self.group_attributes
 
-        if hasattr(self, 'source_name'):
-            item.source_name = self.source_name
-        if hasattr(self, 'operation'):
-            item.operation = self.operation
+            if hasattr(self, 'source_name'):
+                item.source_name = self.source_name
+            if hasattr(self, 'operation'):
+                item.operation = self.operation
 
-        if hasattr(self, 'original'):
-            item.original = self.original.__getitem__(key)
+            if hasattr(self, 'original'):
+                item.original = self.original.__getitem__(key)
+        # If ANY exception occurs, without this, we will be stuck with the wrong classes.
+        finally:
+            pd.core.groupby.generic.DataFrameGroupBy = tmp_dataframe
+            pd.core.groupby.generic.SeriesGroupBy = tmp_series
 
-        pd.core.groupby.generic.DataFrameGroupBy = tmp_dataframe
-        pd.core.groupby.generic.SeriesGroupBy = tmp_series
         return item
 
     def nunique(self, dropna: bool = True):

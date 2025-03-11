@@ -4,8 +4,7 @@ Tests for the pd_explain.core.ExpSeries class, as well as the groupby operations
 """
 
 import pytest
-from test_utils import get_dataset, op_table
-import pandas as pd
+from tests.test_utils import get_dataset, op_table
 import pd_explain
 
 

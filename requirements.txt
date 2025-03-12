@@ -6,6 +6,6 @@ singleton-decorator
 matplotlib>=3.9.0
 setuptools>=60.2.0
 fedex-generator>=1.0.5
-cluster-explorer >= 1.0.1
+cluster-explorer >= 1.0.2
 external-explainers>=1.0.0
 pytest>=6.2.4

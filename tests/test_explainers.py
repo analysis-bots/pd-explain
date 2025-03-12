@@ -292,3 +292,218 @@ def test_many_to_one_explainer_with_labels_from_groupby_should_work(dataset_name
     assert type(res) == DataFrame
     assert not res.empty
     assert not capsys.readouterr().err
+
+
+@pytest.mark.parametrize('dataset_name, query', [
+    ('adults', ('age', '>', 30)),
+    ('clients_data', ('Income_Category', '==', 'Less than $40K')),
+    ('spotify', ('popularity', '>', 0.7)),
+    ('houses', ('SalePrice', '>', 214000))
+])
+def test_fedex_present_deleted_correlated_via_df_should_work(dataset_name, query, capsys):
+    """
+    Test that after calling explain on a filter query, calling present_deleted_correlated works
+    correctly without errors.
+    """
+    # Load the dataframe and its explainable df counterpart
+    _, exp_dataset = get_dataset(dataset_name)
+    # Convert the query to a format that can be used with the dataframe
+    query_col = query[0]
+    query_op = op_table[query[1]]
+    query_val = query[2]
+    # Perform the filter
+    queried_exp_dataset = exp_dataset[query_op(exp_dataset[query_col], query_val)]
+    assert queried_exp_dataset.operation is not None
+    # Call the explain method
+    queried_exp_dataset.explain(explainer='fedex', top_k=3)
+    # Clear captured output to avoid interference
+    capsys.readouterr()
+    plt.close("all")
+    # Call the present_deleted_correlated method
+    queried_exp_dataset.present_deleted_correlated()
+    # Assure that the function either drew plots or printed a message
+    fedex_correct_output_test(capsys)
+
+
+def test_call_explain_with_non_existing_explainer_should_raise_error():
+    """
+    Test that calling the explain method with a non-existing explainer raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='non_existing_explainer')
+
+
+def test_call_outlier_explainer_with_no_target_should_raise_error():
+    """
+    Test that calling the outlier explainer without a target raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.groupby('workclass')['age'].mean()
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='outlier', dir='low')
+
+
+def test_call_outlier_explainer_with_no_dir_should_raise_error():
+    """
+    Test that calling the outlier explainer without a direction raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.groupby('workclass')['age'].mean()
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='outlier', target='Never-worked')
+
+
+def test_call_outlier_explainer_with_non_groupby_operation_should_raise_error():
+    """
+    Test that calling the outlier explainer with a non-groupby operation raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='outlier', target='Never-worked', dir='low')
+
+
+def test_call_outlier_explainer_on_multi_attribute_groupby_result_should_raise_error():
+    """
+    Test that calling the outlier explainer with a multi-attribute groupby result raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.groupby(['workclass']).mean()
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='outlier', target='Never-worked', dir='low')
+
+
+def test_call_many_to_one_explainer_with_empty_df_should_raise_error():
+    """
+    Test that calling the many-to-one explainer with an empty dataframe raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset[exp_dataset['age'] > 1000000000]
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one')
+
+
+def test_call_many_to_one_explainer_with_mismatched_labels_should_raise_error():
+    """
+    Test that calling the many-to-one explainer with a mismatched number of labels raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    labels = [0, 1, 2]
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', labels=labels)
+
+
+def test_call_many_to_one_explainer_with_negative_p_value_should_raise_error():
+    """
+    Test that calling the many-to-one explainer with a negative p_value raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', p_value=-1)
+
+
+@pytest.mark.parametrize("coverage_threshold", [-1, 1.1])
+def test_call_many_to_one_explainer_with_invalid_coverage_threshold_should_raise_error(coverage_threshold):
+    """
+    Test that calling the many-to-one explainer with an invalid coverage threshold raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', coverage_threshold=coverage_threshold)
+
+
+@pytest.mark.parametrize("separation_error", [-1, 1.1])
+def test_call_many_to_one_explainer_with_invalid_separation_threshold_should_raise_error(separation_error):
+    """
+    Test that calling the many-to-one explainer with an invalid separation error raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', separation_threshold=separation_error)
+
+
+def test_call_many_to_one_explainer_with_invalid_max_explanation_length_should_raise_error():
+    """
+    Test that calling the many-to-one explainer with an invalid explanation length raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', max_explanation_length=-1)
+
+
+@pytest.mark.parametrize("explanation_type", ['invalid', '', 'dis', 'con'])
+def test_call_many_to_one_explainer_with_invalid_explanation_type_should_raise_error(explanation_type):
+    """
+    Test that calling the many-to-one explainer with an invalid explanation type raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', explanation_form=explanation_type)
+
+
+@pytest.mark.parametrize("binning_method", ['invalid', '', 'cluster', 'kmeans'])
+def test_call_many_to_one_explainer_with_invalid_binning_method_should_raise_error(binning_method):
+    """
+    Test that calling the many-to-one explainer with an invalid binning method raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', labels='fnlwgt', binning_method=binning_method, bin_numeric=True)
+
+
+@pytest.mark.parametrize("pruning_method", ['invalid', '', 'cluster', 'kmeans'])
+def test_call_many_to_one_explainer_with_invalid_pruning_method_should_raise_error(pruning_method):
+    """
+    Test that calling the many-to-one explainer with an invalid pruning method raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', labels='fnlwgt', pruning_method=pruning_method)
+
+
+def test_call_many_to_one_exxplainer_with_invalid_sample_size_should_raise_error():
+    """
+    Test that calling the many-to-one explainer with an invalid sample size raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', labels='fnlwgt', sample_size=-1)
+
+
+@pytest.mark.parametrize("labels", [[], None])
+def test_call_many_to_one_explainer_with_empty_labels_not_groupby_result_should_raise_error(labels):
+    """
+    Test that calling the many-to-one explainer with empty labels, without it being the result of a groupby operation,
+    raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='many_to_one', labels=labels, explanation_form='conj')
+
+
+def test_call_fedex_explainer_without_operation_performed_should_raise_error():
+    """
+    Test that calling the fedex explainer without an operation performed raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='fedex')
+
+
+def test_call_fedex_explainer_with_invalid_sample_size_should_raise_error():
+    """
+    Test that calling the fedex explainer with an invalid sample size raises a ValueError.
+    """
+    _, exp_dataset = get_dataset('adults')
+    exp_dataset = exp_dataset.head(1000)
+    with pytest.raises(ValueError):
+        exp_dataset.explain(explainer='fedex', sample_size=-1)

@@ -89,7 +89,7 @@ class ManyToOneExplainer(ExplainerInterface):
         self._bin_numeric = bin_numeric
         self._label_name = label_name if label_name is not None else 'label'
 
-        if labels is None:
+        if labels is None or len(labels) == 0:
             self._source_df, self._labels = self._create_groupby_labels(operation=operation)
         # If the labels are a string, we assume that the string is the name of the column that contains the labels.
         elif isinstance(labels, str):
@@ -296,12 +296,14 @@ class ManyToOneExplainer(ExplainerInterface):
         if sample_size <= 0:
             raise ValueError("Sample size must be a positive number.")
         if 0 < sample_size < 1:
-            sample_size = int(self._source_df.shape[0] * sample_size)
+            sample_size = self._source_df.shape[0] * sample_size
         # If the sample size is below the default sample size, we use the default sample size.
         if sample_size < DEFAULT_SAMPLE_SIZE:
             print(
                 f"Sample size is below the default sample size of {DEFAULT_SAMPLE_SIZE}. Using the default sample size.\n")
             sample_size = DEFAULT_SAMPLE_SIZE
+        # Convert to int, just in case the sample size is a float.
+        sample_size = int(sample_size)
         if self._source_df.shape[0] > sample_size:
             generator = np.random.default_rng(RANDOM_SEED)
             uniform_indexes = generator.choice(self._source_df.index, size=sample_size, replace=False)

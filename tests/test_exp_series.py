@@ -521,3 +521,31 @@ def test_filter_should_work(dataset_name, column, query):
     assert exp_res.equals(res)
     # Check that the result is an instance of ExpSeries
     assert isinstance(exp_res, pd_explain.ExpSeries)
+
+
+def test_to_html_should_work(capsys):
+    """
+    Tests that the to_html function works as expected.
+    We simply test here that the function returns something, and does not raise an error.
+    Unlike the other tests, we do not compare the result to the pandas equivalent, because we actually
+    did slightly modify the output of the to_html function to make it more readable.
+    """
+    _, exp_dataset = get_dataset("houses")
+    exp_res = exp_dataset["SalePrice"].to_html()
+    # Assert that the result is not None, is a string, and is not empty
+    assert exp_res is not None
+    assert isinstance(exp_res, str)
+    assert len(exp_res) > 0
+    # Assert that the result is an HTML table
+    assert exp_res.startswith("<table")
+    assert exp_res.endswith("</table>")
+    assert "<tr>" in exp_res
+    assert "<td>" in exp_res
+    assert "</tr>" in exp_res
+    assert "</td>" in exp_res
+    assert "<th>" in exp_res
+    assert "</th>" in exp_res
+    # Assert that nothing was printed to the console
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert not captured.err

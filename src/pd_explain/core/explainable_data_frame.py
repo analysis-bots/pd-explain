@@ -125,7 +125,7 @@ class ExpDataFrame(pd.DataFrame):
         if isinstance(to_return, ExpDataFrame) or isinstance(to_return, ExpSeries):
             # We only want to make the updates if the operation is not None, and if the get_item is a column
             # selection, not a row selection (a filter operation).
-            if self.operation is not None and (isinstance(key, str) or isinstance(key, list)):
+            if self.operation is not None and (isinstance(key, str) or (isinstance(key, list)) and all([x in self.columns for x in key])):
 
                 # Copy the operation, to avoid changing the original operation of the dataframe.
                 to_return.operation = cpy(self.operation)

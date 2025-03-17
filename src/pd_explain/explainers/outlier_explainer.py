@@ -5,6 +5,7 @@ from fedex_generator.Operations.GroupBy import GroupBy
 from pandas import DataFrame, Series
 from typing import List
 
+
 class OutlierExplainerInterface(ExplainerInterface):
 
     def __init__(self, operation, target: str,
@@ -17,6 +18,9 @@ class OutlierExplainerInterface(ExplainerInterface):
         :param target: The target value to explain whether it is an outlier or not and why.
         :param dir: The direction of the outlier. Can be 'low' or 'high' for low and high outliers respectively.
         """
+        if target is None:
+            raise ValueError("target must be specified")
+
         if hold_out is None:
             hold_out = []
 
@@ -47,13 +51,18 @@ class OutlierExplainerInterface(ExplainerInterface):
 
         agg_attr, agg_method = agg[0], agg[1][0]
 
-
-
         self._df_agg = res_col
         # Like the above, converting to a DataFrame in case we get an ExpSeries or ExpDataFrame
         self._df_in = DataFrame(operation.source_df)
         self._g_att = g_attr
-        self._g_agg = agg_attr
+        if agg_attr in self._df_in.columns:
+            self._g_agg = agg_attr
+        else:
+            agg_attr = agg_attr + "_" + agg_method
+            if agg_attr in self._df_in.columns:
+                self._g_agg = agg_attr
+            else:
+                raise ValueError(f"Could not find the aggregation attribute {agg_attr} in the DataFrame")
         self._agg_method = agg_method
         self._target = target
         if dir == "low":
@@ -69,9 +78,10 @@ class OutlierExplainerInterface(ExplainerInterface):
 
     def generate_explanation(self):
         explainer = OutlierExplainer()
-        self._explanation = explainer.explain(df_agg=self._df_agg, df_in=self._df_in, g_att=self._g_att, g_agg=self._g_agg,
-                                        agg_method=self._agg_method, target=self._target, dir=self._dir,
-                                        control=self._control, hold_out=self._hold_out)
+        self._explanation = explainer.explain(df_agg=self._df_agg, df_in=self._df_in, g_att=self._g_att,
+                                              g_agg=self._g_agg,
+                                              agg_method=self._agg_method, target=self._target, dir=self._dir,
+                                              control=self._control, hold_out=self._hold_out)
         return self._explanation
 
     def can_visualize(self) -> bool:
@@ -79,5 +89,3 @@ class OutlierExplainerInterface(ExplainerInterface):
 
     def visualize(self):
         return self._explanation
-
-

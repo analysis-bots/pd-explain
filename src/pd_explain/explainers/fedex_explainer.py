@@ -1,6 +1,9 @@
 from .explainer_interface import ExplainerInterface
 from typing import List
 from pandas import DataFrame
+from copy import deepcopy
+
+from fedex_generator.Operations.Filter import Filter
 
 
 class FedexExplainer(ExplainerInterface):
@@ -14,7 +17,7 @@ class FedexExplainer(ExplainerInterface):
     def __init__(self, operation=None, schema: dict = None, attributes: List = None, top_k: int = None,
                  explainer='fedex', figs_in_row: int = 2, show_scores: bool = False, title: str = None,
                  corr_TH: float = 0.7, consider='right', value=None, attr=None, ignore=None,
-                 use_sampling: bool = True, sample_size = 5000, *args, **kwargs):
+                 use_sampling: bool = True, sample_size = 5000, debug_mode: bool = False, *args, **kwargs):
         """
         Initialize the FedexExplainer object.
         The FedexExplainer works as an interface for calling the explain method of the fedex explainer objects.
@@ -32,6 +35,7 @@ class FedexExplainer(ExplainerInterface):
         :param corr_TH: The correlation threshold. Attributes with a correlation above this threshold will be ignored.
         :param consider: The side of the join to consider in the explanation.
         :param use_sampling: Whether to use sampling to speed up the explanation generation process. Default is True.
+        :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
         """
 
         if operation is None:
@@ -47,9 +51,13 @@ class FedexExplainer(ExplainerInterface):
         else:
             if top_k is None:
                 top_k = len(attributes)
+        if ignore is None:
+            ignore = []
 
         # Convert the source_df and result_df to DataFrame objects, to avoid overhead from overridden methods
         # in ExpDataFrame, as well as to avoid any bad interactions between those methods and the explainer.
+        original_operation = operation
+        operation = deepcopy(operation)
         if hasattr(operation, 'source_df'):
             operation.source_df = DataFrame(operation.source_df) if operation.source_df is not None else None
         elif hasattr(operation, 'left_df'):
@@ -57,6 +65,7 @@ class FedexExplainer(ExplainerInterface):
             operation.right_df = DataFrame(operation.right_df) if operation.right_df is not None else None
         operation.result_df = DataFrame(operation.result_df) if operation.result_df is not None else None
 
+        self._original_operation = original_operation
         self._schema = schema
         self._attributes = attributes
         self._top_k = top_k
@@ -73,6 +82,7 @@ class FedexExplainer(ExplainerInterface):
         self._results = None
         self._use_sampling = use_sampling
         self._sample_size = sample_size
+        self._debug_mode = debug_mode
 
     def generate_explanation(self):
         if self._operation is None:
@@ -84,8 +94,14 @@ class FedexExplainer(ExplainerInterface):
                 schema=self._schema, attributes=self._attributes, top_k=self._top_k,
                 figs_in_row=self._figs_in_row, show_scores=self._show_scores, title=self._title, corr_TH=self._corr_TH,
                 explainer=self._explainer, consider=self._consider, cont=self._value, attr=self._attr,
-                ignore=self._ignore, use_sampling=self._use_sampling, sample_size=self._sample_size
+                ignore=self._ignore, use_sampling=self._use_sampling, sample_size=self._sample_size,
+                debug_mode=self._debug_mode
             )
+
+        if type(self._operation) == Filter:
+            self._original_operation.cor_deleted_atts = self._operation.cor_deleted_atts
+            self._original_operation.not_presented = self._operation.not_presented
+            self._original_operation.corr = self._operation.corr
 
         return self._results
 

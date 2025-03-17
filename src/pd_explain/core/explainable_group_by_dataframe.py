@@ -3,9 +3,15 @@ from fedex_generator.Operations.GroupBy import GroupBy
 import pandas as pd
 from pandas.core.groupby.generic import DataFrameGroupBy, SeriesGroupBy
 from pandas._libs import lib
+from typing import Literal
 
 from pd_explain import ExpDataFrame
 from pd_explain.core.explainable_group_by_series import ExpSeriesGroupBy
+
+# These used to be in the __getitem__ method, but doing it that way made it so the classes could end up
+# remaining wrong in multi-threaded environments.
+tmp_dataframe = pd.core.groupby.generic.DataFrameGroupBy
+tmp_series = pd.core.groupby.generic.SeriesGroupBy
 
 
 class ExpDataFrameGroupBy(DataFrameGroupBy):
@@ -62,25 +68,26 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
         :param key: item key
         :return: item as ExplainDataFrameGroupBy or ExplainSeriesGroupBy
         """
-        tmp_dataframe = pd.core.groupby.generic.DataFrameGroupBy
-        tmp_series = pd.core.groupby.generic.SeriesGroupBy
         pd.core.groupby.generic.DataFrameGroupBy = ExpDataFrameGroupBy
         pd.core.groupby.generic.SeriesGroupBy = ExpSeriesGroupBy
 
-        item = super().__getitem__(key)
-        if hasattr(self, 'group_attributes'):
-            item.group_attributes = self.group_attributes
+        try:
+            item = super().__getitem__(key)
+            if hasattr(self, 'group_attributes'):
+                item.group_attributes = self.group_attributes
 
-        if hasattr(self, 'source_name'):
-            item.source_name = self.source_name
-        if hasattr(self, 'operation'):
-            item.operation = self.operation
+            if hasattr(self, 'source_name'):
+                item.source_name = self.source_name
+            if hasattr(self, 'operation'):
+                item.operation = self.operation
 
-        if hasattr(self, 'original'):
-            item.original = self.original.__getitem__(key)
+            if hasattr(self, 'original'):
+                item.original = self.original.__getitem__(key)
+        # If ANY exception occurs, without this, we will be stuck with the wrong classes.
+        finally:
+            pd.core.groupby.generic.DataFrameGroupBy = tmp_dataframe
+            pd.core.groupby.generic.SeriesGroupBy = tmp_series
 
-        pd.core.groupby.generic.DataFrameGroupBy = tmp_dataframe
-        pd.core.groupby.generic.SeriesGroupBy = tmp_series
         return item
 
     def nunique(self, dropna: bool = True):
@@ -172,7 +179,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
                 original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                     source_scheme={},
                                                     group_attributes=self.group_attributes,
-                                                    agg_dict='mean',
+                                                    agg_dict={agg_attr: ['mean']},
                                                     result_df=result,
                                                     source_name=self.source_name)
                 return original_result
@@ -202,7 +209,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
                 original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                     source_scheme={},
                                                     group_attributes=self.group_attributes,
-                                                    agg_dict='median',
+                                                    agg_dict={agg_attr: ['median']},
                                                     result_df=result,
                                                     source_name=self.source_name)
                 return original_result
@@ -245,7 +252,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
-                                                agg_dict='std',
+                                                agg_dict={agg_attr: ['std']},
                                                 result_df=result,
                                                 source_name=self.source_name)
             return original_result
@@ -286,7 +293,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
-                                                agg_dict='var',
+                                                agg_dict={agg_attr: ['var']},
                                                 result_df=result,
                                                 source_name=self.source_name)
             return original_result
@@ -314,7 +321,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
-                                                agg_dict='sem',
+                                                agg_dict={agg_attr: ['sem']},
                                                 result_df=result,
                                                 source_name=self.source_name)
             return original_result
@@ -337,7 +344,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
-                                                agg_dict='size',
+                                                agg_dict={agg_attr: ['size']},
                                                 result_df=result,
                                                 source_name=self.source_name)
             return original_result
@@ -380,7 +387,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
-                                                agg_dict='sum',
+                                                agg_dict={agg_attr: ['sum']},
                                                 result_df=result,
                                                 source_name=self.source_name)
             return original_result
@@ -407,14 +414,16 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
-                                                agg_dict='prod',
+                                                agg_dict={agg_attr: ['prod']},
                                                 result_df=result,
                                                 source_name=self.source_name)
             return original_result
 
         return result
 
-    def min(self, numeric_only: bool = False, min_count: int = -1):
+    def min(self, numeric_only: bool = False, min_count: int = -1,
+            engine: Literal["cython", "numba"] | None = None,
+            engine_kwargs: dict[str, bool] | None = None, ):
         """
         Compute min of group values.
         Add operation groupby to the result object.
@@ -434,7 +443,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
-                                                agg_dict='min',
+                                                agg_dict={agg_attr: ['min']},
                                                 result_df=result,
                                                 source_name=self.source_name)
             return original_result
@@ -446,7 +455,9 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
     ) -> ExpDataFrame | None:
         return ExpDataFrame(super().drop_duplicates())
 
-    def max(self, numeric_only: bool = False, min_count: int = -1):
+    def max(self, numeric_only: bool = False, min_count: int = -1,
+            engine: Literal["cython", "numba"] | None = None,
+            engine_kwargs: dict[str, bool] | None = None, ):
         """
         Compute max of group values.
         Add operation groupby to the result object.
@@ -466,7 +477,7 @@ class ExpDataFrameGroupBy(DataFrameGroupBy):
             original_result.operation = GroupBy(source_df=self.operation.source_df,
                                                 source_scheme={},
                                                 group_attributes=self.group_attributes,
-                                                agg_dict='max',
+                                                agg_dict={agg_attr: ['max']},
                                                 result_df=result,
                                                 source_name=self.source_name)
             return original_result

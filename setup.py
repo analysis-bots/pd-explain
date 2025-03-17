@@ -1,6 +1,8 @@
 import os
+import subprocess
+import sys
 
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, Command
 
 
 def read(rel_path):
@@ -23,6 +25,23 @@ def get_long_description():
         return fh.read()
 
 
+class UpdateDependenciesCommand(Command):
+    description = 'Update dependencies to the latest versions'
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'fedex-generator'])
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'cluster-explorer'])
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'external-explainers'])
+
+
+
 setup(
     name='pd_explain',
     version=get_version(),
@@ -36,14 +55,16 @@ setup(
     },
     install_requires=[
         'wheel',
-        'pandas>=1.4.2',
-        'numpy>=1.20.3',
+        'pandas>=2.2.3',
+        'numpy>=2.1.3',
         'python-dotenv',
         'singleton-decorator',
-        'matplotlib',
+        'matplotlib>=3.9.0',
         'fedex-generator>=1.0.5',
-        'cluster-explorer>=1.0.1',
+        'cluster-explorer>=1.0.2',
         'external-explainers>=1.0.0'
-    ]
-
+    ],
+    cmdclass = {
+        'update_dependencies': UpdateDependenciesCommand,
+    }
 )

@@ -23,7 +23,7 @@ class ManyToOneExplainer(ExplainerInterface):
                  attributes: List[str] = None, operation=None, use_sampling: bool = True,
                  prune_if_too_many_labels: bool = True, max_labels: int = MAX_LABELS, pruning_method: str = 'largest',
                  bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
-                 labels_name: str = 'label', sample_size: int = DEFAULT_SAMPLE_SIZE, explain_errors=True,
+                 label_name: str = 'label', sample_size: int = DEFAULT_SAMPLE_SIZE, explain_errors=True,
                  error_explanation_threshold: float = DEFAULT_ERROR_EXPLANATION_THRESHOLD,
                  *args, **kwargs):
         """
@@ -63,7 +63,7 @@ class ManyToOneExplainer(ExplainerInterface):
         :param num_bins: The number of bins to create for the numeric labels. Default is 10.
         :param binning_method: The method to use for binning the numeric labels. This can be either 'uniform' or 'quantile'.
         Default is 'quantile'.
-        :param labels_name: A name to give the labels when binning them, if there is none to begin with. Default is 'label'.
+        :param label_name: A name to give the labels when binning them, if there is none to begin with. Default is 'label'.
         :param sample_size: The size of the sample to use when sampling the dataframe. Can be a percentage of the dataframe
         size if below 1. Default is 5000.
         :param explain_errors: Whether the explainer should add another column, explaining where the separation error comes from.
@@ -87,9 +87,9 @@ class ManyToOneExplainer(ExplainerInterface):
         self._num_bins = num_bins
         self._binning_method = binning_method
         self._bin_numeric = bin_numeric
-        self._labels_name = labels_name if labels_name is not None else 'label'
+        self._label_name = label_name if label_name is not None else 'label'
 
-        if labels is None:
+        if labels is None or len(labels) == 0:
             self._source_df, self._labels = self._create_groupby_labels(operation=operation)
         # If the labels are a string, we assume that the string is the name of the column that contains the labels.
         elif isinstance(labels, str):
@@ -196,7 +196,7 @@ class ManyToOneExplainer(ExplainerInterface):
                 else:
                     raise ValueError("The binning method must be either 'uniform' or 'quantile'.")
                 # After binning, we convert the intervals to meaningful strings.
-                attribute_name = labels.name if labels.name is not None else self._labels_name
+                attribute_name = labels.name if labels.name is not None else self._label_name
                 str_intervals = self._interval_to_str(bins, attribute_name)
                 # Then we return the binned labels.
                 print(
@@ -252,7 +252,7 @@ class ManyToOneExplainer(ExplainerInterface):
                         average_distances[i] = distances.mean()
                     # Multiply by the size of the cluster, to give more weight to larger clusters and not give
                     # a large weight to a small cluster that is far away from the other clusters.
-                    average_distances *= label_proprtional_size
+                    # average_distances *= label_proprtional_size
                     average_distances = pd.Series(average_distances)
                     if self._pruning_method == 'max_dist':
                         average_distances = average_distances.sort_values(ascending=False)
@@ -265,7 +265,7 @@ class ManyToOneExplainer(ExplainerInterface):
                     # it would take too long.
                     generator = np.random.default_rng(RANDOM_SEED)
                     random_indexes = generator.choice(decomposed.index, size=min(DEFAULT_SAMPLE_SIZE, len(decomposed)),
-                                                        replace=False)
+                                                      replace=False)
                     decomposed = decomposed.loc[random_indexes]
                     labels = self._labels.loc[random_indexes]
                     scores = silhouette_samples(decomposed, labels)
@@ -274,7 +274,7 @@ class ManyToOneExplainer(ExplainerInterface):
                     scores['label'] = labels
                     scores = scores.groupby('label').mean()
                     scores = scores.squeeze()
-                    scores *= label_proprtional_size
+                    # scores *= label_proprtional_size
                     if self._pruning_method == 'max_silhouette':
                         scores = scores.sort_values(ascending=False)
                     else:
@@ -296,11 +296,14 @@ class ManyToOneExplainer(ExplainerInterface):
         if sample_size <= 0:
             raise ValueError("Sample size must be a positive number.")
         if 0 < sample_size < 1:
-            sample_size = int(self._source_df.shape[0] * sample_size)
+            sample_size = self._source_df.shape[0] * sample_size
         # If the sample size is below the default sample size, we use the default sample size.
         if sample_size < DEFAULT_SAMPLE_SIZE:
-            print(f"Sample size is below the default sample size of {DEFAULT_SAMPLE_SIZE}. Using the default sample size.\n")
+            print(
+                f"Sample size is below the default sample size of {DEFAULT_SAMPLE_SIZE}. Using the default sample size.\n")
             sample_size = DEFAULT_SAMPLE_SIZE
+        # Convert to int, just in case the sample size is a float.
+        sample_size = int(sample_size)
         if self._source_df.shape[0] > sample_size:
             generator = np.random.default_rng(RANDOM_SEED)
             uniform_indexes = generator.choice(self._source_df.index, size=sample_size, replace=False)
@@ -398,10 +401,11 @@ class ManyToOneExplainer(ExplainerInterface):
         :param rules: The rules generated by the explainer.
         :return: The converted rules.
         """
-        converted_rules = DataFrame(columns=['Cluster', 'Human Readable Rule', 'Coverage', 'Separation Error', 'Rule Binary Array', 'Error Explanation'])
+        converted_rules = DataFrame(
+            columns=['Cluster', 'Human Readable Rule', 'Coverage', 'Separation Error', 'Rule Binary Array',
+                     'Error Explanation'])
         for explanation in rules.iterrows():
             # The explanation is a tuple, where the first element is the index and the second element is the explanation.
-            idx = explanation[0]
             explanation = explanation[1]
             # We first convert the stringified rule to a list of conditions, create a binary array from the rule,
             # and finally we also convert it into a human readable format, then save everything.
@@ -442,7 +446,6 @@ class ManyToOneExplainer(ExplainerInterface):
                     mapping[column] = feature
         return mapping
 
-
     def _create_error_explanation_text(self, group_counts: DataFrame) -> str:
         """
         Creates the textual explanation for the separation error.
@@ -468,7 +471,6 @@ class ManyToOneExplainer(ExplainerInterface):
             error_explanation += f"{other_errors * 100:.2f}% from {num_low_groups} other group(s), each individually causing less than {self._error_explanation_threshold * 100:.2f}% of the error.  "
         error_explanation = error_explanation[:-2]
         return error_explanation
-
 
     def _create_error_explanations(self, converted_rules_df: DataFrame) -> DataFrame:
         """
@@ -509,15 +511,12 @@ class ManyToOneExplainer(ExplainerInterface):
                 data_not_in_cluster = self._source_df.loc[not_in_cluster]
                 # Apply the rule to the data that is not in the cluster
                 data_not_in_cluster = data_not_in_cluster[not_in_cluster_rule]
-                # Groupby and count the percentage of points that are in each group
+                # Groupby and count the number of points that are in each group
                 group_counts = data_not_in_cluster.groupby(self._labels[not_in_cluster]).size()
                 # Create the error explanation
                 error_explanation = self._create_error_explanation_text(group_counts)
                 converted_rules_df.loc[idx, 'Error Explanation'] = error_explanation
         return converted_rules_df
-
-
-
 
     def visualize(self):
 
@@ -558,7 +557,8 @@ class ManyToOneExplainer(ExplainerInterface):
             out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Coverage'] = row['Coverage']
             out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Separation Error'] = row['Separation Error']
             if self._explain_errors:
-                out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Separation Error Origins'] = row['Error Explanation']
+                out_df.loc[(row['Cluster'], row['Human Readable Rule']), 'Separation Error Origins'] = row[
+                    'Error Explanation']
 
         # For any cluster that does not have a rule, we fill in the dataframe with NaN values, and set rule
         # in that index to "No explanation found".

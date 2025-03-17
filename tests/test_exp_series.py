@@ -1,6 +1,10 @@
+"""
+Tests for the pd_explain.core.ExpSeries class, as well as the groupby operations that return an ExpSeries
+(thus also testing the pd_explain.core.ExpSeriesGroupBy class).
+"""
+
 import pytest
 from tests.test_utils import get_dataset, op_table
-import pandas as pd
 import pd_explain
 
 
@@ -494,3 +498,54 @@ def test_drop_duplicates_after_operation_should_work():
     assert isinstance(exp_res, pd_explain.ExpSeries)
     # Check that the operation is correct
     assert exp_res.operation == exp_dataset.operation
+
+@pytest.mark.parametrize("dataset_name, column, query", [
+    ("houses", "SalePrice", ('>', 214000)),
+    ("adults", "age", ('<', 30)),
+    ("clients_data", "Customer_Age", ('>', 40)),
+    ("spotify", "key", ('==', 5))
+])
+def test_filter_should_work(dataset_name, column, query):
+    """
+    Tests that the filter method works as expected, and produces the same results as the pandas filter method.
+    """
+    # Get the dataset and the explainable dataset
+    dataset, exp_dataset = get_dataset(dataset_name)
+    dataset, exp_dataset = dataset[[column]].squeeze(), exp_dataset[[column]].squeeze()
+    # Perform the filter operation on the dataset and the explainable dataset
+    query_op = op_table[query[0]]
+    query_val = query[1]
+    exp_res = exp_dataset[query_op(exp_dataset, query_val)]
+    res = dataset[query_op(dataset, query_val)]
+    # Check that the results are the same
+    assert exp_res.equals(res)
+    # Check that the result is an instance of ExpSeries
+    assert isinstance(exp_res, pd_explain.ExpSeries)
+
+
+def test_to_html_should_work(capsys):
+    """
+    Tests that the to_html function works as expected.
+    We simply test here that the function returns something, and does not raise an error.
+    Unlike the other tests, we do not compare the result to the pandas equivalent, because we actually
+    did slightly modify the output of the to_html function to make it more readable.
+    """
+    _, exp_dataset = get_dataset("houses")
+    exp_res = exp_dataset["SalePrice"].to_html()
+    # Assert that the result is not None, is a string, and is not empty
+    assert exp_res is not None
+    assert isinstance(exp_res, str)
+    assert len(exp_res) > 0
+    # Assert that the result is an HTML table
+    assert exp_res.startswith("<table")
+    assert exp_res.endswith("</table>")
+    assert "<tr>" in exp_res
+    assert "<td>" in exp_res
+    assert "</tr>" in exp_res
+    assert "</td>" in exp_res
+    assert "<th>" in exp_res
+    assert "</th>" in exp_res
+    # Assert that nothing was printed to the console
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert not captured.err

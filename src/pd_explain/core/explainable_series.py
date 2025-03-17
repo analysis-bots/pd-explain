@@ -194,16 +194,17 @@ class ExpSeries(pd.Series):
 
     def explain(self, schema: dict = None, attributes: List = None, use_sampling: None | bool = None,
                 sample_size: int | float = 5000, top_k: int = 1, figs_in_row: int = 2,
-                explainer='fedex',
-                target=None, dir: Literal["high", "low", 1, -1] = None, control=None, hold_out=[],
+                explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley']='fedex',
+                target=None, dir: Literal["high", "low", 1, -1] = None, control=None, hold_out=None,
                 show_scores: bool = False, title: str = None,
                 labels=None, coverage_threshold: float = 0.7, max_explanation_length: int = 3,
                 separation_threshold: float = 0.3, p_value: int = 1,
                 explanation_form: Literal['conj', 'disj', 'conjunction', 'disjunction'] = 'conj',
                 prune_if_too_many_labels: bool = True, max_labels: int = 10, pruning_method='largest',
                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
-                labels_name: str = 'label', explain_errors=True,
+                label_name: str = 'label', explain_errors=True,
                 error_explanation_threshold: float = 0.05,
+                debug_mode: bool = False
                 ):
         """
         Generate an explanation for the dataframe.
@@ -250,14 +251,14 @@ class ExpSeries(pd.Series):
         the specified number of bins. Defaults to False.
         :param num_bins: Many to one explainer. The number of bins to use when binning numeric labels. Defaults to 10.
         :param binning_method: The method to use when binning numeric labels. Can be either 'quantile' or 'uniform'.
-        :param labels_name: Many to one explainer. How to call the labels column in the explanation, if binning was used
+        :param label_name: Many to one explainer. How to call the labels column in the explanation, if binning was used
         and the labels column did not have a name. Defaults to 'label'.
         :param explain_errors: Many to one explainer. Whether or not to explain where the separation error originates from
         for each explanation. Defaults to True.
         :param error_explanation_threshold: Many to one explainer. The threshold for how much a group needs to contribute
         to the separation error to be included in the explanation. Groups that contribute less than this threshold will
         be aggregated into a single group. Defaults to 0.05.
-
+        :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
 
         :return: explanation figures
         """
@@ -275,9 +276,11 @@ class ExpSeries(pd.Series):
             separation_threshold=separation_threshold, p_value=p_value,
             prune_if_too_many_labels=prune_if_too_many_labels, max_labels=max_labels,
             pruning_method=pruning_method, bin_numeric=bin_numeric, num_bins=num_bins,
-            binning_method=binning_method, labels_name=labels_name,
+            binning_method=binning_method, label_name=label_name,
             explanation_form=explanation_form, use_sampling=use_sampling,
-            explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold
+            sample_size=sample_size,
+            explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold,
+            debug_mode=debug_mode
         )
 
         explanation = explainer.generate_explanation()
@@ -286,3 +289,11 @@ class ExpSeries(pd.Series):
             return explainer.visualize()
 
         return explanation
+
+    def to_html(self, *args, **kwargs):
+        """
+        Render the Series to a HTML table.
+        We do it this way because for an unknown reason, the default for series does not always work.
+        This way, we instead get the usual table that we get for a DataFrame.
+        """
+        return self.to_frame().to_html(*args, **kwargs)

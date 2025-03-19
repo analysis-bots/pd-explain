@@ -1,6 +1,7 @@
 import os
 import openai
 import warnings
+from typing import List
 
 
 class Client:
@@ -40,7 +41,7 @@ class Client:
         )
 
 
-    def __call__(self, system_messages: [str], user_messages: [str], *args, **kwargs) -> str | None:
+    def __call__(self, system_messages: List[str], user_messages: List[str], *args, **kwargs) -> str | None:
         """
         Call the API with the given messages.
         :return: The response from the API. If no API key is provided, return None.
@@ -50,8 +51,8 @@ class Client:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": system_messages},
-                {"role": "user", "content": user_messages},
+                *[{"role": "system", "content": message} for message in system_messages],
+                *[{"role": "user", "content": message} for message in user_messages],
             ],
         )
         return response.choices[0].message.content

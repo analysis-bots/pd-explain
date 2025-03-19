@@ -14,6 +14,15 @@ import numpy as np
 
 df_loc = 'C:/Users/itaye/Desktop/pdexplain/pd-explain/Examples/Datasets/spotify_all.csv'
 
+op_table = {
+    "eq": "==",
+    "ne": "!=",
+    "le": "<=",
+    "lt": "<",
+    "ge": ">=",
+    "gt": ">"
+}
+
 
 class ExpSeries(pd.Series):
     """
@@ -46,6 +55,7 @@ class ExpSeries(pd.Series):
         self.explanation = None
         self.operation = None
         self.filter_items = []
+        self.filter_query = None
 
 
     # We overwrite the constructor to ensure that an ExpSeries is returned when a new Series is created.
@@ -59,6 +69,7 @@ class ExpSeries(pd.Series):
             s.operation = self.operation
             s.explanation = self.explanation
             s.filter_items = self.filter_items
+            s.filter_query = self.filter_query
             return s
 
         return _c
@@ -191,6 +202,16 @@ class ExpSeries(pd.Series):
             ignore_index: bool = False,
     ):
         return super().drop_duplicates(keep=keep, inplace=inplace, ignore_index=ignore_index)
+
+    # We override the comparison methods to store the comparison operation in the filter_query attribute.
+    # There are no other changes to the behavior of the comparison methods.
+    def _cmp_method(self, other, op):
+        self.filter_query = {
+            'op': op_table[op.__name__],
+            'other': other
+        }
+        result = super()._cmp_method(other, op)
+        return result
 
     def explain(self, schema: dict = None, attributes: List = None, use_sampling: None | bool = None,
                 sample_size: int | float = 5000, top_k: int = 1, figs_in_row: int = 2,

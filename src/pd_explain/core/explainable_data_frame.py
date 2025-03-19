@@ -546,10 +546,18 @@ class ExpDataFrame(pd.DataFrame):
         result_df = ExpDataFrame(super()._getitem_bool_array(key))
         try:
             if self.filter_items:
+                if isinstance(key, ExpSeries) and key.filter_query is not None:
+                    op = key.filter_query['op']
+                    other = key.filter_query['other']
+                else:
+                    op = None
+                    other = None
                 result_df.operation = Filter(source_df=self,
                                              source_scheme={},
                                              attribute=self.filter_items.pop(),
-                                             result_df=result_df)
+                                             result_df=result_df,
+                                             operation_str=op,
+                                             value=other)
         except Exception as error:
             print(f'Error {error} with operation filter explanation')
 
@@ -841,7 +849,9 @@ class ExpDataFrame(pd.DataFrame):
                 prune_if_too_many_labels: bool = True, max_labels: int = 10, pruning_method='largest',
                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
                 label_name: str = 'label', explain_errors=True,
-                error_explanation_threshold: float = 0.05, debug_mode: bool = False):
+                error_explanation_threshold: float = 0.05, debug_mode: bool = False,
+                add_llm_context_explanations: bool = False,
+                ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
 
@@ -897,6 +907,8 @@ class ExpDataFrame(pd.DataFrame):
         :param error_explanation_threshold: Many to one explainer. The threshold for how much a group needs to contribute
         to the separation error to be included in the explanation. Groups that contribute less than this threshold will
         be aggregated into a single group. Defaults to 0.05.
+        :param add_llm_context_explanations: Fedex explainer and Outlier explainer. Whether or not to use a LLM to create explanations on why
+        the statistical insights discovered by the explainer are true. Defaults to False. Requires an API key to use (see documentation).
         :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
 
         :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.
@@ -926,7 +938,8 @@ class ExpDataFrame(pd.DataFrame):
                                              label_name=label_name,
                                              use_sampling=use_sampling, sample_size=sample_size,
                                              explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold,
-                                             debug_mode=debug_mode
+                                             debug_mode=debug_mode,
+                                             add_llm_context_explanations=add_llm_context_explanations
                                              )
         explanation = explainer.generate_explanation()
 

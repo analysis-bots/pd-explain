@@ -62,7 +62,9 @@ setup(
         'matplotlib>=3.9.0',
         'fedex-generator>=1.0.5',
         'cluster-explorer>=1.0.2',
-        'external-explainers>=1.0.0'
+        'external-explainers>=1.0.0',
+        'python-dotenv~=1.0.0',
+        'openai~=1.66.0',
     ],
     cmdclass = {
         'update_dependencies': UpdateDependenciesCommand,

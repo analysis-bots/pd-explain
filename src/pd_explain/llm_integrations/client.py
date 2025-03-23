@@ -2,8 +2,10 @@ import os
 import openai
 import warnings
 from typing import List
+from singleton_decorator import singleton
 
 
+@singleton
 class Client:
     """
     A general client for interfacing with LLM services.
@@ -19,11 +21,6 @@ class Client:
             model = os.getenv("PD_EXPLAIN_LLM_MODEL")
 
         self.api_key = api_key
-        self._api_key_provided = True if self.api_key is not None else False
-        if self.api_key == 'YOUR_API_KEY':
-            warnings.warn("You have not set your API key for a LLM API provider. If you wish to use the LLM functions, please set the API key using the write_llm_api_key function. "
-                          "All usage of LLM functions will not work until the API key is set.")
-            self._api_key_provided = False
         self.provider = provider
         self.model = model
         self.provider_url = provider_url
@@ -46,7 +43,9 @@ class Client:
         Call the API with the given messages.
         :return: The response from the API. If no API key is provided, return None.
         """
-        if not self._api_key_provided:
+        if not self.api_key or self.api_key == 'YOUR_API_KEY':
+            warnings.warn("You have not set your API key for a LLM API provider. If you wish to use the LLM functions, please set the API key using the write_llm_api_key function. "
+                          "All usage of LLM functions will not work until the API key is set.")
             return None
         response = self.client.chat.completions.create(
             model=self.model,

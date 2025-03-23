@@ -105,8 +105,12 @@ class FedexExplainer(ExplainerInterface):
                 debug_mode=self._debug_mode, draw_figures=not self._add_llm_context_explanations
             )
 
+            # If the user has requested LLM explanations, we will generate them here.
             if self._add_llm_context_explanations:
+                # We passed draw_figures as False, which means the figures were not drawn, and we instead have everything
+                # needed to draw them via the draw_figures method.
                 title, scores, K, figs_in_row, explanations, bins, influence_vals, source_name, show_scores = self._results
+                # Get the source dataframe (or left and right dataframes)
                 if hasattr(self._operation, 'source_df'):
                     source_df = self._operation.source_df
                     right_df = None
@@ -117,6 +121,7 @@ class FedexExplainer(ExplainerInterface):
                     raise ValueError(
                         "The operation object does not have a source DataFrame. This should not happen with fedex operations.")
 
+                # Get the name of the source dataframe
                 if hasattr(self._operation, 'source_name'):
                     source_name = self._operation.source_name
                 elif hasattr(self._operation, 'left_df'):
@@ -125,6 +130,8 @@ class FedexExplainer(ExplainerInterface):
                     raise ValueError(
                         "The operation object does not have a source name. This should not happen with fedex operations.")
 
+
+                # Write a textual version of the query, using the stored information in the operation object
                 if isinstance(self._operation, Filter):
                     query = f"{source_name}[{self._operation.attribute} {self._operation.operation_str} {self._operation.value}]"
                 elif isinstance(self._operation, GroupBy):
@@ -137,6 +144,7 @@ class FedexExplainer(ExplainerInterface):
                     raise ValueError(
                         "Unrecognized operation type. This may have happened if you added a new operation to Fedex without updating this method.")
 
+                # Create an ExplanationReasoning object to generate the LLM explanations
                 reasoner = ExplanationReasoning(
                     data=source_df,
                     source_name=source_name,
@@ -145,7 +153,26 @@ class FedexExplainer(ExplainerInterface):
                     right_df=right_df if right_df is not None else None,
                 )
                 added_explanations = reasoner.explain()
-                print(added_explanations)
+                added_explanations = {
+                    explanations.loc[i]: {
+                        "added_text": added_explanations.loc[i],
+                        "position": "bottom"
+                    }
+                    for i in explanations.index.values
+                }
+                self._operation.draw_figures(
+                    title=title,
+                    scores=scores,
+                    K=K,
+                    figs_in_row=figs_in_row,
+                    explanations=explanations,
+                    bins=bins,
+                    influence_vals=influence_vals,
+                    source_name=source_name,
+                    show_scores=show_scores,
+                    added_text=added_explanations
+                )
+                self._results = None
 
         if isinstance(self._operation, Filter):
             self._original_operation.cor_deleted_atts = self._operation.cor_deleted_atts

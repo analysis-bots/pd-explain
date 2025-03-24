@@ -134,12 +134,15 @@ class FedexExplainer(ExplainerInterface):
                 # Write a textual version of the query, using the stored information in the operation object
                 if isinstance(self._operation, Filter):
                     query = f"{source_name}[{self._operation.attribute} {self._operation.operation_str} {self._operation.value}]"
+                    query_type = "filter"
                 elif isinstance(self._operation, GroupBy):
                     query = (f"{source_name}.groupby({', '.join(self._operation.group_attributes) 
                     if isinstance(self._operation.group_attributes, list) else self._operation.group_attributes})"
                              f".agg({self._operation.agg_dict})")
+                    query_type = "groupby"
                 elif isinstance(self._operation, Join):
                     query = f"{source_df}.join({right_df}, on={self._operation.attribute})"
+                    query_type = "join"
                 else:
                     raise ValueError(
                         "Unrecognized operation type. This may have happened if you added a new operation to Fedex without updating this method.")
@@ -151,15 +154,18 @@ class FedexExplainer(ExplainerInterface):
                     query=query,
                     explanations_found=explanations,
                     right_df=right_df if right_df is not None else None,
+                    query_type=query_type
                 )
                 added_explanations = reasoner.explain()
-                added_explanations = {
-                    explanations.loc[i]: {
-                        "added_text": added_explanations.loc[i],
-                        "position": "bottom"
+                # The ExplanationReasoning object will return None if the API key is not set.
+                if added_explanations is not None:
+                    added_explanations = {
+                        explanations.loc[i]: {
+                            "added_text": added_explanations.loc[i],
+                            "position": "bottom"
+                        }
+                        for i in explanations.index.values
                     }
-                    for i in explanations.index.values
-                }
                 self._operation.draw_figures(
                     title=title,
                     scores=scores,

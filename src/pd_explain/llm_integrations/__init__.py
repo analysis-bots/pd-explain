@@ -39,7 +39,7 @@ def write_llm_provider(provider: str):
     """
     os.environ[consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER] = provider
     dotenv.set_key(env_path, consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER, provider)
-    client.provider = provider
+    client._provider = provider
 
 def write_llm_model(model: str):
     """
@@ -60,7 +60,7 @@ def write_provider_url(provider_url: str):
     """
     os.environ[consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER_URL] = provider_url
     dotenv.set_key(env_path, consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER_URL, provider_url)
-    client.provider_url = provider_url
+    client._provider_url = provider_url
 
 
 # If any of the variables are not set, set them to default values.

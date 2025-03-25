@@ -1,6 +1,7 @@
 from pd_explain.explainers.explainer_interface import ExplainerInterface
 from external_explainers import OutlierExplainer
 from fedex_generator.Operations.GroupBy import GroupBy
+from pd_explain.llm_integrations.explanation_reasoning import ExplanationReasoning
 
 from pandas import DataFrame, Series
 from typing import List
@@ -9,7 +10,9 @@ from typing import List
 class OutlierExplainerInterface(ExplainerInterface):
 
     def __init__(self, operation, target: str,
-                 dir: int | str, control=None, hold_out: List = None, *args, **kwargs):
+                 dir: int | str, control=None, hold_out: List = None,
+                 add_llm_context_explanations: bool = False,
+                 *args, **kwargs):
         """
         Initialize the OutlierExplainerInterface.
         This class is responsible for interfacing between the outlier explainer and the pd-explain package.
@@ -75,13 +78,37 @@ class OutlierExplainerInterface(ExplainerInterface):
         self._control = control
         self._hold_out = hold_out
         self._explanation = None
+        self._add_llm_context_explanations = add_llm_context_explanations
+        self._operation = operation
 
     def generate_explanation(self):
         explainer = OutlierExplainer()
         self._explanation = explainer.explain(df_agg=self._df_agg, df_in=self._df_in, g_att=self._g_att,
                                               g_agg=self._g_agg,
                                               agg_method=self._agg_method, target=self._target, dir=self._dir,
-                                              control=self._control, hold_out=self._hold_out)
+                                              control=self._control, hold_out=self._hold_out,
+                                              draw_plot=not self._add_llm_context_explanations)
+        if self._add_llm_context_explanations and isinstance(self._explanation, tuple):
+            explanations = explainer.pred_to_human_readable(self._explanation[4])[0]
+            query = self._operation.source_name + ".groupby('" + self._g_att + "').agg({'" + self._g_agg + "':'" + \
+                    self._agg_method + "'})"
+            reasoner = ExplanationReasoning(
+                data=self._df_in,
+                after_op_data=self._df_agg,
+                dir="high" if self._dir == 1 else "low",
+                target=self._target,
+                query_type='outlier',
+                query=query,
+                explanations_found=explanations,
+                source_name = self._operation.source_name
+            )
+            reasoning = reasoner.explain()
+            added_text = {
+                "text": reasoning,
+                "position": "bottom"
+            }
+            explainer.draw_bar_plot(*self._explanation, added_text=added_text)
+            self._explanation = None
         return self._explanation
 
     def can_visualize(self) -> bool:

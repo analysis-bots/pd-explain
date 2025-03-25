@@ -12,7 +12,7 @@ class ExplanationReasoning(LLMIntegrationInterface):
 
     def __init__(self, data: pd.DataFrame | pd.Series, source_name: str,  explanations_found: pd.DataFrame | pd.Series,
                  query_type: str, query: str = None, right_df: pd.DataFrame | pd.Series = None, right_name: str = None,
-                 labels: pd.Series = None):
+                 labels: pd.Series = None, target: str = None, dir: str = None, after_op_data: pd.DataFrame = None):
         self._data = data
         self._data_description = data.describe()
         self._data_columns = data.columns if isinstance(data, pd.DataFrame) else [data.name]
@@ -21,6 +21,8 @@ class ExplanationReasoning(LLMIntegrationInterface):
         self._query = query
         self._explanations_found = explanations_found
         self._query_type = query_type
+        # These are all parameters that are only required for specific query types, so they are optional.
+        # If they are not provided, they should cause an exception if they are accessed.
         if right_df is not None:
             self._right_df = right_df
             self._right_df_description = right_df.describe()
@@ -29,6 +31,12 @@ class ExplanationReasoning(LLMIntegrationInterface):
             self._right_source_name = right_name
         if labels is not None:
             self._labels = labels
+        if target is not None:
+            self._target = target
+        if dir is not None:
+            self._dir = dir
+        if after_op_data is not None:
+            self._after_op_data = after_op_data
 
 
     def _explanations_to_list_string(self) -> str:
@@ -57,6 +65,9 @@ class ExplanationReasoning(LLMIntegrationInterface):
                 out_string += "\n"
                 idx += 1
             return out_string
+        elif self._query_type == "outlier":
+            out = re.sub(r"[${}]|(\\bf)", "", self._explanations_found)
+            return out.replace("\n", ' AND ')
 
 
     def _create_explanation_format_explanation(self) -> str:
@@ -70,14 +81,21 @@ class ExplanationReasoning(LLMIntegrationInterface):
                 f"The insights on groupby operations are of the form 'groups with property = x has property y z standard deviations from the mean'. "
                 f"Your explanations should reason about why these groups with this specific property x display this large deviation from the mean in property y (and not other groups). "
                 f"Your explanation must always revolve around why property x causes this deviation in property y, and not the other way around. "
-                f"It should also always explicitly refer to the group with property x.")
+                f"It should also always explicitly refer to the group with property x."
+                f"Your explanations should not be statistical, but should be based on domain knowledge and reasoning. ")
         elif self._query_type == "filter" or self._query_type == "join":
             explanation_format_explanation = (
                 f"The insights on {self._query_type} operations are of the form 'property x value y appears z times more / less than before'. "
                 f"Your explanations should reason about why this this specific value y of property x appears z times more / less than before. "
-                f"Your explanation must always revolve around why this specific value y appears z times more / less than before, and not the other way around. ")
+                f"Your explanation must always revolve around why this specific value y appears z times more / less than before, and not the other way around. "
+                f"Your explanations should not be statistical, but should be based on domain knowledge and reasoning. ")
         elif self._query_type == "outlier":
-            pass
+            explanation_format_explanation = (f"The outlier explainer creates an explanation of the form 'the outlier is not as significant when excluding rows with property x = y' on series that are the result of a groupby operation."
+                                              f"Your explanation should reason about why the outlier is not as significant when excluding rows with property x = y. "
+                                              f"Your explanation must always revolve around why the outlier is not as significant when excluding rows with property x = y, and not the other way around. "
+                                              f"It should never be some general explanation, the sorts of 'x is not as significant when excluding y because x is more / less prevalent in the data when excluding y'"
+                                              f" - actually reason and think about why the outlier is not as significant when excluding rows with property x = y. "
+                                              f"Your explanation should not be statistical, but should be based on domain knowledge and reasoning. ")
         elif self._query_type == "many_to_one":
             explanation_format_explanation = (
                 f"The many-to-one explanainer creates a table with the columns: 'Group / Cluster', 'Explanation', 'Coverage', 'Separation Error', and possibly also 'Separation Error Origins'. "
@@ -89,7 +107,8 @@ class ExplanationReasoning(LLMIntegrationInterface):
                 f"Each group or cluster may have multiple explanations, or may have no explanation at all. If there is no explanation, try and explain why that is the case, but make sure to use words like 'may', 'could', 'might', etc. when doing so. "
                 f"Your explanations should reason about why the predicate in the 'Explanation' column gives a good explanation for the group or cluster in the 'Group / Cluster' column. "
                 f"If the separation error is high, you should also try to explain that, using the columns in the 'Separation Error Origins' column (if it exists). "
-                f"Your explanation must always revolve around why the predicate in the 'Explanation' column gives a good explanation for the group or cluster, and not the other way around. ")
+                f"Your explanation must always revolve around why the predicate in the 'Explanation' column gives a good explanation for the group or cluster, and not the other way around. "
+                f"Your explanations should not be statistical, but should be based on domain knowledge and reasoning. ")
         else:
             raise ValueError(
                 "Unrecognized query type. This may have happened if you added a new operation to Fedex, or a new explainer to pd_explain, without updating this method.")
@@ -118,6 +137,14 @@ class ExplanationReasoning(LLMIntegrationInterface):
                            f"{self._labels.value_counts()}\n"
                            f"Using pd.describe() on the dataset, we find the following statistics:\n"
                            f"{self._data_description}")
+        elif self._query_type == 'outlier':
+            description = (f"The user has performed the query {self._query} on dataset {self._source_name}. "
+                           f"The dataset is a {self._data_type} with the following columns: {', '.join(self._data_columns)}. "
+                           f"The dataset after the groupby and aggregation is:\n"
+                           f"{self._after_op_data}:\n"
+                           f"Using pd.describe() on the source dataset, we find the following statistics:\n"
+                           f"{self._data_description}\n"
+                           f"They requested analysis of the outlier value {self._target}, suspecting it to be an outlier in the direction {self._dir}. ")
         else:
             raise ValueError(
                 "Unrecognized query type. This may have happened if you added a new operation to Fedex, or a new explainer to pd_explain, without updating this method.")
@@ -129,9 +156,13 @@ class ExplanationReasoning(LLMIntegrationInterface):
             output_format_explanation = (
                 f"The explanations should be in a numbered list format, with each explanation corresponding to the insight number. "
                 f"Surround the list with @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. ")
-        if self._query_type == "many_to_one":
+        elif self._query_type == "many_to_one":
             output_format_explanation = (f"The explanations should be in a numbered list format, with the numbers matching what you were provided with. "
                                          f"Surround the list with @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. ")
+        elif self._query_type == "outlier":
+            output_format_explanation = (f"The explanation should be a single sentence,"
+                                         f" surrounded by @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. "
+                                         f"Make sure there are @@@@@@@@ symbols both before and after the explanation, or you may crash the program and cause the poor developers to cry and lose their sanity. ")
         else:
             raise ValueError("Unrecognized query type. This may have happened if you added a new operation to Fedex, or a new explainer to pd_explain, without updating this method.")
 
@@ -192,10 +223,14 @@ class ExplanationReasoning(LLMIntegrationInterface):
         if self._query_type != "many_to_one":
             explanations = ["\n".join(textwrap.wrap(explanation, width=50)) for explanation in explanations]
 
-        if len(explanations) < len(self._explanations_found):
-            # If we got less explanations than we should, add empty strings to match the expected number of explanations.
-            explanations += [""] * (len(self._explanations_found) - len(explanations))
+        if isinstance(self._explanations_found, pd.Series) or isinstance(self._explanations_found, pd.DataFrame):
+            if len(explanations) < len(self._explanations_found):
+                # If we got less explanations than we should, add empty strings to match the expected number of explanations.
+                explanations += [""] * (len(self._explanations_found) - len(explanations))
 
-        explanations = pd.Series(explanations, index=self._explanations_found.index)
+            explanations = pd.Series(explanations, index=self._explanations_found.index)
+
+        else:
+            explanations = explanations[0]
 
         return explanations

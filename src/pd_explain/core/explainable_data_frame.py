@@ -907,8 +907,10 @@ class ExpDataFrame(pd.DataFrame):
         :param error_explanation_threshold: Many to one explainer. The threshold for how much a group needs to contribute
         to the separation error to be included in the explanation. Groups that contribute less than this threshold will
         be aggregated into a single group. Defaults to 0.05.
-        :param add_llm_context_explanations: Fedex explainer and Outlier explainer. Whether or not to use a LLM to create explanations on why
-        the statistical insights discovered by the explainer are true. Defaults to False. Requires an API key to use (see documentation).
+        :param add_llm_context_explanations: All explainers. Enables using a LLM to generate additional context explanations, explaining why
+        the explanations found occur. Defaults to False. Requires setting an API key. See the documentation for more information.
+        Note that setting this to True will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
+        Also note that the output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
         :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
 
         :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.

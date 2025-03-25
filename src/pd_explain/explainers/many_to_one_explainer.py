@@ -1,6 +1,8 @@
 from typing import Literal, List
 
 from .explainer_interface import ExplainerInterface
+from pd_explain.llm_integrations.explanation_reasoning import ExplanationReasoning
+
 import pandas as pd
 from pandas import DataFrame, Series
 from cluster_explorer import Explainer, condition_generator, str_rule_to_list, rule_to_human_readable
@@ -25,6 +27,7 @@ class ManyToOneExplainer(ExplainerInterface):
                  bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
                  label_name: str = 'label', sample_size: int = DEFAULT_SAMPLE_SIZE, explain_errors=True,
                  error_explanation_threshold: float = DEFAULT_ERROR_EXPLANATION_THRESHOLD,
+                 add_llm_context_explanations: bool = False,
                  *args, **kwargs):
         """
         Initialize the many-to-one explainer.
@@ -160,6 +163,17 @@ class ManyToOneExplainer(ExplainerInterface):
         self._sample_size = sample_size
         self._explain_errors = explain_errors
         self._error_explanation_threshold = error_explanation_threshold
+        self._add_llm_context_explanations = add_llm_context_explanations
+
+        if operation is not None:
+            if hasattr(operation, 'source_name'):
+                self._source_name = operation.source_name
+            elif hasattr(operation, 'left_name') and hasattr(operation, 'right_name'):
+                self._source_name = operation.left_name + " join " + operation.right_name
+            else:
+                self._source_name = "source"
+        else:
+            self._source_name = "source"
 
         # Optional operations to speed up explanation generation.
         if prune_if_too_many_labels:
@@ -568,6 +582,18 @@ class ManyToOneExplainer(ExplainerInterface):
                 out_df.loc[(cluster, "No explanation found"), 'Separation Error'] = np.nan
                 if self._explain_errors:
                     out_df.loc[(cluster, "No explanation found"), 'Separation Error Origins'] = np.nan
+
+
+        if self._add_llm_context_explanations:
+            reasoning = ExplanationReasoning(
+                data=self._source_df,
+                labels=self._labels,
+                explanations_found=out_df,
+                source_name=self._source_name,
+                query_type='many_to_one',
+            )
+            llm_explanations = reasoning.explain()
+            out_df['LLM Explanation'] = llm_explanations
 
         return out_df
 

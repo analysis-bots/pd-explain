@@ -124,8 +124,10 @@ class FedexExplainer(ExplainerInterface):
                 # Get the name of the source dataframe
                 if hasattr(self._operation, 'source_name'):
                     source_name = self._operation.source_name
+                    right_name = None
                 elif hasattr(self._operation, 'left_df'):
                     source_name = self._operation.left_name + " and " + self._operation.right_name
+                    right_name = self._operation.right_name
                 else:
                     raise ValueError(
                         "The operation object does not have a source name. This should not happen with fedex operations.")
@@ -141,7 +143,7 @@ class FedexExplainer(ExplainerInterface):
                              f".agg({self._operation.agg_dict})")
                     query_type = "groupby"
                 elif isinstance(self._operation, Join):
-                    query = f"{source_df}.join({right_df}, on={self._operation.attribute})"
+                    query = f"{self._operation.left_name}.join({self._operation.right_name}, on={self._operation.attribute})"
                     query_type = "join"
                 else:
                     raise ValueError(
@@ -154,7 +156,8 @@ class FedexExplainer(ExplainerInterface):
                     query=query,
                     explanations_found=explanations,
                     right_df=right_df if right_df is not None else None,
-                    query_type=query_type
+                    query_type=query_type,
+                    right_name=right_name
                 )
                 added_explanations = reasoner.explain()
                 # The ExplanationReasoning object will return None if the API key is not set.

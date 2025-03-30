@@ -226,7 +226,7 @@ class ExpSeries(pd.Series):
                 label_name: str = 'label', explain_errors=True,
                 error_explanation_threshold: float = 0.05,
                 debug_mode: bool = False,
-                add_llm_context_explanations=False
+                add_llm_explanation_reasoning=False
                 ):
         """
         Generate an explanation for the dataframe.
@@ -281,7 +281,7 @@ class ExpSeries(pd.Series):
         to the separation error to be included in the explanation. Groups that contribute less than this threshold will
         be aggregated into a single group. Defaults to 0.05.
         :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
-        :param add_llm_context_explanations: All explainers. Enables using a LLM to generate additional context explanations, explaining why
+        :param add_llm_explanation_reasoning: All explainers. Enables using a LLM to generate additional context explanations, explaining why
         the explanations found occur. Defaults to False. Requires setting an API key. See the documentation for more information.
         Note that setting this to True will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
         Also note that the output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
@@ -307,7 +307,7 @@ class ExpSeries(pd.Series):
             sample_size=sample_size,
             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold,
             debug_mode=debug_mode,
-            add_llm_context_explanations=add_llm_context_explanations
+            add_llm_context_explanations=add_llm_explanation_reasoning
         )
 
         explanation = explainer.generate_explanation()

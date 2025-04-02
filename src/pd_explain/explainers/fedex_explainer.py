@@ -1,12 +1,19 @@
+import numpy as np
+
 from .explainer_interface import ExplainerInterface
 from typing import List
 from pandas import DataFrame
 from copy import deepcopy
+import asyncio
+import nest_asyncio
+
+nest_asyncio.apply()
 
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from pd_explain.llm_integrations import ExplanationReasoning
+from pd_explain.query_recommenders.query_logger import QueryLogger
 
 
 class FedexExplainer(ExplainerInterface):
@@ -89,6 +96,7 @@ class FedexExplainer(ExplainerInterface):
         self._sample_size = sample_size
         self._debug_mode = debug_mode
         self._add_llm_context_explanations = add_llm_context_explanations
+        self._logger = QueryLogger()
 
     def generate_explanation(self):
 
@@ -97,13 +105,29 @@ class FedexExplainer(ExplainerInterface):
             return self._results
 
         else:
-            self._results = self._operation.explain(
+            self._results, scores = self._operation.explain(
                 schema=self._schema, attributes=self._attributes, top_k=self._top_k,
                 figs_in_row=self._figs_in_row, show_scores=self._show_scores, title=self._title, corr_TH=self._corr_TH,
                 explainer=self._explainer, consider=self._consider, cont=self._value, attr=self._attr,
                 ignore=self._ignore, use_sampling=self._use_sampling, sample_size=self._sample_size,
-                debug_mode=self._debug_mode, draw_figures=not self._add_llm_context_explanations
+                debug_mode=self._debug_mode, draw_figures=not self._add_llm_context_explanations, return_scores=True
             )
+
+            # Write a textual version of the query, using the stored information in the operation object
+            if isinstance(self._operation, Filter):
+                query = f"{self._operation.source_name}[{self._operation.attribute} {self._operation.operation_str} {self._operation.value}]"
+                query_type = "filter"
+            elif isinstance(self._operation, GroupBy):
+                query = (f"{self._operation.source_name}.groupby({', '.join(self._operation.group_attributes)
+                if isinstance(self._operation.group_attributes, list) else self._operation.group_attributes})"
+                         f".agg({self._operation.agg_dict})")
+                query_type = "groupby"
+            elif isinstance(self._operation, Join):
+                query = f"{self._operation.left_name}.join({self._operation.right_name}, on={self._operation.attribute})"
+                query_type = "join"
+            else:
+                raise ValueError(
+                    "Unrecognized operation type. This may have happened if you added a new operation to Fedex without updating this method.")
 
             # If the user has requested LLM explanations, we will generate them here.
             if self._add_llm_context_explanations:
@@ -121,33 +145,10 @@ class FedexExplainer(ExplainerInterface):
                     raise ValueError(
                         "The operation object does not have a source DataFrame. This should not happen with fedex operations.")
 
-                # Get the name of the source dataframe
-                if hasattr(self._operation, 'source_name'):
-                    source_name = self._operation.source_name
-                    right_name = None
-                elif hasattr(self._operation, 'left_df'):
-                    source_name = self._operation.left_name + " and " + self._operation.right_name
+                if hasattr(self._operation, 'left_df'):
                     right_name = self._operation.right_name
                 else:
-                    raise ValueError(
-                        "The operation object does not have a source name. This should not happen with fedex operations.")
-
-
-                # Write a textual version of the query, using the stored information in the operation object
-                if isinstance(self._operation, Filter):
-                    query = f"{source_name}[{self._operation.attribute} {self._operation.operation_str} {self._operation.value}]"
-                    query_type = "filter"
-                elif isinstance(self._operation, GroupBy):
-                    query = (f"{source_name}.groupby({', '.join(self._operation.group_attributes) 
-                    if isinstance(self._operation.group_attributes, list) else self._operation.group_attributes})"
-                             f".agg({self._operation.agg_dict})")
-                    query_type = "groupby"
-                elif isinstance(self._operation, Join):
-                    query = f"{self._operation.left_name}.join({self._operation.right_name}, on={self._operation.attribute})"
-                    query_type = "join"
-                else:
-                    raise ValueError(
-                        "Unrecognized operation type. This may have happened if you added a new operation to Fedex without updating this method.")
+                    right_name = None
 
                 # Create an ExplanationReasoning object to generate the LLM explanations
                 reasoner = ExplanationReasoning(
@@ -159,6 +160,11 @@ class FedexExplainer(ExplainerInterface):
                     query_type=query_type,
                     right_name=right_name
                 )
+                # I tried making this async, but it didn't work. I think it's because the main thread exits before the
+                # async function finishes, which makes it so the event loop is closed before the function finishes /
+                # before the callback function is called, making it not draw the figures at all (and obviously waiting
+                # for it to finish is not an option, since that would just make us synchronous again - the only blocking
+                # call is the LLM call, which is what we want to avoid, everything else is fast).
                 added_explanations = reasoner.explain()
                 # The ExplanationReasoning object will return None if the API key is not set.
                 if added_explanations is not None:
@@ -169,6 +175,7 @@ class FedexExplainer(ExplainerInterface):
                         }
                         for i in explanations.index.values
                     }
+
                 self._operation.draw_figures(
                     title=title,
                     scores=scores,
@@ -181,7 +188,21 @@ class FedexExplainer(ExplainerInterface):
                     show_scores=show_scores,
                     added_text=added_explanations
                 )
-                self._results = None
+
+            # Take only the top 4 scores from the scores dict.
+            # The dict is an unsorted 'column': 'score' dict, so we need to sort it first.
+            scores = {k: v for k, v in sorted(scores.items(), key=lambda item: -item[1])}
+            scores = np.array([v for k, v in scores.items()][:4])
+            # Normalize the scores to be between 0 and 1.
+            scores = (scores - np.min(scores)) / (np.max(scores) - np.min(scores))
+            score = np.mean(scores)
+
+            # Log the query to the query logger
+            self._logger.log_query(
+                dataframe_name=self._operation.source_name,
+                query=query,
+                score=score
+            )
 
         if isinstance(self._operation, Filter):
             self._original_operation.cor_deleted_atts = self._operation.cor_deleted_atts
@@ -194,4 +215,5 @@ class FedexExplainer(ExplainerInterface):
         return True
 
     def visualize(self):
-        return self._results
+        # Fedex explainers perform the visualization in the generate_explanation method, so we don't need to do anything here.
+        return None

@@ -16,7 +16,7 @@ class QueryLogger:
         self._use_logging = bool(os.getenv(consts.DOT_ENV_PD_EXPLAIN_LOG_QUERIES))
         if not os.path.exists(self.log_file_location):
             with open(self.log_file_location, "w") as f:
-                f.write("dataframe_name,query,score,timestamp\n")
+                f.write("dataframe_name,query,interestingness_score,timestamp\n")
         self._log = pd.DataFrame(pd.read_csv(self.log_file_location, index_col=0))
         self._write_index_flag = False
 
@@ -56,7 +56,7 @@ class QueryLogger:
         # Create a new log file
         else:
             with open(self._log_file_location, "w") as f:
-                f.write("dataframe_name,query,score,timestamp\n")
+                f.write("dataframe_name,query,interestingness_score,timestamp\n")
 
 
     def log_query(self, dataframe_name: str, query: str, score: float):
@@ -69,7 +69,7 @@ class QueryLogger:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             log_entry = pd.DataFrame({
                 'query': [query],
-                'score': [score],
+                'interestingness_score': [score],
                 'timestamp': [timestamp]
             }, index=pd.Index([dataframe_name], name='dataframe_name'))
             # Append the log entry to the log dataframe
@@ -87,12 +87,12 @@ class QueryLogger:
         if os.path.exists(self.log_file_location):
             if data_only:
                 with open(self.log_file_location, "w") as f:
-                    f.write("dataframe_name,query,score,timestamp\n")
+                    f.write("dataframe_name,query,interestingness_score,timestamp\n")
             else:
                 # Remove the log file
                 os.remove(self.log_file_location)
                 self._write_index_flag = True
-            self._log = pd.DataFrame(columns=['query', 'score', 'timestamp'], index=pd.Index([], name='dataframe_name'))
+            self._log = pd.DataFrame(columns=['query', 'interestingness_score', 'timestamp'], index=pd.Index([], name='dataframe_name'))
 
 
     def get_log(self, dataframe_name: str = None, k: int = 10):

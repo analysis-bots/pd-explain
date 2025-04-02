@@ -9,6 +9,11 @@ from pd_explain.llm_integrations.client import Client
 
 
 class ExplanationReasoning(LLMIntegrationInterface):
+    """
+    This class is responsible for creating reasoning based explanations for the typically statistical insights found by the
+    other explainers.
+    It uses a LLM to generate explanations that utilize the LLM's reasoning capabilities and domain knowledge.
+    """
 
     def __init__(self, data: pd.DataFrame | pd.Series, source_name: str,  explanations_found: pd.DataFrame | pd.Series,
                  query_type: str, query: str = None, right_df: pd.DataFrame | pd.Series = None, right_name: str = None,

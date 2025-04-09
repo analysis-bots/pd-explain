@@ -1,7 +1,9 @@
-from typing import List
+from typing import Dict
 
 import pandas as pd
 import re
+
+from pandas import DataFrame
 
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
@@ -36,7 +38,8 @@ class LLMQueryRecommender(LLMIntegrationInterface):
                             f"You will be provided with some context about the DataFrame, as well as a history of queries"
                             f"performed by the user with their interestingness scores. "
                             f"The user may also provide additional requests. "
-                            f"Your goal is to generate queries that are interesting and relevant to the user.")
+                            f"Your goal is to generate queries that are interesting and relevant to the user. "
+                            f"Try to make the queries varied, if possible. ")
         return task_explanation
 
 
@@ -62,7 +65,11 @@ class LLMQueryRecommender(LLMIntegrationInterface):
         format_instructions = (f"The output should be a list of {self.k} queries. Denote each query with a * and a newline. "
                                f"The list of queries should be surrounded by @@@@@@@@ both at the beginning and the end, so they can be easily extracted. "
                                f"The queries should be valid Pandas queries that can be run as-is. "
-                               f"If you use aggregation functions, do not use the .aggregate() or .agg() methods, but instead use the aggregation functions directly, i.e. call mean(), sum(), etc. ")
+                               "If you use aggregation functions, use the function call format, e.g. df['column'].agg('mean'). On groupbys, you can also use the format df.groupby('column').agg({'column1': 'mean', 'column2': 'sum'}). "
+                               "Other formats are not allowed and may lead to errors. "
+                               "Try to avoid only using a small subset of the columns (for example, selecting 3 or less columns or aggregating a small number of columns) unless the user explicitly requests it. "
+                               "Always opt for having at-least 4 columns in the query's output if possible. "
+                               "You may use filter, groupby, and join operations, plus any valid aggregation function. ")
         return format_instructions
 
 
@@ -97,19 +104,17 @@ class LLMQueryRecommender(LLMIntegrationInterface):
         return recommendations
 
 
-    def do_follow_up_action(self, response: pd.Series) -> List[pd.DataFrame] | None:
+    def do_follow_up_action(self, response: pd.Series) -> Dict[str, DataFrame] | None:
         """
         Use the generated queries to query the DataFrame, and return the results.
         """
-        results = []
+        results = {}
         for query in response:
-            if query.startswith(self.df_name):
-                # We remove the dataframe name from the query, because we want to run the query as-is on the DataFrame.
-                query = query.replace(self.df_name, "")
+            query_fixed = query.replace(self.df_name, "self.df")
             try:
                 # We use eval to run the query on the DataFrame.
-                result = eval(f"self.df{query}")
-                results.append(result)
+                result = eval(f"{query_fixed}")
+                results[query] = result
             except Exception as e:
                 print(f"Error running query {query}: {e}")
                 continue

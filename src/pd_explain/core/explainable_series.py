@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List, Literal, Callable
 
 import pandas as pd
+from pandas import Series
 from pandas._typing import Dtype, DropKeep
 import matplotlib.pyplot as plt
 from fedex_generator.Operations.BJoin import BJoin
@@ -73,6 +74,29 @@ class ExpSeries(pd.Series):
             return s
 
         return _c
+
+
+    def value_counts(
+        self,
+        normalize: bool = False,
+        sort: bool = True,
+        ascending: bool = False,
+        bins=None,
+        dropna: bool = True,
+    ) -> Series:
+        result = super().value_counts(
+            normalize=normalize,
+            sort=sort,
+            ascending=ascending,
+            bins=bins,
+            dropna=dropna,
+        )
+        ret_val = ExpSeries(result)
+        ret_val.operation = self.operation
+        ret_val.explanation = self.explanation
+        ret_val.filter_items = self.filter_items
+        ret_val.filter_query = self.filter_query
+        return ret_val
 
 
     def std_int(self, df, target):

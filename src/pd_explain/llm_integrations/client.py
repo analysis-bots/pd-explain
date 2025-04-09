@@ -74,7 +74,8 @@ class Client:
                 api_key=self.api_key
             )
 
-    def __call__(self, system_messages: List[str], user_messages: List[str], *args, **kwargs) -> str | None:
+    def __call__(self, system_messages: List[str], user_messages: List[str],
+                 assistant_messages: List[str] = None, *args, **kwargs) -> str | None:
         """
         Call the API with the given messages.
         :return: The response from the API. If no API key is provided, return None.
@@ -84,11 +85,18 @@ class Client:
                 "You have not set your API key for a LLM API provider. If you wish to use the LLM functions, please set the API key using the write_llm_api_key function. "
                 "All usage of LLM functions will not work until the API key is set.")
             return None
+        messages = [{"role": "user", "content": message} for message in user_messages]
+        # if assistant messages are not None, i.e. the user is continuing a conversation, interleave the user
+        # messages and assistant messages.
+        if assistant_messages is not None:
+            for i in range(1, len(assistant_messages) + 1):
+                messages.insert(i * 2 - 1, {"role": "assistant", "content": assistant_messages[i - 1]})
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
                 *[{"role": "system", "content": message} for message in system_messages],
-                *[{"role": "user", "content": message} for message in user_messages],
+                *messages,
             ],
         )
         return response.choices[0].message.content

@@ -160,10 +160,12 @@ class ExplanationReasoning(LLMIntegrationInterface):
         if self._query_type in ["join", "filter", "groupby"]:
             output_format_explanation = (
                 f"The explanations should be in a numbered list format, with each explanation corresponding to the insight number. "
-                f"Surround the list with @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. ")
+                f"Surround the list with @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. "
+                f"Make sure there are @@@@@@@@ symbols both before and after the explanation, or you may crash the program and cause the poor developers to cry and lose their sanity. ")
         elif self._query_type == "many_to_one":
             output_format_explanation = (f"The explanations should be in a numbered list format, with the numbers matching what you were provided with. "
-                                         f"Surround the list with @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. ")
+                                         f"Surround the list with @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. "
+                                         f"Make sure there are @@@@@@@@ symbols both before and after the explanation, or you may crash the program and cause the poor developers to cry and lose their sanity. ")
         elif self._query_type == "outlier":
             output_format_explanation = (f"The explanation should be a single sentence,"
                                          f" surrounded by @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. "
@@ -173,7 +175,7 @@ class ExplanationReasoning(LLMIntegrationInterface):
 
         return output_format_explanation
 
-    def explain(self) -> pd.Series | None:
+    def do_llm_action(self) -> pd.Series | None:
         client = Client()
         # Create the system and user messages
         system_messages = [
@@ -206,16 +208,7 @@ class ExplanationReasoning(LLMIntegrationInterface):
         if response is None:
             return None
         # Extract the explanations from the response.
-        # We use a regex to find the text between the @ symbols.
-        # Regex means: Find any text that starts with one or more @ symbols, followed by any string of characters that is not an @ symbol, and ends with one or more @ symbols.
-        pattern = r"@[^@]+@"
-        explanations = re.findall(pattern, response)
-        # If we have no explanations, we return an empty string.
-        if len(explanations) == 0:
-            return None
-        # We only expect one explanation result from the regex, so we take the first one.
-        explanation = explanations[0]
-        explanation = explanation.replace("@", "").strip()
+        explanation = self._extract_response(response, "@")
         # Split the explanation into an array of explanations, with the indexes matching the explanations found and provided
         # as a numbered list to the model and by the model.
         # Regex means: Find any string of one or more digits, followed by a period, and not followed by more digits (to avoid matching decimal points).

@@ -4,10 +4,6 @@ from .explainer_interface import ExplainerInterface
 from typing import List
 from pandas import DataFrame
 from copy import deepcopy
-import asyncio
-import nest_asyncio
-
-nest_asyncio.apply()
 
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
@@ -165,7 +161,7 @@ class FedexExplainer(ExplainerInterface):
                 # before the callback function is called, making it not draw the figures at all (and obviously waiting
                 # for it to finish is not an option, since that would just make us synchronous again - the only blocking
                 # call is the LLM call, which is what we want to avoid, everything else is fast).
-                added_explanations = reasoner.explain()
+                added_explanations = reasoner.do_llm_action()
                 # The ExplanationReasoning object will return None if the API key is not set.
                 if added_explanations is not None:
                     added_explanations = {

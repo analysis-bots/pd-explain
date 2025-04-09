@@ -592,7 +592,7 @@ class ManyToOneExplainer(ExplainerInterface):
                 source_name=self._source_name,
                 query_type='many_to_one',
             )
-            llm_explanations = reasoning.explain()
+            llm_explanations = reasoning.do_llm_action()
             out_df['LLM Explanation'] = llm_explanations
 
         return out_df

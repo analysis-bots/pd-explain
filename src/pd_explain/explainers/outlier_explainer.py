@@ -102,7 +102,7 @@ class OutlierExplainerInterface(ExplainerInterface):
                 explanations_found=explanations,
                 source_name = self._operation.source_name
             )
-            reasoning = reasoner.explain()
+            reasoning = reasoner.do_llm_action()
             added_text = {
                 "text": reasoning,
                 "position": "bottom"

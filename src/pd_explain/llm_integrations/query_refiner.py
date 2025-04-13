@@ -1,4 +1,10 @@
+import pandas as pd
+from pandas import DataFrame
+from typing import Callable
+
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
+from pd_explain.llm_integrations.client import Client
+from pd_explain.llm_integrations.llm_query_recommender import LLMQueryRecommender
 
 class QueryRefiner(LLMIntegrationInterface):
     """
@@ -8,4 +14,174 @@ class QueryRefiner(LLMIntegrationInterface):
     recommenders.
     """
 
-    pass
+    def __init__(self, df: DataFrame, df_name: str, recommendations: dict, score_function: Callable[[str, pd.DataFrame], tuple[dict, float]],
+                 k=4, user_requests: str= None, n=2):
+        """
+        Initialize the QueryRefiner with a DataFrame and a set of recommendations.
+
+        :param df: The DataFrame to generate queries for.
+        :param df_name: The name of the DataFrame.
+        :param recommendations: The recommendations to refine.
+        :param k: The number of queries to generate.
+        """
+        self.df = df
+        self.df_name = df_name
+        self.recommendations = recommendations
+        self.k = k
+        self.user_requests = user_requests if user_requests is not None else []
+        self.n = n
+        self.score_function = score_function
+
+
+    def define_critic_task(self) -> str:
+        """
+        Define the critic task for the LLM.
+        """
+        critic_task = ("You are a critic in an actor-critic framework. "
+                       "This framework is used to refine queries for a Pandas DataFrame query recommender. "
+                       "You will be provided with a description of both the input and output of multiple queries, as well as the"
+                       " queries themselves and their score + the score of each column that makes up the score. "
+                       "You will also be provided with historic queries from this process. "
+                       "Your task is to analyze and explain why the score is what it is, which the actor will then use to refine the query. "
+                       "Filter and Join queries are scored using a KS test between the input and output distributions, and GroupBy queries are scored using the coefficient of variation of their output. "
+                       "Each column has an individual score, while the final score is an average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. ")
+
+        return critic_task
+
+
+    def define_actor_task(self) -> str:
+        """
+        Define the actor task for the LLM.
+        """
+        actor_task = ("You are an actor in an actor-critic framework. "
+                      "This framework is used to refine queries for a Pandas DataFrame query recommender. "
+                      "You will be provided with a description of both the input and output of the queries, as well as the"
+                      " queries themselves and their score + the score of each column that makes up the score. "
+                      "You will also be provided with the critic's analysis of the query, and historic queries from this process. "
+                      "Your task is to use the critic's analysis to refine the query to make a query that is more interesting. "
+                      "Filter and Join queries are scored using a KS test between the input and output distributions, and GroupBy queries are scored using the coefficient of variation of their output. "
+                      "Each column has an individual score, while the final score is an average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. ")
+
+        return actor_task
+
+
+    def create_data_explanation(self) -> str:
+        """
+        Create an explanation for the LLM, explaining the context of the DataFrame.
+        This includes the columns, their types, and any other relevant information.
+        """
+        data_explanation = f"The DataFrame is named {self.df_name}. "
+        data_explanation += f"The DataFrame has the following columns: {self.df.columns.tolist()}. "
+        data_explanation += f"The column types are: {self.df.dtypes.to_dict()}. "
+        data_explanation += f"Using df.describe() we get the following statistics: {self.df.describe().to_dict()}."
+        if self.user_requests:
+            data_explanation += f"The user requests are: {self.user_requests}. "
+
+        return data_explanation
+
+
+    def create_query_list(self) -> str:
+        queries = list(self.recommendations.keys())
+        query_scores = [self.recommendations[query]['score'] for query in queries]
+        query_columns_scores = [self.recommendations[query]['score_dict'] for query in queries]
+        query_results = [self.recommendations[query]['query_result'] for query in queries]
+        query_list = ""
+        query_list += f"The currently recommended queries are: {queries} "
+        query_list += f"Their scores are (in order): {query_scores}. "
+        query_list += f"Their column scores are (in order): {query_columns_scores}. "
+        query_list += f"Their result descriptions are (in order): {[q.describe() for q in query_results]}. "
+        return query_list
+
+
+    def create_critic_format_instructions(self) -> str:
+        """
+        Explain the expected format of the output to the LLM.
+        """
+        format_instructions = ("The output should be a list of very short explanations, one for each query. "
+                               "The list should be denoted with a * and a newline. "
+                               "The list must be surrounded by @@@@@@@@ on both sides. ")
+
+        return format_instructions
+
+
+    def create_actor_format_instructions(self) -> str:
+        """
+        Explain the expected format of the output to the LLM.
+        """
+        format_instructions = ("The output should be a list of queries, one for each input query. "
+                               "The list should be denoted with a * and a newline. "
+                               "The list must be surrounded by @@@@@@@@ on both sides. ")
+
+        return format_instructions
+
+
+
+    def do_llm_action(self) -> pd.Series | None | str:
+        """
+        Use LLMs to refine the queries.
+        """
+        client = Client()
+        actor = LLMQueryRecommender(self.df, self.df_name)
+        critic_user_messages = []
+        critic_responses = []
+        actor_user_messages = []
+        actor_responses = []
+        history = pd.DataFrame(columns=["query", "score", "explanation"])
+        critic_task = self.define_critic_task()
+        actor_task = self.define_actor_task()
+        for i in range(self.n):
+            if i == 0:
+                critic_message = self.create_data_explanation() + self.create_query_list() + self.create_critic_format_instructions()
+            else:
+                critic_message = (f"This is the {i + 1} iteration of the actor-critic framework. "
+                                  f"{self.create_query_list()} ")
+            if not history.empty:
+                critic_message += f"The history of this process is (in order from beginning to end): {history}. "
+            critic_user_messages.append(critic_message)
+            critic_response = client(
+                system_messages=[critic_task],
+                user_messages=critic_user_messages,
+                assistant_messages=[critic_responses]
+            )
+            critic_response = self._extract_response(critic_response, "@")
+            if critic_response is None:
+                return None
+            critic_responses.append(critic_response)
+            if i == 0:
+                actor_message = self.create_data_explanation() + self.create_query_list() + self.create_actor_format_instructions()
+            else:
+                actor_message = (f"This is the {i + 1} iteration of the actor-critic framework. "
+                                 f"{self.create_query_list()} ")
+            actor_message += f"The critic's analysis is: {critic_response}. "
+            if not history.empty:
+                actor_message += f"The history of this process is (in order from beginning to end): {history}. "
+            actor_user_messages.append(actor_message)
+            actor_response = actor.do_llm_action(
+                system_messages=[actor_task],
+                user_messages=actor_user_messages,
+                assistant_messages=actor_responses
+            )
+            if actor_response is None:
+                return None
+            actor_responses.append(actor_response)
+            applied_actor_response = actor.do_follow_up_action(actor_response)
+            recommendations = {}
+            for query, query_result in applied_actor_response.items():
+                # Score the query
+                scores, score = self.score_function(query, query_result)
+                recommendations[query] = {
+                    "query_result": query_result,
+                    "score_dict": scores,
+                    "score": score
+                }
+            previous_queries = list(self.recommendations.keys())
+            previous_scores = [self.recommendations[query]['score'] for query in previous_queries]
+            previous_critics = [response.replace("*", "").strip() for response in critic_response.split("\n") if response]
+            history = history.append(({
+                "query": q,
+                "score": s,
+                "explanation": c
+            } for q, s, c in zip(previous_queries, previous_scores, previous_critics)), ignore_index=True)
+            self.recommendations = recommendations
+
+

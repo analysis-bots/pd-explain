@@ -88,7 +88,7 @@ class Client:
         messages = [{"role": "user", "content": message} for message in user_messages]
         # if assistant messages are not None, i.e. the user is continuing a conversation, interleave the user
         # messages and assistant messages.
-        if assistant_messages is not None:
+        if assistant_messages is not None and len(assistant_messages) > 0:
             for i in range(1, len(assistant_messages) + 1):
                 messages.insert(i * 2 - 1, {"role": "assistant", "content": assistant_messages[i - 1]})
 

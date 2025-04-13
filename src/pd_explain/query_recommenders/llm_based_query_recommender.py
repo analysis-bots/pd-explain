@@ -1,5 +1,3 @@
-import re
-
 import numpy as np
 from pandas import DataFrame
 
@@ -7,6 +5,7 @@ from pd_explain.query_recommenders.query_recommender_interface import QueryRecom
 from pd_explain.llm_integrations.llm_query_recommender import LLMQueryRecommender
 from pd_explain.llm_integrations.query_refiner import QueryRefiner
 from pd_explain.query_recommenders.query_logger import QueryLogger
+from pd_explain.query_recommenders.query_score_functions import score_queries
 
 from fedex_generator.Operations.Join import Join
 from fedex_generator.Operations.GroupBy import GroupBy
@@ -19,7 +18,7 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
     It then refines the queries using the LLM.
     """
 
-    def __init__(self, df, df_name, user_requests=None, k=5):
+    def __init__(self, df, df_name, user_requests=None, k=4):
         """
         Initialize the LLMQueryRecommender with a DataFrame and an optional history of queries.
 
@@ -32,13 +31,13 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
         self.k = k
 
 
-    def _score_query(self, query: str, query_result: DataFrame) -> tuple[np.ndarray, float]:
+    def _score_query(self, query: str, query_result: DataFrame) -> tuple[dict, float]:
         """
         Score the query based on its result.
         This is a placeholder method and should be implemented based on the specific scoring criteria.
         """
         if query_result.empty:
-            return [], 0.0
+            return {}
         # If a query is not a groupby or a join, its a filter
         if "groupby" not in query and "join" not in query:
             operation = Filter(source_df=self.df, result_df=query_result, source_scheme={})
@@ -51,10 +50,8 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
             operation = query_result.operation
 
         scores = operation.explain(top_k=4, measure_only=True)
-        # Normalize the scores to be between 0 and 1
-        scores = np.array([v for k, v in scores.items()])
-        scores_normalized = (scores - np.min(scores)) / (np.max(scores) - np.min(scores))
-        score = np.mean(scores_normalized)
+        score = score_queries(scores)
+
         return scores, score
 
 
@@ -70,9 +67,18 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
         # Apply the generated queries to the dataframe then score them
         recommendations = recommender.do_llm_action()
         applied_recommendations = recommender.do_follow_up_action(recommendations)
-        scores = [self._score_query(query=q, query_result=r) for q, r in applied_recommendations.items()]
+        recommendations = {}
+        for query, query_result in applied_recommendations.items():
+            # Score the query
+            scores, score = self._score_query(query, query_result)
+            recommendations[query] = {
+                "query_result": query_result,
+                "score_dict": scores,
+                "score": score
+            }
         # Sort the recommendations by score
-        recommendations = sorted(zip(applied_recommendations.keys(), scores), key=lambda x: x[1][1], reverse=True)
+        recommendations = {k: v for k, v in sorted(recommendations.items(), key=lambda item: -item[1]["score"])}
         # Refine the recommendations
-        refined_recommendations = []
+        refiner = QueryRefiner(self.df, self.df_name, recommendations, score_function=self._score_query, k=self.k)
+        refined_recommendations = refiner.do_llm_action()
 

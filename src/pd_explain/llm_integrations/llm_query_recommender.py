@@ -14,7 +14,7 @@ class LLMQueryRecommender(LLMIntegrationInterface):
     It uses the LLM to generate queries based on the provided DataFrame and the history of queries.
     """
 
-    def __init__(self, df, df_name, history=None, user_requests=None, k=3):
+    def __init__(self, df: pd.DataFrame, df_name: str, history=None, user_requests=None, k=3):
         """
         Initialize the LLMQueryRecommender with a DataFrame and an optional history of queries.
 
@@ -36,7 +36,7 @@ class LLMQueryRecommender(LLMIntegrationInterface):
         task_explanation = (f"You are a query recommender for a Pandas DataFrame. "
                             f"Your task is to generate interesting queries for the DataFrame. "
                             f"You will be provided with some context about the DataFrame, as well as a history of queries"
-                            f"performed by the user with their interestingness scores. "
+                            f"performed by the user with their interestingness scores (if available). "
                             f"The user may also provide additional requests. "
                             f"Your goal is to generate queries that are interesting and relevant to the user. "
                             f"Try to make the queries varied, if possible. ")
@@ -69,24 +69,35 @@ class LLMQueryRecommender(LLMIntegrationInterface):
                                "Other formats are not allowed and may lead to errors. "
                                "Try to avoid only using a small subset of the columns (for example, selecting 3 or less columns or aggregating a small number of columns) unless the user explicitly requests it. "
                                "Always opt for having at-least 4 columns in the query's output if possible. "
-                               "You may use filter, groupby, and join operations, plus any valid aggregation function. ")
+                               "You may use filter, groupby, and join operations, plus any valid aggregation function. "
+                               "You are absolutely not allowed to use any other operation, such as merge, concat, reset_index, etc. ")
         return format_instructions
 
 
-    def do_llm_action(self) -> pd.Series | None:
+    def do_llm_action(self, system_messages: list[str] = None,
+                      user_messages: list[str] = None, assistant_messages: list[str] = None) -> pd.Series | None:
         """
         Generate queries for the DataFrame using the LLM.
+        If the optional parameters system_messages, user_messages, and assistant_messages are provided,
+        they will be used instead of the default ones.
+
+        :param system_messages: System messages to be sent to the LLM. Optional.
+        :param user_messages: User messages to be sent to the LLM. Optional.
+        :param assistant_messages: Assistant messages which were sent by the LLM. Optional.
 
         :return: A Series of generated queries or None if no queries are generated.
         """
         client = Client()
-        task_explanation = self._create_task_explanation()
-        context_explanation = self._create_context_explanation()
-        format_instructions = self._create_format_instructions()
-        user_messages = [context_explanation + format_instructions]
+        if system_messages is None:
+            system_messages = [self._create_task_explanation()]
+        if user_messages is None:
+            context_explanation = self._create_context_explanation()
+            format_instructions = self._create_format_instructions()
+            user_messages = [context_explanation + format_instructions]
         response = client(
-            system_messages=[task_explanation],
+            system_messages=system_messages,
             user_messages=user_messages,
+            assistant_messages=assistant_messages
         )
         recommendations = self._extract_response(response, "@")
         if recommendations is None or len(recommendations) <= 1:
@@ -117,6 +128,8 @@ class LLMQueryRecommender(LLMIntegrationInterface):
                 results[query] = result
             except Exception as e:
                 print(f"Error running query {query}: {e}")
+                # Remove the query from the response if it fails.
+                response = response[response != query]
                 continue
         if len(results) == 0:
             return None

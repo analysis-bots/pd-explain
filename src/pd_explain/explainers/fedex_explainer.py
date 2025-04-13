@@ -10,6 +10,7 @@ from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from pd_explain.llm_integrations import ExplanationReasoning
 from pd_explain.query_recommenders.query_logger import QueryLogger
+from pd_explain.query_recommenders.query_score_functions import score_queries
 
 
 class FedexExplainer(ExplainerInterface):
@@ -185,13 +186,7 @@ class FedexExplainer(ExplainerInterface):
                     added_text=added_explanations
                 )
 
-            # Take only the top 4 scores from the scores dict.
-            # The dict is an unsorted 'column': 'score' dict, so we need to sort it first.
-            scores = {k: v for k, v in sorted(scores.items(), key=lambda item: -item[1])}
-            scores = np.array([v for k, v in scores.items()][:4])
-            # Normalize the scores to be between 0 and 1.
-            scores = (scores - np.min(scores)) / (np.max(scores) - np.min(scores))
-            score = np.mean(scores)
+            score = score_queries(scores)
 
             # Log the query to the query logger
             self._logger.log_query(

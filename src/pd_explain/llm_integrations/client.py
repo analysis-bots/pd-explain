@@ -90,7 +90,7 @@ class Client:
         # messages and assistant messages.
         if assistant_messages is not None and len(assistant_messages) > 0:
             for i in range(1, len(assistant_messages) + 1):
-                messages.insert(i * 2 - 1, {"role": "assistant", "content": assistant_messages[i - 1]})
+                messages.insert(i * 2 - 1, {"role": "assistant", "content": str(assistant_messages[i - 1])})
 
         response = self.client.chat.completions.create(
             model=self.model,

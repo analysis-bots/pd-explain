@@ -39,7 +39,8 @@ class LLMQueryRecommender(LLMIntegrationInterface):
                             f"performed by the user with their interestingness scores (if available). "
                             f"The user may also provide additional requests. "
                             f"Your goal is to generate queries that are interesting and relevant to the user. "
-                            f"Try to make the queries varied, if possible. ")
+                            f"Try to make the queries varied, if possible. "
+                            f"Try to avoid generating queries that are too similar to the ones already in the history, or only creating of queries one type (only groupbys, only filters, etc.).")
         return task_explanation
 
 

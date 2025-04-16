@@ -23,6 +23,7 @@ from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
+from fedex_generator.commons.utils import get_calling_params_name
 from typing import (
     Hashable,
     Sequence,
@@ -37,6 +38,7 @@ sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.core.explainable_series import ExpSeries
+from pd_explain.query_recommenders.llm_based_query_recommender import LLMBasedQueryRecommender
 
 
 class ExpDataFrame(pd.DataFrame):
@@ -91,6 +93,38 @@ class ExpDataFrame(pd.DataFrame):
             return df
 
         return _c
+
+
+    def llm_recommend(self, custom_requests=None, num_recommendations=4, num_iterations=2):
+        """
+        Generate queries for the DataFrame using the LLM.
+
+        :param custom_requests: Custom requests to be sent to the LLM. Optional.
+        :param num_recommendations: Number of recommendations to generate. Default is 4.
+        :param num_iterations: Number of iterations to run the query refinement process. Default is 2. Note that every
+        iteration will call the LLM twice, so this will result in 2 * num_iterations calls to the LLM.
+
+        :return: A Series of generated queries or None if no queries are generated.
+        """
+        source_name = ""
+        # If we can get the source name from the operation, we will use it, since it is more likely to be the name of the
+        # original dataframe.
+        if self.operation is not None:
+            if hasattr("self.operation", "source_name"):
+                source_name = self.operation.source_name
+            else:
+                source_name = self.operation.left_name
+        # Otherwise, if we had no operation, we will use the name of the dataframe.
+        else:
+            source_name = get_calling_params_name(self)
+        recommender = LLMBasedQueryRecommender(
+            df=self,
+            df_name=source_name,
+            user_requests=custom_requests,
+            k=num_recommendations,
+            n=num_iterations,
+        )
+        return recommender.recommend()
 
 
     @property

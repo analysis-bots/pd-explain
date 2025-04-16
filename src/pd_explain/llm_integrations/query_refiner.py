@@ -33,7 +33,13 @@ class QueryRefiner(LLMIntegrationInterface):
         self.score_function = score_function
 
 
-    def define_critic_task(self) -> str:
+    def _explain_scoring_method(self) -> str:
+        explanation =  ("Filter and Join queries are scored using a KS test between the input and output distributions, and GroupBy queries are scored using the coefficient of variation of their output. "
+                       "Each column has an individual score, while the final score is an average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. ")
+        return explanation
+
+
+    def _define_critic_task(self) -> str:
         """
         Define the critic task for the LLM.
         """
@@ -42,14 +48,13 @@ class QueryRefiner(LLMIntegrationInterface):
                        "You will be provided with a description of both the input and output of multiple queries, as well as the"
                        " queries themselves and their score + the score of each column that makes up the score. "
                        "You will also be provided with historic queries from this process. "
-                       "Your task is to analyze and explain why the score is what it is, which the actor will then use to refine the query. "
-                       "Filter and Join queries are scored using a KS test between the input and output distributions, and GroupBy queries are scored using the coefficient of variation of their output. "
-                       "Each column has an individual score, while the final score is an average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. ")
+                       "Your task is to analyze and explain why the score is what it is, which the actor will then use to refine the query. Explicitly state the good and bad parts (if there are any) of the query. "
+                       f"{self._explain_scoring_method()}")
 
         return critic_task
 
 
-    def define_actor_task(self) -> str:
+    def _define_actor_task(self) -> str:
         """
         Define the actor task for the LLM.
         """
@@ -58,21 +63,22 @@ class QueryRefiner(LLMIntegrationInterface):
                       "You will be provided with a description of both the input and output of the queries, as well as the"
                       " queries themselves and their score + the score of each column that makes up the score. "
                       "You will also be provided with the critic's analysis of the query, and historic queries from this process. "
-                      "Your task is to use the critic's analysis to refine the query to make a query that is more interesting. "
+                      "Your task is to use the critic's analysis to refine the query to make a query that is more interesting, or outright replace the query with a new one if there is no way to refine it. "
                       "Filter and Join queries are scored using a KS test between the input and output distributions, and GroupBy queries are scored using the coefficient of variation of their output. "
                       "Each column has an individual score, while the final score is an average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. ")
 
         return actor_task
 
 
-    def create_data_explanation(self) -> str:
+    def _create_data_explanation(self) -> str:
         """
         Create an explanation for the LLM, explaining the context of the DataFrame.
         This includes the columns, their types, and any other relevant information.
         """
         data_explanation = f"The DataFrame is named {self.df_name}. "
         data_explanation += f"The DataFrame has the following columns: {self.df.columns.tolist()}. "
-        data_explanation += f"The column types are: {self.df.dtypes.to_dict()}. "
+        data_explanation += (f"The column types are: {self.df.dtypes.to_dict()}. "
+                             f"The DataFrame has {self.df.shape[0]} rows and {self.df.shape[1]} columns. ")
         data_explanation += f"Using df.describe() we get the following statistics: {self.df.describe().to_dict()}."
         if self.user_requests:
             data_explanation += f"The user requests are: {self.user_requests}. "
@@ -80,7 +86,7 @@ class QueryRefiner(LLMIntegrationInterface):
         return data_explanation
 
 
-    def create_query_list(self) -> str:
+    def _create_query_list(self) -> str:
         queries = list(self.recommendations.keys())
         query_scores = [self.recommendations[query]['score'] for query in queries]
         query_columns_scores = [self.recommendations[query]['score_dict'] for query in queries]
@@ -89,22 +95,23 @@ class QueryRefiner(LLMIntegrationInterface):
         query_list += f"The currently recommended queries are: {queries} "
         query_list += f"Their scores are (in order): {query_scores}. "
         query_list += f"Their column scores are (in order): {query_columns_scores}. "
-        query_list += f"Their result descriptions are (in order): {[q.describe() for q in query_results]}. "
+        query_list += (f"Their result descriptions are (in order): {[q.describe() for q in query_results]}. "
+                       f"The number of rows in the result is (in order): {[q.shape[0] for q in query_results]}. ")
         return query_list
 
 
-    def create_critic_format_instructions(self) -> str:
+    def _create_critic_format_instructions(self) -> str:
         """
         Explain the expected format of the output to the LLM.
         """
         format_instructions = ("The output should be a list of very short explanations, one for each query. "
                                "The list should be denoted with a * and a newline. "
-                               "The list must be surrounded by @@@@@@@@ on both sides. ")
+                               "The list must be surrounded by @@@@@@@@ on both sides. This is a must, even if there is only one query, as otherwise the system will not be able to parse the output. ")
 
         return format_instructions
 
 
-    def create_actor_format_instructions(self) -> str:
+    def _create_actor_format_instructions(self) -> str:
         """
         Explain the expected format of the output to the LLM.
         """
@@ -127,45 +134,62 @@ class QueryRefiner(LLMIntegrationInterface):
         actor_user_messages = []
         actor_responses = []
         history = pd.DataFrame(columns=["query", "score", "explanation"])
-        critic_task = self.define_critic_task()
-        actor_task = self.define_actor_task()
+        critic_task = self._define_critic_task()
+        actor_task = self._define_actor_task()
+        # Save the current pandas options to reset them later
+        display_max_rows = pd.get_option('display.max_rows')
+        display_max_columns = pd.get_option('display.max_columns')
+        display_width = pd.get_option('display.width')
+        display_max_colwidth = pd.get_option('display.max_colwidth')
+        # Disable the pandas options that limit the display of DataFrames, because that will truncate what the LLM sees
+        # if we don't.
+        pd.set_option('display.max_rows', None)  # Show all rows
+        pd.set_option('display.max_columns', None)  # Show all columns
+        pd.set_option('display.width', 0)  # No limit on the width of the display
+        pd.set_option('display.max_colwidth', None)  # No limit on column width
+        # Main loop of the process - iterate n times, each time getting critic feedback on existing recommendations,
+        # then using that feedback to refine the recommendations using the actor.
         for i in range(self.n):
-            if i == 0:
-                critic_message = self.create_data_explanation() + self.create_query_list() + self.create_critic_format_instructions()
-            else:
-                critic_message = (f"This is the {i + 1} iteration of the actor-critic framework. "
-                                  f"{self.create_query_list()} ")
-            if not history.empty:
-                critic_message += f"The history of this process is (in order from beginning to end): {history}. "
+            critic_message = ""
+            if i >= 1:
+                critic_message += f"This is iteration number {i + 1} of the refinement process. The previous iteration history is (in CSV format): {history.to_csv()}\n"
+            critic_message += self._create_data_explanation() + self._create_query_list() + self._create_critic_format_instructions()
             critic_user_messages.append(critic_message)
+            # Get the critic's response. We avoid using the assistant messages from the previous iterations,
+            # because it can lead to too large of a context window.
             critic_response = client(
                 system_messages=[critic_task],
-                user_messages=critic_user_messages,
-                assistant_messages=[critic_responses]
+                user_messages=[critic_message],
             )
             critic_response = self._extract_response(critic_response, "@")
             if critic_response is None:
-                return None
+                break
             critic_responses.append(critic_response)
-            if i == 0:
-                actor_message = self.create_data_explanation() + self.create_query_list() + self.create_actor_format_instructions()
-            else:
-                actor_message = (f"This is the {i + 1} iteration of the actor-critic framework. "
-                                 f"{self.create_query_list()} ")
+            # Likewise with the actor, the first iteration includes a full explanation of the source and target dataframes,
+            # while the rest of the iterations only include the query list and the actor format instructions.
+            actor_message = ""
+            if i >= 1:
+                actor_message += f"This is iteration number {i + 1} of the refinement process. The previous iteration history is (in CSV format): {history.to_csv()}\n"
+            actor_message += self._create_data_explanation() + self._create_query_list() + self._create_actor_format_instructions()
+            if len(self.recommendations) < self.k:
+                actor_message += (f"There should have been {self.k} queries, but due to errors, there are only {len(self.recommendations)} queries. "
+                                  f"Please make sure to generate more queries using the information provided. ")
             actor_message += f"The critic's analysis is: {critic_response}. "
             if not history.empty:
                 actor_message += f"The history of this process is (in order from beginning to end): {history}. "
             actor_user_messages.append(actor_message)
+            # Get the actor's response
             actor_response = actor.do_llm_action(
                 system_messages=[actor_task],
-                user_messages=actor_user_messages,
-                assistant_messages=actor_responses
+                user_messages=[actor_message],
             )
-            if actor_response is None:
-                return None
+            if actor_response is None or len(actor_response) < 1:
+                break
             actor_responses.append(actor_response)
+            # Apply the actor's response to the DataFrame and get the results
             applied_actor_response = actor.do_follow_up_action(actor_response)
             recommendations = {}
+            # Score the queries
             for query, query_result in applied_actor_response.items():
                 # Score the query
                 scores, score = self.score_function(query, query_result)
@@ -174,14 +198,44 @@ class QueryRefiner(LLMIntegrationInterface):
                     "score_dict": scores,
                     "score": score
                 }
+            # Add the previous queries to the history
             previous_queries = list(self.recommendations.keys())
             previous_scores = [self.recommendations[query]['score'] for query in previous_queries]
             previous_critics = [response.replace("*", "").strip() for response in critic_response.split("\n") if response]
-            history = history.append(({
-                "query": q,
-                "score": s,
-                "explanation": c
-            } for q, s, c in zip(previous_queries, previous_scores, previous_critics)), ignore_index=True)
+            if len(previous_critics) != self.k or len(previous_scores) != self.k or len(previous_scores) != self.k:
+                print(f"Warning: The number of queries and critics do not match. "
+                      f"Queries: {len(previous_queries)}, Critics: {len(previous_critics)}, Scores: {len(previous_scores)}")
+            # Sometimes, empty strings happen because of the above split, so we need to filter them out.
+            previous_critics = [critic for critic in previous_critics if len(critic) > 1]
+            history = pd.concat([history, pd.DataFrame({
+                "query": previous_queries,
+                "score": previous_scores,
+                "explanation": previous_critics
+            })], ignore_index=True)
             self.recommendations = recommendations
+        # Once the process is complete, we need to get the final recommendations by their score.
+        # These recommendations are the highest scoring queries produced throughout the process.
+        history = history[["query", "score"]]
+        recs = pd.DataFrame(columns=["query", "score"])
+        for query, query_dict in self.recommendations.items():
+            recs = pd.concat([recs, pd.DataFrame({
+                "query": [query],
+                "score": [query_dict["score"]]
+            })], ignore_index=True)
+        recs = pd.concat([recs, history], ignore_index=True)
+        # If there are any duplicate queries, we only keep the last one.
+        recs = recs.drop_duplicates(subset=["query"], keep="last")
+        # Keep the k highest scoring queries.
+        recs = recs.sort_values(by=["score"], ascending=False)
+        recs = recs.reset_index(drop=True)
+        print(f"Final recommendations: {recs}")
+        recs = recs.head(self.k)
+        # Reset pd options to original values
+        pd.set_option('display.max_rows', display_max_rows)
+        pd.set_option('display.max_columns', display_max_columns)
+        pd.set_option('display.width', display_width)
+        pd.set_option('display.max_colwidth', display_max_colwidth)
+        return recs
+
 
 

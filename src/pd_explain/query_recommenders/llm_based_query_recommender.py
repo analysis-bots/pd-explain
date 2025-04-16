@@ -18,7 +18,7 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
     It then refines the queries using the LLM.
     """
 
-    def __init__(self, df, df_name, user_requests=None, k=4):
+    def __init__(self, df, df_name, user_requests=None, k=4, n=2):
         """
         Initialize the LLMQueryRecommender with a DataFrame and an optional history of queries.
 
@@ -29,6 +29,7 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
         self.df_name = df_name
         self.user_requests = user_requests if user_requests is not None else []
         self.k = k
+        self.n = n
 
 
     def _score_query(self, query: str, query_result: DataFrame) -> tuple[dict, float]:
@@ -76,9 +77,20 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
                 "score_dict": scores,
                 "score": score
             }
+        for q, v in recommendations.items():
+            print(f"Query: {q}, Score: {v['score']}")
         # Sort the recommendations by score
         recommendations = {k: v for k, v in sorted(recommendations.items(), key=lambda item: -item[1]["score"])}
         # Refine the recommendations
-        refiner = QueryRefiner(self.df, self.df_name, recommendations, score_function=self._score_query, k=self.k)
+        if self.n == 0:
+            return_df = DataFrame.from_dict(recommendations, orient='index')
+            return_df = return_df[["score"]]
+            return_df = return_df.sort_values(by="score", ascending=False)
+            return_df.index.name = "query"
+            return_df.reset_index(inplace=True)
+            return_df.rename(columns={"query": "query"}, inplace=True)
+            return return_df
+        refiner = QueryRefiner(self.df, self.df_name, recommendations, score_function=self._score_query, k=self.k, n=self.n)
         refined_recommendations = refiner.do_llm_action()
+        return refined_recommendations
 

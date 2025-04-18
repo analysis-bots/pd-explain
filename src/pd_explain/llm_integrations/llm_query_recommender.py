@@ -35,13 +35,14 @@ class LLMQueryRecommender(LLMIntegrationInterface):
         task_explanation = (f"You are a query recommender for a Pandas DataFrame. "
                             f"Your task is to generate interesting queries for the DataFrame. "
                             f"You will be provided with some context about the DataFrame, as well as a history of queries"
-                            f"performed by the user with their interestingness scores (if available) between 0 and 1. Higher is better. "
+                            f"performed by the user with their interestingness scores between 0 and 1. Higher is better. "
                             f"The user may also provide additional requests. "
                             f"Your goal is to generate queries that are interesting and relevant to the user. "
                             f"Try to make the queries varied, if possible. "
                             f"Try to avoid generating queries that are too similar to the ones already in the history, or only creating of queries one type (only groupbys, only filters, etc.). "
                             f"Note that even if one type of queries seems to dominate another (i.e. groupbys typically having higher scores than filters), you should still try to create a variety of queries of all types, and not "
-                            f"just one type. ")
+                            f"just one type. "
+                            f"Also note that the queries in the history may not be syntactically correct, so it is your responsibility to generate queries that are syntactically correct. ")
         return task_explanation
 
 
@@ -53,7 +54,10 @@ class LLMQueryRecommender(LLMIntegrationInterface):
         context_explanation = f"The DataFrame is named {self.df_name}. "
         context_explanation += f"The DataFrame has the following columns: {self.df.columns.tolist()}. "
         context_explanation += f"The column types are: {self.df.dtypes.to_dict()}. "
-        context_explanation += f"Using df.describe() we get the following statistics: {self.df.describe(include='all').to_dict()}."
+        context_explanation += f"The DataFrame has {self.df.shape[0]} rows and {self.df.shape[1]} columns. "
+        # This line is commented out because it can take up too much of the context window, depending on the size of the DataFrame,
+        # leading to the LLM not being able to generate any queries.
+        # context_explanation += f"Using df.describe() we get the following statistics: {self.df.describe(include='all').to_dict()}."
         context_explanation += f"The history of the most recent queries is: {self.history}. "
         if self.user_requests:
             context_explanation += f"The user requests are: {self.user_requests}. These should be given the highest priority. "
@@ -72,7 +76,8 @@ class LLMQueryRecommender(LLMIntegrationInterface):
                                "Try to avoid only using a small subset of the columns (for example, selecting 3 or less columns or aggregating a small number of columns) unless the user explicitly requests it. "
                                "Always opt for having at-least 4 columns in the query's output if possible. "
                                "You may use filter, groupby, and join operations, plus any valid aggregation function. "
-                               "You are absolutely not allowed to use any other operation, such as merge, concat, reset_index, head, etc. ")
+                               "The following function and their like must NEVER be used: head, tail, sample, iloc, loc, at, iat, reset_index, set_index, merge, concat, "
+                               "and any other function that is not expressly part of a query that may make sense in a SQL context.  ")
         return format_instructions
 
 

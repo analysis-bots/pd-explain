@@ -1,10 +1,6 @@
-import warnings
-
 import pandas as pd
 from pandas import DataFrame, Series
 from typing import Callable
-
-from together.error import InvalidRequestError
 
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
@@ -19,7 +15,7 @@ class QueryRefiner(LLMIntegrationInterface):
     """
 
     def __init__(self, df: DataFrame, df_name: str, recommendations: dict, score_function: Callable[[str, pd.DataFrame], tuple[dict, float]],
-                 k=4, user_requests: str= None, n=2):
+                 k=4, user_requests: str= None, n=2, return_all_options: bool = False):
         """
         Initialize the QueryRefiner with a DataFrame and a set of recommendations.
 
@@ -27,6 +23,9 @@ class QueryRefiner(LLMIntegrationInterface):
         :param df_name: The name of the DataFrame.
         :param recommendations: The recommendations to refine.
         :param k: The number of queries to generate.
+        :param user_requests: An optional list of user requests.
+        :param n: The number of refining iterations to perform.
+        :param return_all_options: If True, returns all queries generated instead of just the top k.
         """
         self.df = df
         self.df_name = df_name
@@ -35,11 +34,12 @@ class QueryRefiner(LLMIntegrationInterface):
         self.user_requests = user_requests if user_requests is not None else []
         self.n = n
         self.score_function = score_function
+        self.return_all_options = return_all_options
 
 
     def _explain_scoring_method(self) -> str:
         explanation =  ("Filter and Join queries are scored using a KS test between the input and output distributions, and GroupBy queries are scored using the coefficient of variation of their output. "
-                       "Each column has an individual score, while the final score is an average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. "
+                       "Each column has an individual score, while the final score is the geometric average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. "
                         "A higher score is better. ")
         return explanation
 
@@ -70,6 +70,7 @@ class QueryRefiner(LLMIntegrationInterface):
                       " queries themselves and their score + the score of each column that makes up the score. "
                       "You will also be provided with the critic's analysis of the query, and historic queries from this process. "
                       "Your task is to use the critic's analysis to refine the query to make a query that is more interesting, or outright replace the query with a new one if there is no way to refine or fix it. "
+                      "You must also replace the query if it uses the head or tail methods, as these are not interesting queries, even if they have a high score. "
                       "Avoid generating queries that are very similar to the ones already in the history or to one another. "
                       f"{self._explain_scoring_method()} .")
 
@@ -85,7 +86,8 @@ class QueryRefiner(LLMIntegrationInterface):
         data_explanation += f"The DataFrame has the following columns: {self.df.columns.tolist()}. "
         data_explanation += (f"The column types are: {self.df.dtypes.to_dict()}. "
                              f"The DataFrame has {self.df.shape[0]} rows and {self.df.shape[1]} columns. ")
-        data_explanation += f"Using df.describe() we get the following statistics: {self.df.describe().to_dict()}."
+        # This line can take up too much of the context window, depending on the size of the DataFrame.
+        # data_explanation += f"Using df.describe() we get the following statistics: {self.df.describe().to_dict()}."
         if self.user_requests:
             data_explanation += f"The user requests are: {self.user_requests}. These should have the highest priority. "
 
@@ -112,7 +114,7 @@ class QueryRefiner(LLMIntegrationInterface):
         Explain the expected format of the output to the LLM.
         """
         format_instructions = ("The output should be a list of very short explanations, one for each query. "
-                               "The list should be denoted with a * and a newline. "
+                               "The list should be denoted with a * and a newline for each entry. Absolutely never combine multiple explanations into one line, as you will cause the system to fail. "
                                "The list must be surrounded by @@@@@@@@ on both sides. This is a must, even if there is only one query, as otherwise the system will not be able to parse the output. ")
 
         return format_instructions
@@ -123,7 +125,7 @@ class QueryRefiner(LLMIntegrationInterface):
         Explain the expected format of the output to the LLM.
         """
         format_instructions = ("The output should be a list of queries, one for each input query. "
-                               "The list should be denoted with a * and a newline. "
+                               "The list should be denoted with a * and a newline for each query. Absolutely never combine multiple queries into one line, as you will cause the system to fail. "
                                "The list must be surrounded by @@@@@@@@ on both sides. ")
 
         return format_instructions
@@ -211,8 +213,7 @@ class QueryRefiner(LLMIntegrationInterface):
                 previous_scores = [self.recommendations[query]['score'] for query in previous_queries]
                 previous_critics = [response.replace("*", "").strip() for response in critic_response.split("\n") if response]
                 previous_critics = [critic for critic in previous_critics if len(critic) > 1]
-                if len(previous_critics) != len(previous_scores) or len(previous_critics) != len(previous_queries):
-                    print(f"Warning: The number of queries and critics do not match. "
+                if len(previous_critics) != len(previous_scores) or len(previous_critics) != len(previous_queries):                    print(f"Warning: The number of queries and critics do not match. "
                           f"Queries: {previous_queries}\n \n , Critics: {previous_critics} \n \n , Scores: {previous_scores} \n \n")
                 # Sometimes, empty strings happen because of the above split, so we need to filter them out.
                 history = pd.concat([history, pd.DataFrame({
@@ -221,12 +222,12 @@ class QueryRefiner(LLMIntegrationInterface):
                     "explanation": previous_critics
                 })], ignore_index=True)
                 self.recommendations = recommendations
-        except InvalidRequestError as e:
+                print(f"Finished iteration {i + 1} of the refinement process. ")
+        except Exception as e:
             # If the LLM fails, we need to handle it gracefully.
-            warnings.warn(
-                f"The LLM failed to process the request. "
-                f"The error message is: {e}. \n"
-                f"In the case of a context window error, you may want to reduce the number of iterations or the number of queries. "
+            print(
+                f"An error occurred while generating the recommendations: {e}. "
+                f"Stopping the process and returning the current recommendations. "
             )
         # Once the process is complete, we need to get the final recommendations by their score.
         # These recommendations are the highest scoring queries produced throughout the process.
@@ -243,8 +244,10 @@ class QueryRefiner(LLMIntegrationInterface):
         # Keep the k highest scoring queries.
         recs = recs.sort_values(by=["score"], ascending=False)
         recs = recs.reset_index(drop=True)
-        print(f"Final recommendations: {recs}")
-        recs = recs.head(self.k)
+        print(f"Number of final recommendations: {len(recs)}")
+        if not self.return_all_options:
+            # If we are not returning all options, we only keep the top k recommendations.
+            recs = recs.head(self.k)
         # Reset pd options to original values
         pd.set_option('display.max_rows', display_max_rows)
         pd.set_option('display.max_columns', display_max_columns)

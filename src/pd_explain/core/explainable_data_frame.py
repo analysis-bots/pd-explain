@@ -95,7 +95,8 @@ class ExpDataFrame(pd.DataFrame):
         return _c
 
 
-    def llm_recommend(self, custom_requests=None, num_recommendations=4, num_iterations=2):
+    def llm_recommend(self, custom_requests=None, num_recommendations=4, num_iterations=2,
+                      return_all_options: bool = False):
         """
         Generate queries for the DataFrame using the LLM.
 
@@ -103,6 +104,8 @@ class ExpDataFrame(pd.DataFrame):
         :param num_recommendations: Number of recommendations to generate. Default is 4.
         :param num_iterations: Number of iterations to run the query refinement process. Default is 2. Note that every
         iteration will call the LLM twice, so this will result in 2 * num_iterations calls to the LLM.
+        :param return_all_options: If True, returns all options generated throughout the iterations, instead of just the
+        top k options. Default is False.
 
         :return: A Series of generated queries or None if no queries are generated.
         """
@@ -123,6 +126,7 @@ class ExpDataFrame(pd.DataFrame):
             user_requests=custom_requests,
             k=num_recommendations,
             n=num_iterations,
+            return_all_options=return_all_options,
         )
         return recommender.recommend()
 

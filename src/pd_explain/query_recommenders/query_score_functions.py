@@ -13,7 +13,7 @@ def score_queries(scores: dict) -> float:
     """
     scores = {k: v for k, v in sorted(scores.items(), key=lambda item: -item[1])}
     scores = np.array([v for k, v in scores.items()][:4])
-    if np.all(scores >= 0) and np.all(scores <= 1):
-        return np.mean(scores)
-    scores = np.array([(np.log10(1 + x) / (1 + np.log10(1 + np.max(scores)))) for x in scores])
-    return np.mean(scores)
+    if any(x > 1 for x in scores):
+        scores = np.array([(np.log10(1 + x) / (1 + np.log10(1 + np.max(scores)))) for x in scores])
+    # Return the geometric mean of the scores
+    return np.pow(np.prod(scores), 1 / len(scores))

@@ -16,18 +16,23 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
     It then refines the queries using the LLM.
     """
 
-    def __init__(self, df, df_name, user_requests=None, k=4, n=2):
+    def __init__(self, df, df_name, user_requests=None, k=4, n=2, return_all_options: bool = False):
         """
         Initialize the LLMQueryRecommender with a DataFrame and an optional history of queries.
 
         :param df: The DataFrame to generate queries for.
-        :param history: An optional history of queries.
+        :param df_name: The name of the DataFrame.
+        :param user_requests: An optional list of user requests.
+        :param k: The number of queries to generate.
+        :param n: The number of refining iterations to perform.
+        :param return_all_options: If True, returns all options instead of just the top k.
         """
         self.df = df
         self.df_name = df_name
         self.user_requests = user_requests if user_requests is not None else []
         self.k = k
         self.n = n
+        self.return_all_options = return_all_options
 
 
     def _score_query(self, query: str, query_result: DataFrame) -> tuple[dict, float]:
@@ -57,8 +62,12 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
         elif "join" in query:
             operation = query_result.operation
 
-        scores = operation.explain(top_k=4, measure_only=True)
-        score = score_queries(scores)
+        try:
+            scores = operation.explain(top_k=4, measure_only=True)
+            score = score_queries(scores)
+        except Exception as e:
+            scores = {}
+            score = 0
 
         return scores, score
 
@@ -84,10 +93,9 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
                 "score_dict": scores,
                 "score": score
             }
-        for q, v in recommendations.items():
-            print(f"Query: {q}, Score: {v['score']}")
         # Sort the recommendations by score
         recommendations = {k: v for k, v in sorted(recommendations.items(), key=lambda item: -item[1]["score"])}
+        print("Finished generating initial recommendations.")
         # Refine the recommendations
         if self.n == 0:
             return_df = DataFrame.from_dict(recommendations, orient='index')
@@ -98,7 +106,7 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
             return_df.rename(columns={"query": "query"}, inplace=True)
             return return_df
         refiner = QueryRefiner(self.df, self.df_name, recommendations, score_function=self._score_query, k=self.k, n=self.n,
-                               user_requests=self.user_requests)
+                               user_requests=self.user_requests, return_all_options=self.return_all_options)
         refined_recommendations = refiner.do_llm_action()
         return refined_recommendations
 

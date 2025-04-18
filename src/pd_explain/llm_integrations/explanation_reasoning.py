@@ -2,8 +2,6 @@ import pandas as pd
 import re
 import textwrap
 
-from docutils.nodes import description
-
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
 
@@ -19,7 +17,6 @@ class ExplanationReasoning(LLMIntegrationInterface):
                  query_type: str, query: str = None, right_df: pd.DataFrame | pd.Series = None, right_name: str = None,
                  labels: pd.Series = None, target: str = None, dir: str = None, after_op_data: pd.DataFrame = None):
         self._data = data
-        self._data_description = data.describe()
         self._data_columns = data.columns if isinstance(data, pd.DataFrame) else [data.name]
         self._data_type = "dataframe" if isinstance(data, pd.DataFrame) else "series"
         self._source_name = source_name
@@ -30,7 +27,6 @@ class ExplanationReasoning(LLMIntegrationInterface):
         # If they are not provided, they should cause an exception if they are accessed.
         if right_df is not None:
             self._right_df = right_df
-            self._right_df_description = right_df.describe()
             self._right_df_columns = right_df.columns if isinstance(right_df, pd.DataFrame) else [right_df.name]
             self._right_df_type = "dataframe" if isinstance(right_df, pd.DataFrame) else "series"
             self._right_source_name = right_name
@@ -122,18 +118,14 @@ class ExplanationReasoning(LLMIntegrationInterface):
     def _create_data_and_query_description(self):
         if self._query_type in ['filter', 'groupby']:
             description = (f"The user has performed the query {self._query} on dataset {self._source_name}. "
-                           f"The dataset is a {self._data_type} with the following columns: {', '.join(self._data_columns)}. "
-                           f"Using pd.describe() on the dataset, we find the following statistics:\n"
-                           f"{self._data_description}")
+                           f"The dataset is a {self._data_type} with the following columns: {', '.join(self._data_columns)}.")
         elif self._query_type == "join":
             description = (
                 f"The user has performed the query {self._query} on datasets {self._source_name} and {self._right_source_name}. "
                 f"The dataset {self._source_name} is a {self._data_type} with the following columns: {', '.join(self._data_columns)}. "
-                f"Using pd.describe() on the dataset, we find the following statistics:\n"
-                f"{self._data_description}\n"
                 f"The dataset {self._right_source_name} is a {self._right_df_type} with the following columns: {', '.join(self._right_df_columns)}. "
                 f"Using pd.describe() on the dataset, we find the following statistics:\n"
-                f"{self._right_df_description}")
+                )
         elif self._query_type == 'many_to_one':
             description = (f"The user has requested a many to one explanation on dataset {self._source_name}. "
                            f"This explainer creates logical explanations for the provided labels which define a many-to-one relationship with the rest of the data, using the provided data. "
@@ -141,14 +133,13 @@ class ExplanationReasoning(LLMIntegrationInterface):
                            f"The labels + their counts are as follows:\n"
                            f"{self._labels.value_counts()}\n"
                            f"Using pd.describe() on the dataset, we find the following statistics:\n"
-                           f"{self._data_description}")
+                           )
         elif self._query_type == 'outlier':
             description = (f"The user has performed the query {self._query} on dataset {self._source_name}. "
                            f"The dataset is a {self._data_type} with the following columns: {', '.join(self._data_columns)}. "
                            f"The dataset after the groupby and aggregation is:\n"
                            f"{self._after_op_data}:\n"
                            f"Using pd.describe() on the source dataset, we find the following statistics:\n"
-                           f"{self._data_description}\n"
                            f"They requested analysis of the outlier value {self._target}, suspecting it to be an outlier in the direction {self._dir}. ")
         else:
             raise ValueError(

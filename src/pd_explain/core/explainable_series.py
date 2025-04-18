@@ -21,7 +21,9 @@ op_table = {
     "le": "<=",
     "lt": "<",
     "ge": ">=",
-    "gt": ">"
+    "gt": ">",
+    "and": "&",
+    "or": "|",
 }
 
 
@@ -236,6 +238,54 @@ class ExpSeries(pd.Series):
         }
         result = super()._cmp_method(other, op)
         return result
+
+    def __and__(self, other):
+        if self.filter_query is not None:
+            current_filter_query = self.filter_query
+        else:
+            current_filter_query = {
+                'op': '',
+                'other': None
+            }
+        if isinstance(other, ExpSeries) and other.filter_query is not None:
+            self.filter_query = {
+                'op': f'{current_filter_query["op"]} {current_filter_query["other"]} & {other.filter_query["op"]}',
+                'other': other.filter_query['other']
+            }
+        else:
+            # We have no way to interpret the other since it's a boolean array, therefore we can only rely
+            # on the filter query of the current object.
+            self.filter_query = {
+                'op': f'{current_filter_query["op"]} {current_filter_query["other"]} &',
+                'other': None
+            }
+        result = super().__and__(other)
+        return result
+
+
+    def __or__(self, other):
+        if self.filter_query is not None:
+            current_filter_query = self.filter_query
+        else:
+            current_filter_query = {
+                'op': '',
+                'other': None
+            }
+        if isinstance(other, ExpSeries) and other.filter_query is not None:
+            self.filter_query = {
+                'op': f'{current_filter_query["op"]} {current_filter_query["other"]} | {other.filter_query["op"]}',
+                'other': other.filter_query['other']
+            }
+        else:
+            # We have no way to interpret the other since it's a boolean array, therefore we can only rely
+            # on the filter query of the current object.
+            self.filter_query = {
+                'op': f'{current_filter_query["op"]} {current_filter_query["other"]} |',
+                'other': None
+            }
+        result = super().__or__(other)
+        return result
+
 
     def explain(self, schema: dict = None, attributes: List = None, use_sampling: None | bool = None,
                 sample_size: int | float = 5000, top_k: int = 1, figs_in_row: int = 2,

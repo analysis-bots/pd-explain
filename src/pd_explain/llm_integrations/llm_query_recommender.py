@@ -1,7 +1,6 @@
 from typing import Dict
 
 import pandas as pd
-import re
 
 from pandas import DataFrame
 
@@ -14,7 +13,7 @@ class LLMQueryRecommender(LLMIntegrationInterface):
     It uses the LLM to generate queries based on the provided DataFrame and the history of queries.
     """
 
-    def __init__(self, df: pd.DataFrame, df_name: str, history=None, user_requests=None, k=3):
+    def __init__(self, df: pd.DataFrame, df_name: str, history=None, user_requests=None, k=4):
         """
         Initialize the LLMQueryRecommender with a DataFrame and an optional history of queries.
 
@@ -36,11 +35,13 @@ class LLMQueryRecommender(LLMIntegrationInterface):
         task_explanation = (f"You are a query recommender for a Pandas DataFrame. "
                             f"Your task is to generate interesting queries for the DataFrame. "
                             f"You will be provided with some context about the DataFrame, as well as a history of queries"
-                            f"performed by the user with their interestingness scores (if available). "
+                            f"performed by the user with their interestingness scores (if available) between 0 and 1. Higher is better. "
                             f"The user may also provide additional requests. "
                             f"Your goal is to generate queries that are interesting and relevant to the user. "
                             f"Try to make the queries varied, if possible. "
-                            f"Try to avoid generating queries that are too similar to the ones already in the history, or only creating of queries one type (only groupbys, only filters, etc.).")
+                            f"Try to avoid generating queries that are too similar to the ones already in the history, or only creating of queries one type (only groupbys, only filters, etc.). "
+                            f"Note that even if one type of queries seems to dominate another (i.e. groupbys typically having higher scores than filters), you should still try to create a variety of queries of all types, and not "
+                            f"just one type. ")
         return task_explanation
 
 
@@ -55,7 +56,7 @@ class LLMQueryRecommender(LLMIntegrationInterface):
         context_explanation += f"Using df.describe() we get the following statistics: {self.df.describe(include='all').to_dict()}."
         context_explanation += f"The history of the most recent queries is: {self.history}. "
         if self.user_requests:
-            context_explanation += f"The user requests are: {self.user_requests}. "
+            context_explanation += f"The user requests are: {self.user_requests}. These should be given the highest priority. "
         return context_explanation
 
 
@@ -71,7 +72,7 @@ class LLMQueryRecommender(LLMIntegrationInterface):
                                "Try to avoid only using a small subset of the columns (for example, selecting 3 or less columns or aggregating a small number of columns) unless the user explicitly requests it. "
                                "Always opt for having at-least 4 columns in the query's output if possible. "
                                "You may use filter, groupby, and join operations, plus any valid aggregation function. "
-                               "You are absolutely not allowed to use any other operation, such as merge, concat, reset_index, etc. ")
+                               "You are absolutely not allowed to use any other operation, such as merge, concat, reset_index, head, etc. ")
         return format_instructions
 
 
@@ -116,24 +117,24 @@ class LLMQueryRecommender(LLMIntegrationInterface):
         return recommendations
 
 
-    def do_follow_up_action(self, response: pd.Series) -> Dict[str, DataFrame] | None:
+    def do_follow_up_action(self, response: pd.Series) -> Dict[str, DataFrame]:
         """
         Use the generated queries to query the DataFrame, and return the results.
         """
         results = {}
         for query in response:
             query_fixed = query.replace(self.df_name, "self.df")
+            results[query] = {}
             try:
                 # We use eval to run the query on the DataFrame.
                 result = eval(f"{query_fixed}")
-                results[query] = result
+                results[query]["result"] = result
+                results[query]["error"] = False
             except Exception as e:
-                print(f"Error running query {query}: {e}")
-                # Remove the query from the response if it fails.
-                response = response[response != query]
+                # Put the exception in the results dictionary.
+                results[query]["result"] = e
+                results[query]["error"] = True
                 continue
-        if len(results) == 0:
-            return None
         return results
 
 

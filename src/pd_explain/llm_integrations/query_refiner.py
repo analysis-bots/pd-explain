@@ -1,6 +1,10 @@
+import warnings
+
 import pandas as pd
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from typing import Callable
+
+from together.error import InvalidRequestError
 
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
@@ -35,7 +39,8 @@ class QueryRefiner(LLMIntegrationInterface):
 
     def _explain_scoring_method(self) -> str:
         explanation =  ("Filter and Join queries are scored using a KS test between the input and output distributions, and GroupBy queries are scored using the coefficient of variation of their output. "
-                       "Each column has an individual score, while the final score is an average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. ")
+                       "Each column has an individual score, while the final score is an average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. "
+                        "A higher score is better. ")
         return explanation
 
 
@@ -49,6 +54,7 @@ class QueryRefiner(LLMIntegrationInterface):
                        " queries themselves and their score + the score of each column that makes up the score. "
                        "You will also be provided with historic queries from this process. "
                        "Your task is to analyze and explain why the score is what it is, which the actor will then use to refine the query. Explicitly state the good and bad parts (if there are any) of the query. "
+                       "Alternatively, if the query has an error in it (error message or score of 0), suggest a fix for it. "
                        f"{self._explain_scoring_method()}")
 
         return critic_task
@@ -63,9 +69,9 @@ class QueryRefiner(LLMIntegrationInterface):
                       "You will be provided with a description of both the input and output of the queries, as well as the"
                       " queries themselves and their score + the score of each column that makes up the score. "
                       "You will also be provided with the critic's analysis of the query, and historic queries from this process. "
-                      "Your task is to use the critic's analysis to refine the query to make a query that is more interesting, or outright replace the query with a new one if there is no way to refine it. "
-                      "Filter and Join queries are scored using a KS test between the input and output distributions, and GroupBy queries are scored using the coefficient of variation of their output. "
-                      "Each column has an individual score, while the final score is an average of the 4 highest scoring columns after transforming the scores to be between 0 and 1. ")
+                      "Your task is to use the critic's analysis to refine the query to make a query that is more interesting, or outright replace the query with a new one if there is no way to refine or fix it. "
+                      "Avoid generating queries that are very similar to the ones already in the history or to one another. "
+                      f"{self._explain_scoring_method()} .")
 
         return actor_task
 
@@ -81,7 +87,7 @@ class QueryRefiner(LLMIntegrationInterface):
                              f"The DataFrame has {self.df.shape[0]} rows and {self.df.shape[1]} columns. ")
         data_explanation += f"Using df.describe() we get the following statistics: {self.df.describe().to_dict()}."
         if self.user_requests:
-            data_explanation += f"The user requests are: {self.user_requests}. "
+            data_explanation += f"The user requests are: {self.user_requests}. These should have the highest priority. "
 
         return data_explanation
 
@@ -95,8 +101,9 @@ class QueryRefiner(LLMIntegrationInterface):
         query_list += f"The currently recommended queries are: {queries} "
         query_list += f"Their scores are (in order): {query_scores}. "
         query_list += f"Their column scores are (in order): {query_columns_scores}. "
-        query_list += (f"Their result descriptions are (in order): {[q.describe() for q in query_results]}. "
-                       f"The number of rows in the result is (in order): {[q.shape[0] for q in query_results]}. ")
+        # The below line is commented out because it can take up a lot of the context window, which can lead to errors.
+        # query_list += f"Their result descriptions are (in order): {[query_result.describe().to_dict() for query_result in query_results]}. "
+        query_list += f"The number of rows in the result is (in order): {[q.shape[0] if (isinstance(q, DataFrame) or isinstance(q, Series)) else 0 for q  in query_results]}. "
         return query_list
 
 
@@ -149,70 +156,78 @@ class QueryRefiner(LLMIntegrationInterface):
         pd.set_option('display.max_colwidth', None)  # No limit on column width
         # Main loop of the process - iterate n times, each time getting critic feedback on existing recommendations,
         # then using that feedback to refine the recommendations using the actor.
-        for i in range(self.n):
-            critic_message = ""
-            if i >= 1:
-                critic_message += f"This is iteration number {i + 1} of the refinement process. The previous iteration history is (in CSV format): {history.to_csv()}\n"
-            critic_message += self._create_data_explanation() + self._create_query_list() + self._create_critic_format_instructions()
-            critic_user_messages.append(critic_message)
-            # Get the critic's response. We avoid using the assistant messages from the previous iterations,
-            # because it can lead to too large of a context window.
-            critic_response = client(
-                system_messages=[critic_task],
-                user_messages=[critic_message],
+        try:
+            for i in range(self.n):
+                critic_message = ""
+                if i >= 1:
+                    critic_message += f"This is iteration number {i + 1} of the refinement process. The previous iteration history is (in CSV format): {history.to_csv()}\n"
+                critic_message += self._create_data_explanation() + self._create_query_list() + self._create_critic_format_instructions()
+                critic_user_messages.append(critic_message)
+                # Get the critic's response. We avoid using the assistant messages from the previous iterations,
+                # because it can lead to too large of a context window.
+                critic_response = client(
+                    system_messages=[critic_task],
+                    user_messages=[critic_message],
+                )
+                critic_response = self._extract_response(critic_response, "@")
+                if critic_response is None:
+                    break
+                critic_responses.append(critic_response)
+                # Likewise with the actor, the first iteration includes a full explanation of the source and target dataframes,
+                # while the rest of the iterations only include the query list and the actor format instructions.
+                actor_message = ""
+                if i >= 1:
+                    actor_message += f"This is iteration number {i + 1} of the refinement process. The previous iteration history is (in CSV format): {history.to_csv()}\n"
+                actor_message += self._create_data_explanation() + self._create_query_list() + self._create_actor_format_instructions()
+                if len(self.recommendations) < self.k:
+                    actor_message += (f"There should have been {self.k} queries, but due to errors, there are only {len(self.recommendations)} queries. "
+                                      f"Please make sure to generate more queries using the information provided. ")
+                actor_message += f"The critic's analysis is: {critic_response}. "
+                if not history.empty:
+                    actor_message += f"The history of this process is (in order from beginning to end): {history}. "
+                actor_user_messages.append(actor_message)
+                # Get the actor's response
+                actor_response = actor.do_llm_action(
+                    system_messages=[actor_task],
+                    user_messages=[actor_message],
+                )
+                if actor_response is None or len(actor_response) < 1:
+                    break
+                actor_responses.append(actor_response)
+                # Apply the actor's response to the DataFrame and get the results
+                applied_actor_response = actor.do_follow_up_action(actor_response)
+                recommendations = {}
+                # Score the queries
+                for query, query_result in applied_actor_response.items():
+                    # Score the query
+                    scores, score = self.score_function(query, query_result)
+                    recommendations[query] = {
+                        "query_result": query_result["result"],
+                        "score_dict": scores,
+                        "score": score
+                    }
+                # Add the previous queries to the history
+                previous_queries = list(self.recommendations.keys())
+                previous_scores = [self.recommendations[query]['score'] for query in previous_queries]
+                previous_critics = [response.replace("*", "").strip() for response in critic_response.split("\n") if response]
+                previous_critics = [critic for critic in previous_critics if len(critic) > 1]
+                if len(previous_critics) != len(previous_scores) or len(previous_critics) != len(previous_queries):
+                    print(f"Warning: The number of queries and critics do not match. "
+                          f"Queries: {previous_queries}\n \n , Critics: {previous_critics} \n \n , Scores: {previous_scores} \n \n")
+                # Sometimes, empty strings happen because of the above split, so we need to filter them out.
+                history = pd.concat([history, pd.DataFrame({
+                    "query": previous_queries,
+                    "score": previous_scores,
+                    "explanation": previous_critics
+                })], ignore_index=True)
+                self.recommendations = recommendations
+        except InvalidRequestError as e:
+            # If the LLM fails, we need to handle it gracefully.
+            warnings.warn(
+                f"The LLM failed to process the request. "
+                f"The error message is: {e}. \n"
+                f"In the case of a context window error, you may want to reduce the number of iterations or the number of queries. "
             )
-            critic_response = self._extract_response(critic_response, "@")
-            if critic_response is None:
-                break
-            critic_responses.append(critic_response)
-            # Likewise with the actor, the first iteration includes a full explanation of the source and target dataframes,
-            # while the rest of the iterations only include the query list and the actor format instructions.
-            actor_message = ""
-            if i >= 1:
-                actor_message += f"This is iteration number {i + 1} of the refinement process. The previous iteration history is (in CSV format): {history.to_csv()}\n"
-            actor_message += self._create_data_explanation() + self._create_query_list() + self._create_actor_format_instructions()
-            if len(self.recommendations) < self.k:
-                actor_message += (f"There should have been {self.k} queries, but due to errors, there are only {len(self.recommendations)} queries. "
-                                  f"Please make sure to generate more queries using the information provided. ")
-            actor_message += f"The critic's analysis is: {critic_response}. "
-            if not history.empty:
-                actor_message += f"The history of this process is (in order from beginning to end): {history}. "
-            actor_user_messages.append(actor_message)
-            # Get the actor's response
-            actor_response = actor.do_llm_action(
-                system_messages=[actor_task],
-                user_messages=[actor_message],
-            )
-            if actor_response is None or len(actor_response) < 1:
-                break
-            actor_responses.append(actor_response)
-            # Apply the actor's response to the DataFrame and get the results
-            applied_actor_response = actor.do_follow_up_action(actor_response)
-            recommendations = {}
-            # Score the queries
-            for query, query_result in applied_actor_response.items():
-                # Score the query
-                scores, score = self.score_function(query, query_result)
-                recommendations[query] = {
-                    "query_result": query_result,
-                    "score_dict": scores,
-                    "score": score
-                }
-            # Add the previous queries to the history
-            previous_queries = list(self.recommendations.keys())
-            previous_scores = [self.recommendations[query]['score'] for query in previous_queries]
-            previous_critics = [response.replace("*", "").strip() for response in critic_response.split("\n") if response]
-            if len(previous_critics) != self.k or len(previous_scores) != self.k or len(previous_scores) != self.k:
-                print(f"Warning: The number of queries and critics do not match. "
-                      f"Queries: {len(previous_queries)}, Critics: {len(previous_critics)}, Scores: {len(previous_scores)}")
-            # Sometimes, empty strings happen because of the above split, so we need to filter them out.
-            previous_critics = [critic for critic in previous_critics if len(critic) > 1]
-            history = pd.concat([history, pd.DataFrame({
-                "query": previous_queries,
-                "score": previous_scores,
-                "explanation": previous_critics
-            })], ignore_index=True)
-            self.recommendations = recommendations
         # Once the process is complete, we need to get the final recommendations by their score.
         # These recommendations are the highest scoring queries produced throughout the process.
         history = history[["query", "score"]]

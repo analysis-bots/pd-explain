@@ -15,5 +15,5 @@ def score_queries(scores: dict) -> float:
     scores = np.array([v for k, v in scores.items()][:4])
     if np.all(scores >= 0) and np.all(scores <= 1):
         return np.mean(scores)
-    scores = np.array([(np.log10(1 + x) / (1 + np.log10(1 + x))) for x in scores])
+    scores = np.array([(np.log10(1 + x) / (1 + np.log10(1 + np.max(scores)))) for x in scores])
     return np.mean(scores)

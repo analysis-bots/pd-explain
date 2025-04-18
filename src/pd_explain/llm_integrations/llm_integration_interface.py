@@ -36,14 +36,14 @@ class LLMIntegrationInterface(ABC):
         # If the LLM did not follow instructions and did not put the delimiter at the end, we will try to extract
         # the response without it. This may not be as accurate, but it is better than nothing.
         if len(true_response) == 0:
-            pattern = rf"{delimiter}[^{delimiter}]+$"
+            pattern = rf"{delimiter}[^{delimiter}]+{delimiter}+"
             true_response = re.findall(pattern, response)
             # If we still have no response, then we return None.
             if len(true_response) == 0:
                 return None
 
-        # There should be only one response, so we take the first one.
-        true_response = true_response[0]
+        # There should be only one response, at the end of the string (after the LLM finishes its thinking).
+        true_response = true_response[-1]
         # Remove the delimiter from the response.
         true_response = true_response.replace(delimiter, "")
         return true_response

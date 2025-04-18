@@ -1,5 +1,5 @@
 import numpy as np
-from pandas import DataFrame
+from pandas import DataFrame, Series
 
 from pd_explain.query_recommenders.query_recommender_interface import QueryRecommenderInterface
 from pd_explain.llm_integrations.llm_query_recommender import LLMQueryRecommender
@@ -7,8 +7,6 @@ from pd_explain.llm_integrations.query_refiner import QueryRefiner
 from pd_explain.query_recommenders.query_logger import QueryLogger
 from pd_explain.query_recommenders.query_score_functions import score_queries
 
-from fedex_generator.Operations.Join import Join
-from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Filter import Filter
 
 class LLMBasedQueryRecommender(QueryRecommenderInterface):
@@ -37,8 +35,15 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
         Score the query based on its result.
         This is a placeholder method and should be implemented based on the specific scoring criteria.
         """
-        if query_result.empty:
-            return {}
+        if isinstance(query_result, dict):
+            error = query_result.get("error", None)
+            if error:
+                return {"error": error}, 0
+            query_result = query_result.get("result", None)
+        # If the query result is not a DataFrame or Series, or if it is empty, return an empty score.
+        # The scenario where it is not a DF or series may be when it filters down to a single value, and the result is a scalar.
+        if not (isinstance(query_result, DataFrame) or isinstance(query_result, Series)) or query_result.empty:
+            return {}, 0
         # If a query is not a groupby or a join, its a filter
         if "groupby" not in query and "join" not in query:
             operation = Filter(source_df=self.df, result_df=query_result, source_scheme={})
@@ -48,6 +53,8 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
             # With filters, we can't be 100% sure since we didn't override every single method in DataFrame, and some
             # of the Pandas internals might convert to a DataFrame or Series. I encountered one such case with value_counts,
             # but there may be more.
+            operation = query_result.operation
+        elif "join" in query:
             operation = query_result.operation
 
         scores = operation.explain(top_k=4, measure_only=True)
@@ -73,7 +80,7 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
             # Score the query
             scores, score = self._score_query(query, query_result)
             recommendations[query] = {
-                "query_result": query_result,
+                "query_result": query_result["result"],
                 "score_dict": scores,
                 "score": score
             }
@@ -90,7 +97,8 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
             return_df.reset_index(inplace=True)
             return_df.rename(columns={"query": "query"}, inplace=True)
             return return_df
-        refiner = QueryRefiner(self.df, self.df_name, recommendations, score_function=self._score_query, k=self.k, n=self.n)
+        refiner = QueryRefiner(self.df, self.df_name, recommendations, score_function=self._score_query, k=self.k, n=self.n,
+                               user_requests=self.user_requests)
         refined_recommendations = refiner.do_llm_action()
         return refined_recommendations
 

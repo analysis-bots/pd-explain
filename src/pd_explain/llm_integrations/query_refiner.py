@@ -202,7 +202,13 @@ class QueryRefiner(LLMIntegrationInterface):
                 # Score the queries
                 for query, query_result in applied_actor_response.items():
                     # Score the query
-                    scores, score = self.score_function(query, query_result)
+                    try:
+                        scores, score = self.score_function(query, query_result)
+                    except Exception as e:
+                        scores, score = {"Scoring Error": 0}, 0
+                        print(f"An error occurred while scoring query {query}: {e}. \n"
+                              f"This is not intentional, so we would appreciate it if you could report this issue at "
+                              f"https://github.com/analysis-bots/pd-explain")
                     recommendations[query] = {
                         "query_result": query_result["result"],
                         "score_dict": scores,
@@ -212,10 +218,8 @@ class QueryRefiner(LLMIntegrationInterface):
                 previous_queries = list(self.recommendations.keys())
                 previous_scores = [self.recommendations[query]['score'] for query in previous_queries]
                 previous_critics = [response.replace("*", "").strip() for response in critic_response.split("\n") if response]
-                previous_critics = [critic for critic in previous_critics if len(critic) > 1]
-                if len(previous_critics) != len(previous_scores) or len(previous_critics) != len(previous_queries):                    print(f"Warning: The number of queries and critics do not match. "
-                          f"Queries: {previous_queries}\n \n , Critics: {previous_critics} \n \n , Scores: {previous_scores} \n \n")
                 # Sometimes, empty strings happen because of the above split, so we need to filter them out.
+                previous_critics = [critic for critic in previous_critics if len(critic) > 1]
                 history = pd.concat([history, pd.DataFrame({
                     "query": previous_queries,
                     "score": previous_scores,

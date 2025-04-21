@@ -202,13 +202,7 @@ class QueryRefiner(LLMIntegrationInterface):
                 # Score the queries
                 for query, query_result in applied_actor_response.items():
                     # Score the query
-                    try:
-                        scores, score = self.score_function(query, query_result)
-                    except Exception as e:
-                        scores, score = {"Scoring Error": 0}, 0
-                        print(f"An error occurred while scoring query {query}: {e}. \n"
-                              f"This is not intentional, so we would appreciate it if you could report this issue at "
-                              f"https://github.com/analysis-bots/pd-explain")
+                    scores, score = self.score_function(query, query_result)
                     recommendations[query] = {
                         "query_result": query_result["result"],
                         "score_dict": scores,

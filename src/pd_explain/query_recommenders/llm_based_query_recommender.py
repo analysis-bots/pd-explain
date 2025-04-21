@@ -66,8 +66,11 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
             scores = operation.explain(top_k=4, measure_only=True)
             score = score_queries(scores)
         except Exception as e:
-            scores = {}
+            scores = {"Scoring Error": str(np.nan)}
             score = 0
+            print(f"An error occurred while scoring query {query}: {e}. \n"
+                  f"This is not intentional, so we would appreciate it if you could report this issue at "
+                  f"https://github.com/analysis-bots/pd-explain")
 
         return scores, score
 

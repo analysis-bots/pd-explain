@@ -25,18 +25,24 @@ class LLMIntegrationInterface(ABC):
         pass
 
 
-    def _extract_response(self, response: str, delimiter: str) -> str:
+    def _extract_response(self, response: str, start_delimiter: str, end_delimiter: str = None) -> str | None:
         """
         A universal method to extract the response from the LLM, as long as the response is formatted such that
         it is surrounded by a specific delimiter.
         Specifically, it should be surrounded by the delimiter at the beginning and the end.
         """
-        pattern = rf"{delimiter}[^{delimiter}]+{delimiter}"
+        # If the end delimiter is not provided, we will use the start delimiter as the end delimiter.
+        if end_delimiter is None:
+            end_delimiter = start_delimiter
+        # The LLM may have added its reasoning, which can mess with retrieval via regex if it thought about the
+        # delimiter. If there is no </think> tag this line does nothing.
+        response = response.split("</think>")[-1]
+        pattern = rf"(?<={start_delimiter})[\s\S]+?(?={end_delimiter})"
         true_response = re.findall(pattern, response)
         # If the LLM did not follow instructions and did not put the delimiter at the end, we will try to extract
         # the response without it. This may not be as accurate, but it is better than nothing.
         if len(true_response) == 0:
-            pattern = rf"{delimiter}[^{delimiter}]+{delimiter}+"
+            pattern = rf"(?<={start_delimiter})[\s\S]+?(?={end_delimiter})*"
             true_response = re.findall(pattern, response)
             # If we still have no response, then we return None.
             if len(true_response) == 0:
@@ -45,5 +51,5 @@ class LLMIntegrationInterface(ABC):
         # There should be only one response, at the end of the string (after the LLM finishes its thinking).
         true_response = true_response[-1]
         # Remove the delimiter from the response.
-        true_response = true_response.replace(delimiter, "")
+        true_response = true_response.replace(start_delimiter, "").replace(end_delimiter, "")
         return true_response

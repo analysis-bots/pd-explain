@@ -69,7 +69,8 @@ class LLMQueryRecommender(LLMIntegrationInterface):
         Explain the expected format of the output to the LLM.
         """
         format_instructions = (f"The output should be a list of {self.k} queries. Denote each query with a * and a newline. "
-                               f"The list of queries should be surrounded by @@@@@@@@ both at the beginning and the end, so they can be easily extracted. "
+                               f"The list of queries should be surrounded by <recs> and </recs> at the start and end respectively, so they can be easily extracted. "
+                               f"Not abiding by this format may lead to errors and program crashes. "
                                f"The queries should be valid Pandas queries that can be run as-is. "
                                "If you use aggregation functions, use the function call format, e.g. df['column'].agg('mean'). On groupbys, you can also use the format df.groupby('column').agg({'column1': 'mean', 'column2': 'sum'}). "
                                "Other formats are not allowed and may lead to errors. "
@@ -106,7 +107,7 @@ class LLMQueryRecommender(LLMIntegrationInterface):
             user_messages=user_messages,
             assistant_messages=assistant_messages
         )
-        recommendations = self._extract_response(response, "@")
+        recommendations = self._extract_response(response, "<recs>", "</recs>")
         if recommendations is None or len(recommendations) <= 1:
             return None
         recommendations = recommendations.split("\n")

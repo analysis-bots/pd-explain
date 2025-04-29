@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 from pandas import DataFrame, Series
 
@@ -35,20 +37,24 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
         self.return_all_options = return_all_options
 
 
-    def _score_query(self, query: str, query_result: DataFrame) -> tuple[dict, float]:
+    def _score_query(self, query: str, query_result: DataFrame, constraints: list[str] = None) -> tuple[dict, float, dict]:
         """
         Score the query based on its result.
         This is a placeholder method and should be implemented based on the specific scoring criteria.
         """
+        if constraints is None:
+            constraints = []
         if isinstance(query_result, dict):
             error = query_result.get("error", None)
             if error:
-                return {"error": error}, 0
+                return {"error": error}, 0, {
+                    constraint: "query error" for constraint in constraints
+                }
             query_result = query_result.get("result", None)
         # If the query result is not a DataFrame or Series, or if it is empty, return an empty score.
         # The scenario where it is not a DF or series may be when it filters down to a single value, and the result is a scalar.
         if not (isinstance(query_result, DataFrame) or isinstance(query_result, Series)) or query_result.empty:
-            return {}, 0
+            return {}, 0, {}
         # If a query is not a groupby or a join, its a filter
         if "groupby" not in query and "join" not in query:
             operation = Filter(source_df=self.df, result_df=query_result, source_scheme={})
@@ -72,7 +78,22 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
                   f"This is not intentional, so we would appreciate it if you could report this issue at "
                   f"https://github.com/analysis-bots/pd-explain")
 
-        return scores, score
+        constraints_dict = {}
+        for constraint in constraints:
+            if constraint is not None and constraint.lower() != "none":
+                try:
+                    # The various ways the LLM might refer to the dataframe, despite explicitly telling it
+                    # to refer to it as 'query_result'.
+                    pattern = r"(\bdf\b|\bresult_df\b|\bsource_df\b|\bres\b|\b" + self.df_name + r"\b)"
+                    constraint = re.sub(pattern, "query_result", constraint)
+                    constraint_upheld = eval(constraint)
+                    constraints_dict[constraint] = constraint_upheld
+                except Exception as e:
+                    constraints_dict[constraint] = "Error: " + str(e)
+            else:
+                constraints_dict[constraint] = "None"
+
+        return scores, score, constraints_dict
 
 
 
@@ -90,11 +111,12 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
         recommendations = {}
         for query, query_result in applied_recommendations.items():
             # Score the query
-            scores, score = self._score_query(query, query_result)
+            scores, score, constraint_dict = self._score_query(query, query_result)
             recommendations[query] = {
                 "query_result": query_result["result"],
                 "score_dict": scores,
-                "score": score
+                "score": score,
+                "constraints": constraint_dict
             }
         # Sort the recommendations by score
         recommendations = {k: v for k, v in sorted(recommendations.items(), key=lambda item: -item[1]["score"])}

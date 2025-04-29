@@ -151,16 +151,16 @@ class ExplanationReasoning(LLMIntegrationInterface):
         if self._query_type in ["join", "filter", "groupby"]:
             output_format_explanation = (
                 f"The explanations should be in a numbered list format, with each explanation corresponding to the insight number. "
-                f"Surround the list with @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. "
-                f"Make sure there are @@@@@@@@ symbols both before and after the explanation, or you may crash the program and cause the poor developers to cry and lose their sanity. ")
+                f"Surround the list with <reasoning> and </reasoning> at the start and end respectively to separate it from the rest of the message, and so it can be easily identified by the program. "
+                f"Make sure there is <reasoning> and </reasoning> at the start and end respectively, or you may crash the program and cause the poor developers to cry and lose their sanity. ")
         elif self._query_type == "many_to_one":
             output_format_explanation = (f"The explanations should be in a numbered list format, with the numbers matching what you were provided with. "
-                                         f"Surround the list with @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. "
-                                         f"Make sure there are @@@@@@@@ symbols both before and after the explanation, or you may crash the program and cause the poor developers to cry and lose their sanity. ")
+                                         f"Surround the list with <reasoning> and </reasoning> at the start and end respectively to separate it from the rest of the message, and so it can be easily identified by the program. "
+                                         f"Make sure there is <reasoning> and </reasoning> at the start and end respectively, or you may crash the program and cause the poor developers to cry and lose their sanity. ")
         elif self._query_type == "outlier":
             output_format_explanation = (f"The explanation should be a single sentence,"
-                                         f" surrounded by @@@@@@@@@ to separate it from the rest of the message, and so it can be easily identified by the program. "
-                                         f"Make sure there are @@@@@@@@ symbols both before and after the explanation, or you may crash the program and cause the poor developers to cry and lose their sanity. ")
+                                         f" surrounded by <reasoning> and </reasoning> at the start and end respectively to separate it from the rest of the message, and so it can be easily identified by the program. "
+                                         f"Make sure there is <reasoning> and </reasoning> at the start and end respectively, or you may crash the program and cause the poor developers to cry and lose their sanity. ")
         else:
             raise ValueError("Unrecognized query type. This may have happened if you added a new operation to Fedex, or a new explainer to pd_explain, without updating this method.")
 
@@ -199,7 +199,7 @@ class ExplanationReasoning(LLMIntegrationInterface):
         if response is None:
             return None
         # Extract the explanations from the response.
-        explanation = self._extract_response(response, "@")
+        explanation = self._extract_response(response, "<reasoning>", "</reasoning>")
         # Split the explanation into an array of explanations, with the indexes matching the explanations found and provided
         # as a numbered list to the model and by the model.
         # Regex means: Find any string of one or more digits, followed by a period, and not followed by more digits (to avoid matching decimal points).

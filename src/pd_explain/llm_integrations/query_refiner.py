@@ -62,11 +62,10 @@ class QueryRefiner(LLMIntegrationInterface):
                        "Additionally, suggest constraints on the query that would make it more interesting. "
                        "Constraints must be given as a python expression on a dataframe called 'query_result', which can be evaluated to "
                        "a boolean value. If you would like to not add a constraint, write None instead in the position corresponding "
-                       "to the query. However, this decision should be made only if the query is already very interesting. "
-                       "The constraints should have 1 clause at most. Avoid generating similar constraints to one another. "
+                       "to the query. However, not adding constraints is not recommended and should only be done if there is no way to add a meaningful constraint. "
+                       "The constraints should have 1 clause at most. Avoid generating similar constraints to the ones already generated. "
+                       "Avoid constraints that are a simple filter, such as query_result['column'] > 0. Those are not interesting constraints. "
                        "Make constraints more specific as the iterations go on. Make sure the columns in the constraints match the column names you are provided. "
-                       f"If there are less than {self.k} queries, add None to the corresponding positions in both the score analysis "
-                       f"list and the constraints list, so there are always {self.k} entries. "
                        f"{self._explain_scoring_method()}")
 
         return critic_task
@@ -84,7 +83,9 @@ class QueryRefiner(LLMIntegrationInterface):
                       "You will also be provided with the critic's analysis of the query, and historic queries from this process. "
                       "Your task is to use the critic's analysis to refine the query to make a query that is more interesting, or outright replace the query with a new one if there is no way to refine or fix it. "
                       "If the critic has added constraints, you must make sure that the new query upholds them. Also make sure the "
-                      "constraint terms are in the result's columns and not the index, unless the constraint checks the index, as otherwise checking the constraint will fail. "
+                      "The critic's constraints are in the format of a python expression on a dataframe called 'query_result' - you only need to understand "
+                      "the constraint, and not the code itself. Never add the constraints to the query itself, your job is to make sure the query "
+                      "upholds the constraints by itself and not because you explicitly added them to the query. "
                       "If a query did not uphold a constraint in the previous iteration, you must make sure that the new query upholds it. "
                       "You must also replace the query if it uses the head or tail methods, as these are not interesting queries, even if they have a high score. "
                       "Avoid generating queries that are very similar to the ones already in the history or to one another. "
@@ -110,7 +111,7 @@ class QueryRefiner(LLMIntegrationInterface):
         return data_explanation
 
 
-    def _create_query_list(self) -> str:
+    def _create_query_list(self, constraint_list: list[str] = None) -> str:
         queries = list(self.recommendations.keys())
         query_scores = [self.recommendations[query]['score'] for query in queries]
         query_columns_scores = [self.recommendations[query]['score_dict'] for query in queries]
@@ -121,7 +122,15 @@ class QueryRefiner(LLMIntegrationInterface):
         query_list += f"Their column scores are (in order): {query_columns_scores}. "
         # The below line is commented out because it can take up a lot of the context window, which can lead to errors.
         # query_list += f"Their result descriptions are (in order): {[query_result.describe().to_dict() for query_result in query_results]}. "
-        query_list += f"The number of rows in the result is (in order): {[q.shape[0] if (isinstance(q, DataFrame) or isinstance(q, Series)) else 0 for q  in query_results]}. "
+        query_list += f"The number of rows in the result is (in order): {[q.shape[0] if (isinstance(q, DataFrame) or isinstance(q, Series)) else 0 for q  in query_results]}. \n"
+        if constraint_list is not None and len(constraint_list) > 0:
+            constraint_list_str = ""
+            for i, constraint in enumerate(constraint_list):
+                if constraint is not None:
+                    constraint_list_str += f"Query {i + 1}: {constraint} \n"
+            query_list += (f"The following are the constraints the queries are supposed to uphold. None means there were no "
+                           f"constraints added that round. The number denotes the query each list of constraints corresponds to. "
+                           f"{constraint_list_str}\n. ")
         return query_list
 
 
@@ -134,8 +143,15 @@ class QueryRefiner(LLMIntegrationInterface):
                                "you should provide short explanations of the score of each query, and if there are any errors in the query, "
                                "you should suggest a fix for it. "
                                "The second list should be the constraints on the queries, one for each input query. "
+                               "The constraints should be the python code and ONLY the python code, as it will be evaluated and run directly. "
+                               "Any other text will cause an exception. "
                                "The first list should be enclosed by <scores> and </scores>, and the second list should be enclosed by <constraints> and </constraints>. "
-                               "Not adhering to this format will cause the system to fail. ")
+                               "Not adhering to this format will cause the system to fail. "
+                               "You must never, under no circumstances, repeat the same constraints as those provided to you. "
+                               "You are adding constraints to the list provided to you, repeating them is meaningless. "
+                               "Constraints must use exactly the same column names as the ones provided to you, without any changes. "
+                               f"If there are less than {self.k} queries, add None to the corresponding positions in both the score analysis "
+                               f"list and the constraints list, so there are always {self.k} entries. ")
 
         return format_instructions
 
@@ -163,7 +179,7 @@ class QueryRefiner(LLMIntegrationInterface):
         critic_responses = []
         actor_user_messages = []
         actor_responses = []
-        history = pd.DataFrame(columns=["query", "score", "explanation", "added constraints"])
+        history = pd.DataFrame(columns=["query", "score", "explanation"])
         critic_task = self._define_critic_task()
         actor_task = self._define_actor_task()
         # Save the current pandas options to reset them later
@@ -180,12 +196,23 @@ class QueryRefiner(LLMIntegrationInterface):
         pd.set_option('display.max_colwidth', None)  # No limit on column width
         # Main loop of the process - iterate n times, each time getting critic feedback on existing recommendations,
         # then using that feedback to refine the recommendations using the actor.
+        recommendations = None
         try:
             for i in range(self.n):
+                previous_constraints = []
+                if recommendations is not None:
+                    for query in recommendations.keys():
+                        constraint_string = ""
+                        for constraint in recommendations[query]['constraints']:
+                            constraint_string += f"{constraint}, upheld: {recommendations[query]['constraints'][constraint]}, "
+                        constraint_string = constraint_string[:-2]  # Remove the last comma and space
+                        previous_constraints.append(constraint_string)
+                else:
+                    previous_constraints = ["None" for _ in range(self.k)]
                 critic_message = ""
                 if i >= 1:
                     critic_message += f"This is iteration number {i + 1} of the refinement process. The previous iteration history is (in CSV format): {history.to_csv()}\n"
-                critic_message += self._create_data_explanation() + self._create_query_list() + self._create_critic_format_instructions()
+                critic_message += self._create_data_explanation() + self._create_query_list(previous_constraints) + self._create_critic_format_instructions()
                 critic_user_messages.append(critic_message)
                 # Get the critic's response. We avoid using the assistant messages from the previous iterations,
                 # because it can lead to too large of a context window.
@@ -262,19 +289,12 @@ class QueryRefiner(LLMIntegrationInterface):
                 previous_queries = list(self.recommendations.keys())
                 previous_scores = [self.recommendations[query]['score'] for query in previous_queries]
                 previous_critics = [response.replace("*", "").strip() for response in critic_response.split("\n") if response]
-                previous_constraints = []
-                for query in recommendations.keys():
-                    constraint_string = ""
-                    for constraint in recommendations[query]['constraints']:
-                        constraint_string += f"{constraint}, upheld: {recommendations[query]['constraints'][constraint]}\n"
-                    previous_constraints.append(constraint_string)
                 # Sometimes, empty strings happen because of the above split, so we need to filter them out.
                 previous_critics = [critic for critic in previous_critics if len(critic) > 1]
                 history = pd.concat([history, pd.DataFrame({
                     "query": previous_queries,
                     "score": previous_scores,
                     "explanation": previous_critics,
-                    "added constraints": previous_constraints
                 })], ignore_index=True)
                 self.recommendations = recommendations
                 print(f"Finished iteration {i + 1} of the refinement process. ")

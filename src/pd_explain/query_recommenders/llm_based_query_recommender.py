@@ -89,7 +89,14 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
                     constraint_upheld = eval(constraint)
                     constraints_dict[constraint] = constraint_upheld
                 except Exception as e:
-                    constraints_dict[constraint] = "Error: " + str(e)
+                    # A common cause of exceptions here is that the required columns are in the index
+                    # instead of the columns. So, we need to reset the index and try again.
+                    try:
+                        query_result = query_result.reset_index(drop=False, inplace=False)
+                        constraint_upheld = eval(constraint)
+                        constraints_dict[constraint] = constraint_upheld
+                    except Exception as e:
+                        constraints_dict[constraint] = "Error: " + str(e)
             else:
                 constraints_dict[constraint] = "None"
 

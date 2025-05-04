@@ -1,6 +1,7 @@
 from pd_explain.explainers.fedex_explainer import FedexExplainer
 from pd_explain.explainers.many_to_one_explainer import ManyToOneExplainer
 from pd_explain.explainers.outlier_explainer import OutlierExplainerInterface as OutlierExplainer
+from pd_explain.explainers.metainsight_explainer import MetaInsightExplainer
 
 from singleton_decorator import singleton
 
@@ -26,5 +27,7 @@ class ExplainerFactory:
             return OutlierExplainer(*args, **kwargs)
         elif explainer.replace("_", " ") == "many to one":
             return ManyToOneExplainer(*args, **kwargs)
+        elif explainer.replace("_", "") == "metainsight":
+            return MetaInsightExplainer(*args, **kwargs)
         else:
             raise ValueError(f"Explainer {explainer} not supported.")

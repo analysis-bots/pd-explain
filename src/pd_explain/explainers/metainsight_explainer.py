@@ -4,7 +4,8 @@ from typing import List, Dict, Tuple
 import pandas as pd
 import numpy as np
 from diptest import diptest
-from scipy.stats import gaussian_kde
+from scipy.stats import gaussian_kde, zscore
+from sklearn.linear_model import LinearRegression
 
 
 class PatternType(Enum):
@@ -131,6 +132,9 @@ class PatternEvaluator:
     A class to evaluate different patterns in a series.
     """
 
+    OUTLIER_ZSCORE_THRESHOLD = 2.0  # Z-score threshold for outlier detection
+    TREND_SLOPE_THRESHOLD = 0.01  # Minimum absolute slope for trend detection
+
     @staticmethod
     def unimodality(series: pd.Series) -> (bool, Tuple[str, str]):
         """
@@ -170,14 +174,53 @@ class PatternEvaluator:
 
 
     @staticmethod
-    def trend(series: pd.Series) -> (bool, str):
+    def trend(series: pd.Series) -> (bool, Tuple[str, str]):
         """
-        Evaluates if the series has a trend and returns the highlight.
-        :param series: The series to evaluate.
-        :return: (has_trend, highlight)
+            Evaluates if a time series exhibits a significant trend (upward or downward).
+            Uses linear regression to find the slope.
+            Returns (True, highlight) if a trend is detected, (False, None) otherwise.
+            Highlight is (slope, 'Upward' or 'Downward').
+            """
+        if len(series) < 2:
+            return False, (None, None)
+
+        # Create a simple linear model
+        X = np.arange(len(series)).reshape(-1, 1)  # Independent variable (time index)
+        y = series.values  # Dependent variable (data values)
+
+        model = LinearRegression()
+        model.fit(X, y)
+        slope = model.coef_[0]
+
+        # Check if the slope is significant
+        if abs(slope) > PatternEvaluator.TREND_SLOPE_THRESHOLD:
+            trend_direction = 'Upward' if slope > 0 else 'Downward'
+            return True, (slope, trend_direction)
+        else:
+            return False, (None, None)
+
+    @staticmethod
+    def outlier(series: pd.Series) -> (bool, Tuple[str, str]):
         """
-        # Placeholder for actual trend evaluation logic
-        return False, None
+        Evaluates if a series contains significant outliers.
+        Uses the Z-score method.
+        Returns (True, highlight) if outliers are detected, (False, None) otherwise.
+        Highlight is a list of indices of the outlier points.
+        """
+        if len(series) < 2:
+            return False, (None, None)
+
+        # Calculate Z-scores
+        z_scores = np.abs(zscore(series.dropna()))
+
+        # Find indices where Z-score exceeds the threshold
+        outlier_indices = np.where(z_scores > PatternEvaluator.OUTLIER_ZSCORE_THRESHOLD)[0]
+        outlier_data_points = series[outlier_indices].values.tolist()
+
+        if len(outlier_data_points) > 0:
+            return True, (outlier_data_points, None)
+        else:
+            return False, (None, None)
 
     def __call__(self, series: pd.Series, pattern_type: PatternType) -> (bool, str):
         """
@@ -190,6 +233,8 @@ class PatternEvaluator:
             return self.unimodality(series)
         elif pattern_type == PatternType.TREND:
             return self.trend(series)
+        elif pattern_type == PatternType.OUTLIER:
+            return self.outlier(series)
         else:
             raise ValueError(f"Unsupported pattern type: {pattern_type}")
 

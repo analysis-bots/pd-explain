@@ -27,7 +27,7 @@ class ExplainerFactory:
             return OutlierExplainer(*args, **kwargs)
         elif explainer.replace("_", " ") == "many to one":
             return ManyToOneExplainer(*args, **kwargs)
-        elif explainer.replace("_", "") == "metainsight":
+        elif explainer.replace("_", "").startswith("metainsight"):
             return MetaInsightExplainer(*args, **kwargs)
         else:
             raise ValueError(f"Explainer {explainer} not supported.")

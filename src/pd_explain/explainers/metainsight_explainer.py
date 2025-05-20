@@ -25,29 +25,31 @@ class MetaInsightExplainer(ExplainerInterface):
     Exploratory Data Analysis by Ma et al. (2021).
     """
 
-    def __init__(self, source_df, k=4, min_commonness: float = 0.5,
+    def __init__(self, source_df, top_k=4, min_commonness: float = 0.5,
                  actionability_regularizer=0.1, balance_factor: float = 1,
                  target_columns: List[str] | str = None, measures: List[Tuple[str, str]] = None,
                  operation: Operation = None, correlation_aggregation_method: Literal['avg', 'max', 'sum'] = 'avg',
-                 figs_per_row: int = 2, use_sampling: bool = True, sample_size: int | float = 5000,
+                 figs_in_row: int = 2, use_sampling: bool = True, sample_size: int | float = 5000,
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
         """
         self.metainsights = None
         self.source_df = pd.DataFrame(source_df)
-        self.k = k
+        if top_k is None:
+            top_k = 4
+        self.top_k = top_k
         self.min_commonness = min_commonness
         self.actionability_regulizer = actionability_regularizer
         self.balance_factor = balance_factor
-        self.figs_per_row = figs_per_row
+        self.figs_per_row = figs_in_row
         self.use_sampling = use_sampling
         self.sample_size = sample_size
 
         if self.source_df is None:
             raise ValueError("source_df cannot be None")
 
-        if not isinstance(self.k, int) or self.k <= 0:
+        if not isinstance(self.top_k, int) or self.top_k <= 0:
             raise ValueError("k must be a positive integer")
 
         if 1 < self.min_commonness <= 0:
@@ -104,15 +106,11 @@ class MetaInsightExplainer(ExplainerInterface):
         if len(self.metainsights) == 0:
             return "No metainsights found"
         else:
-            fig = plt.figure(figsize=(30, 25))
-            nrows = math.ceil(self.k / self.figs_per_row)
-            ncols = self.k // nrows
-            main_grid = gridspec.GridSpec(nrows=nrows, ncols=ncols, figure=fig, wspace=0.2, hspace=0.3)
+            fig = plt.figure(figsize=(30, 35))
+            main_grid = gridspec.GridSpec(nrows=self.top_k, ncols=1, figure=fig, wspace=0.2, hspace=1)
 
-            for i, mi in enumerate(self.metainsights[:self.k]):
-                row = i // self.figs_per_row
-                col = i % self.figs_per_row
-                mi.visualize_commonesses(fig=fig, subplot_spec=main_grid[row, col])
+            for i, mi in enumerate(self.metainsights[:self.top_k]):
+                mi.visualize(fig=fig, subplot_spec=main_grid[i, 0])
 
             return None
 
@@ -284,7 +282,7 @@ class MetaInsightExplainer(ExplainerInterface):
         """
         if self.metainsights is None:
             miner = MetaInsightMiner(
-                k=self.k,
+                k=self.top_k,
                 min_commonness=self.min_commonness,
                 actionability_regularizer=self.actionability_regulizer,
                 balance_factor=self.balance_factor

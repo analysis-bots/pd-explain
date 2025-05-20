@@ -99,18 +99,31 @@ class MetaInsightExplainer(ExplainerInterface):
             self.measures = measures
         else:
             # If no measures are provided, we will use a mean on the 3 most correlated numerical columns
-            best_numerical_cols = numerical_cols[:2]
-            self.measures = [(col, 'mean') for col in best_numerical_cols]
+            best_numerical_cols = numerical_cols[:3]
+            self.measures = [(col, 'mean') for col in best_numerical_cols] + [(col, 'std') for col in best_numerical_cols]
 
     def visualize(self) -> None | str:
         if len(self.metainsights) == 0:
             return "No metainsights found"
         else:
-            fig = plt.figure(figsize=(30, 35))
-            main_grid = gridspec.GridSpec(nrows=self.top_k, ncols=1, figure=fig, wspace=0.2, hspace=1)
+            fig = plt.figure(figsize=(30, 40))
+            main_grid = gridspec.GridSpec(nrows=self.top_k + 1, ncols=1, figure=fig,
+                                          wspace=0.2, hspace=1, height_ratios=[1] + [50] * self.top_k)
+            # Create a title grid as the first row, spanning two columns
+            title_grid = gridspec.GridSpecFromSubplotSpec(
+                nrows=1, ncols=2, subplot_spec=main_grid[0, 0], wspace=0.2, hspace=0.2
+            )
+            # Left title : "Common patterns detected"
+            ax_left = fig.add_subplot(title_grid[0, 0])
+            ax_left.set_title("Common patterns detected", fontsize=30)
+            ax_left.axis('off')
+            # Right title : "Exceptions detected"
+            ax_right = fig.add_subplot(title_grid[0, 1])
+            ax_right.set_title("Exceptions to pattern (on the left) detected", fontsize=30)
+            ax_right.axis('off')
 
             for i, mi in enumerate(self.metainsights[:self.top_k]):
-                mi.visualize(fig=fig, subplot_spec=main_grid[i, 0])
+                mi.visualize(fig=fig, subplot_spec=main_grid[i + 1, 0])
 
             return None
 

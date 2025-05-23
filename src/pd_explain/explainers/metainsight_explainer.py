@@ -25,12 +25,14 @@ class MetaInsightExplainer(ExplainerInterface):
     """
 
     def __init__(self, source_df, top_k=4, min_commonness: float = 0.5,
-                 actionability_regularizer=0.1, balance_factor: float = 1,
+                 no_exception_penalty_weight=0.1, balance_factor: float = 1,
                  filter_columns: List[str] | str = None, aggregations: List[Tuple[str, str]] = None,
                  groupby_columns: List[List[str]] | List[str] = None,
                  operation: Operation = None, correlation_aggregation_method: Literal['avg', 'max', 'sum'] = 'avg',
-                 figs_in_row: int = 2, use_sampling: bool = True, sample_size: int | float = 5000,
+                 use_sampling: bool = True, sample_size: int | float = 5000,
                  max_filter_columns: int = 3, max_aggregation_columns: int = 3,
+                 allow_multiple_aggregations: bool = False,
+                 allow_multiple_groupbys: bool = False,
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -41,9 +43,8 @@ class MetaInsightExplainer(ExplainerInterface):
             top_k = 4
         self.top_k = top_k
         self.min_commonness = min_commonness
-        self.actionability_regulizer = actionability_regularizer
+        self.actionability_regulizer = no_exception_penalty_weight
         self.balance_factor = balance_factor
-        self.figs_per_row = figs_in_row
         self.use_sampling = use_sampling
         self.sample_size = sample_size
         self.max_filter_columns = max_filter_columns
@@ -51,6 +52,8 @@ class MetaInsightExplainer(ExplainerInterface):
         self.aggregations = None
         self.filter_columns = None
         self.groupby_columns = None
+        self.allow_multiple_aggregations = allow_multiple_aggregations
+        self.allow_multiple_groupbys = allow_multiple_groupbys
 
         if self.source_df is None:
             raise ValueError("source_df cannot be None")
@@ -109,14 +112,18 @@ class MetaInsightExplainer(ExplainerInterface):
                 operation=operation
             )
 
-        if self.aggregations is None:
+        if self.aggregations is None and not aggregations:
             raise ValueError("No aggregations provided, and no viable aggregation options were found automatically.")
-
+        if self.groupby_columns is None:
+            self.groupby_columns = self.filter_columns
+        if isinstance(self.groupby_columns, list):
+            if any(isinstance(group, str) for group in self.groupby_columns):
+                self.groupby_columns = [[group] if isinstance(group, str) else group for group in self.groupby_columns]
 
     def _prepare_case_groupby(self,
-                                operation: GroupBy,
-                                correlation_aggregation_method: Literal['avg', 'max', 'sum'] = 'avg',
-                                aggregations: List[Tuple[str, str]] = None
+                              operation: GroupBy,
+                              correlation_aggregation_method: Literal['avg', 'max', 'sum'] = 'avg',
+                              aggregations: List[Tuple[str, str]] = None
                               ) -> None:
         """
         Prepare the filter columsn, aggregations and groupby columns in the case we are automatically
@@ -129,7 +136,6 @@ class MetaInsightExplainer(ExplainerInterface):
         # Check if groupby_columns are in the source_df
         if not all(col in self.source_df.columns for col in self.groupby_columns):
             raise ValueError("All groupby_columns must be present in the source dataframe")
-
 
         correlated_cols, numerical_cols = self._find_correlated_columns_multi(self.groupby_columns,
                                                                               method=correlation_aggregation_method)
@@ -156,14 +162,17 @@ class MetaInsightExplainer(ExplainerInterface):
             # If there are aggregations on all columns, we will use them as the aggregations functions on the most highly
             # correlated columns.
             if len(aggregations_on_all) > 0:
-                best_numerical_cols = [col for col in numerical_cols if col not in self.groupby_columns][:self.max_aggregation_columns]
+                best_numerical_cols = [col for col in numerical_cols if col not in self.groupby_columns][
+                                      :self.max_aggregation_columns]
                 for agg_func in aggregations_on_all:
                     self.aggregations += [(col, agg_func) for col in best_numerical_cols]
             # If the operation has no aggregations at all, we will use the most correlated columns to the groupby columns,
             # with mean and std as the aggregation functions.
             if len(agg_dict) == 0 and len(aggregations_on_all) == 0:
-                best_numerical_cols = [col for col in numerical_cols if col not in self.groupby_columns][:self.max_aggregation_columns]
-                self.aggregations += [(col, 'mean') for col in best_numerical_cols] + [(col, 'std') for col in best_numerical_cols]
+                best_numerical_cols = [col for col in numerical_cols if col not in self.groupby_columns][
+                                      :self.max_aggregation_columns]
+                self.aggregations += [(col, 'mean') for col in best_numerical_cols] + [(col, 'std') for col in
+                                                                                       best_numerical_cols]
             # Else, we will use the aggregations from the operation.
             else:
                 col_agg_tuples = []
@@ -174,16 +183,14 @@ class MetaInsightExplainer(ExplainerInterface):
                     # If the column is in the source_df, we will use the aggregations from the operation.
                     for agg_func in agg_func_list:
                         col_agg_tuples.append((col, agg_func))
-                self.aggregations += [col_agg_tuple for col_agg_tuple in col_agg_tuples if col_agg_tuple[0] not in self.groupby_columns]
+                self.aggregations += [col_agg_tuple for col_agg_tuple in col_agg_tuples if
+                                      col_agg_tuple[0] not in self.groupby_columns]
 
         # Finally, set the groupby columns to be every combination of the groupby columns
         self.groupby_columns = list(itertools.combinations(self.groupby_columns, len(self.groupby_columns)))
 
         # Turn each tuple in that list into a list
         self.groupby_columns = [list(group) for group in self.groupby_columns]
-
-
-
 
     def _prepare_case_filter_join(self,
                                   groupby_columns: List[List[str]] = None,
@@ -228,8 +235,10 @@ class MetaInsightExplainer(ExplainerInterface):
             self.aggregations = aggregations
         else:
             # If no aggregations are provided, we will use a mean on the k most correlated numerical columns
-            best_numerical_cols = [col for col in numerical_cols if col not in self.groupby_columns][:self.max_aggregation_columns]
-            self.aggregations = [(col, 'mean') for col in best_numerical_cols] + [(col, 'std') for col in best_numerical_cols]
+            best_numerical_cols = [col for col in numerical_cols if col not in self.groupby_columns][
+                                  :self.max_aggregation_columns]
+            self.aggregations = [(col, 'mean') for col in best_numerical_cols] + [(col, 'std') for col in
+                                                                                  best_numerical_cols]
 
     def visualize(self) -> None | str:
         if len(self.metainsights) == 0:
@@ -240,8 +249,9 @@ class MetaInsightExplainer(ExplainerInterface):
         else:
             num_rows = min(self.top_k, len(self.metainsights))
             fig = plt.figure(figsize=(30, 40))
+            dynamic_hspace = min(1., (0.3 * num_rows))
             main_grid = gridspec.GridSpec(nrows=num_rows + 1, ncols=1, figure=fig,
-                                          wspace=0.2, hspace=1, height_ratios=[1] + [50] * num_rows)
+                                          wspace=0.2, hspace=dynamic_hspace, height_ratios=[1] + [50] * num_rows)
             if any([True for mi in self.metainsights if len(mi.exceptions) > 0]):
                 need_second_column = True
             else:
@@ -249,7 +259,7 @@ class MetaInsightExplainer(ExplainerInterface):
             # Create a title grid as the first row, spanning two columns
             n_cols = 2 if need_second_column else 1
             title_grid = gridspec.GridSpecFromSubplotSpec(
-                nrows=1, ncols=n_cols, subplot_spec=main_grid[0, 0], wspace=0.2, hspace=0.2
+                nrows=1, ncols=n_cols, subplot_spec=main_grid[0, 0]
             )
             # Left title : "Common patterns detected"
             ax_left = fig.add_subplot(title_grid[0, 0])
@@ -365,7 +375,7 @@ class MetaInsightExplainer(ExplainerInterface):
 
         return all_correlations, numerical_corr
 
-    def _find_correlated_columns_multi(self, column_names: List[str], method='avg') -> Tuple[List[str], List[str]]:
+    def _find_correlated_columns_multi(self, column_names: List[str] | List[List[str]], method='avg') -> Tuple[List[str], List[str]]:
         """
         Finds correlated columns for multiple target columns.
 
@@ -377,6 +387,12 @@ class MetaInsightExplainer(ExplainerInterface):
         """
 
         # Dictionary to store correlations for each column
+        all_column_names = set()
+        for col_list in column_names:
+            if isinstance(col_list, str):
+                all_column_names.add(col_list)
+            else:
+                all_column_names.update(col_list)
         all_column_correlations = defaultdict(list)
         all_numerical_columns = set()
 
@@ -457,15 +473,12 @@ class MetaInsightExplainer(ExplainerInterface):
                 source_df = self._sample(self.source_df, self.sample_size)
             else:
                 source_df = self.source_df
-            import time
-            start_time = time.time()
             self.metainsights = miner.mine_metainsights(source_df=source_df,
                                                         filter_dimensions=self.filter_columns,
                                                         measures=self.aggregations,
                                                         breakdown_dimensions=self.groupby_columns,
-                                                        extend_by_measure=False,
-                                                        extend_by_breakdown=False
+                                                        extend_by_measure=self.allow_multiple_aggregations,
+                                                        extend_by_breakdown=self.allow_multiple_groupbys
                                                         )
-            print(f"Mining time: {time.time() - start_time}")
         self.can_run_visualize = True
         return self.metainsights

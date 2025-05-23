@@ -28,7 +28,7 @@ from typing import (
     Hashable,
     Sequence,
     Union,
-    List, Callable, Literal, )
+    List, Callable, Literal, Tuple, )
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
 from pd_explain.explainers import ExplainerFactory
 from pd_explain.utils.global_values import get_use_sampling_value
@@ -94,7 +94,6 @@ class ExpDataFrame(pd.DataFrame):
 
         return _c
 
-
     def llm_recommend(self, custom_requests=None, num_recommendations=4, num_iterations=2,
                       return_all_options: bool = False):
         """
@@ -130,7 +129,6 @@ class ExpDataFrame(pd.DataFrame):
         )
         return recommender.recommend()
 
-
     @property
     def _constructor_sliced(self) -> Callable[..., ExpSeries]:
         return ExpSeries
@@ -163,7 +161,8 @@ class ExpDataFrame(pd.DataFrame):
         if isinstance(to_return, ExpDataFrame) or isinstance(to_return, ExpSeries):
             # We only want to make the updates if the operation is not None, and if the get_item is a column
             # selection, not a row selection (a filter operation).
-            if self.operation is not None and (isinstance(key, str) or (isinstance(key, list)) and all([x in self.columns for x in key])):
+            if self.operation is not None and (
+                    isinstance(key, str) or (isinstance(key, list)) and all([x in self.columns for x in key])):
 
                 # Copy the operation, to avoid changing the original operation of the dataframe.
                 to_return.operation = cpy(self.operation)
@@ -352,9 +351,9 @@ class ExpDataFrame(pd.DataFrame):
                     # We always set update_operation to False, as we don't want to update other dataframes' operations.
                     # We also always set inplace to False, as we don't want to change the original dataframe.
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
-                                                                           columns=columns, axis=axis,
-                                                                           copy=copy, inplace=False, level=level,
-                                                                           errors=errors, update_operation=False)
+                                                                             columns=columns, axis=axis,
+                                                                             copy=copy, inplace=False, level=level,
+                                                                             errors=errors, update_operation=False)
                 else:
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
                                                                              columns=columns, axis=axis,
@@ -748,8 +747,10 @@ class ExpDataFrame(pd.DataFrame):
             left_df = self.copy()
             right_df = right_df.copy()
 
-            left_df = left_df.rename(columns={col: col + lsuffix for col in coinciding_cols}, inplace=False, update_operation=False)
-            right_df = right_df.rename(columns={col: col + rsuffix for col in coinciding_cols}, inplace=False, update_operation=False)
+            left_df = left_df.rename(columns={col: col + lsuffix for col in coinciding_cols}, inplace=False,
+                                     update_operation=False)
+            right_df = right_df.rename(columns={col: col + rsuffix for col in coinciding_cols}, inplace=False,
+                                       update_operation=False)
 
             result_df.operation = Join(left_df, right_df, None, on, result_df, left_name, right_name)
 
@@ -877,7 +878,7 @@ class ExpDataFrame(pd.DataFrame):
 
     def explain(self, schema: dict = None, attributes: List = None, use_sampling: bool | None = None,
                 sample_size: int | float = 5000, top_k: int = None,
-                explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley']='fedex',
+                explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley', 'metainsight'] = 'fedex',
                 target=None, dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
                 consider='right', value=None, attr=None, ignore=None,
@@ -889,11 +890,17 @@ class ExpDataFrame(pd.DataFrame):
                 label_name: str = 'label', explain_errors=True,
                 error_explanation_threshold: float = 0.05, debug_mode: bool = False,
                 add_llm_explanation_reasoning: bool = False,
+                min_commonness: float = 0.5, no_exception_penalty_weight=0.1,
+                balance_factor: float = 1, filter_columns: List[str] | str = None,
+                aggregations: List[Tuple[str, str]] = None, groupby_columns: List[List[str]] | List[str] = None,
+                correlation_aggregation_method: Literal['avg', 'max', 'sum'] = 'avg',
+                max_filter_columns: int = 3, max_aggregation_columns: int = 3,
+                allow_multiple_aggregations: bool = False, allow_multiple_groupbys: bool = False
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
 
-        :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'shapley', 'outlier'. Note
+        :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'shapley', 'outlier', 'metainsight'. Note
         that 'outlier' is only supported for series, not for dataframes.
         :param attributes: All explainers. Which columns to consider in the explanation.
         :param use_sampling: All explainers. Whether or not to use sampling when generating an explanation. This can massively speed up
@@ -950,6 +957,29 @@ class ExpDataFrame(pd.DataFrame):
         Note that setting this to True will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
         Also note that the output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
         :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
+        :param min_commonness: MetaInsight explainer. Patterns must encompass at-least this percentage of the values to
+        be considered a common pattern. Defaults to 0.5.
+        :param no_exception_penalty_weight: MetaInsight explainer. The weight given to the penalty in the case no exceptions
+        are found to a common pattern. Defaults to 0.1. Higher values will give more priority to common patterns with exceptions.
+        :param balance_factor: MetaInsight explainer. The weight given to exceptions when computing the score of a common pattern.
+        Defaults to 1 - same ratio for both common patterns and exceptions. Higher values will give more priority to common patterns without exceptions.
+        :param filter_columns: MetaInsight explainer. The columns to filter on when mining for common patterns.
+        :param max_filter_columns: MetaInsight explainer. The maximum number of filter columns to use when automatically
+        selecting the filter columns. Defaults to 3.
+        :param aggregations: MetaInsight explainer. The aggregations to use when mining for common patterns.
+        :param max_aggregation_columns: MetaInsight explainer. The maximum number of aggregation columns to use when automatically
+        selecting the aggregation columns. Defaults to 3.
+        :param groupby_columns: MetaInsight explainer. The columns to group by when mining for common patterns. If not provided,
+        will be inferred automatically from the filter / aggregation columns.
+        :correlation_aggregation_method: MetaInsight explainer. When auto-selecting groupby / filter / aggregation columns,
+        a correlation based method is used to determine the best method to use. This parameter determines which aggregation
+        function is used to aggregate the computed correlation in the case of multiple columns. Can be either 'avg', 'max' or 'sum'.
+        :param allow_multiple_aggregations: MetaInsight explainer. Whether or not to allow multiple aggregations to be used
+        in the same pattern. Defaults to False. May result in more complex and less interpretable patterns if set to True.
+        :param allow_multiple_groupbys: MetaInsight explainer. Whether or not to allow multiple groupbys to be used in the same pattern.
+        Defaults to False. May result in more complex and less interpretable patterns, possibly with multiple
+        (almost or completely) disjoint indexes if set to True.
+
 
         :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.
         """
@@ -977,9 +1007,19 @@ class ExpDataFrame(pd.DataFrame):
                                              bin_numeric=bin_numeric, num_bins=num_bins, binning_method=binning_method,
                                              label_name=label_name,
                                              use_sampling=use_sampling, sample_size=sample_size,
-                                             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold,
+                                             explain_errors=explain_errors,
+                                             error_explanation_threshold=error_explanation_threshold,
                                              debug_mode=debug_mode,
-                                             add_llm_context_explanations=add_llm_explanation_reasoning
+                                             add_llm_context_explanations=add_llm_explanation_reasoning,
+                                             min_commonness=min_commonness,
+                                             no_exception_penalty_weight=no_exception_penalty_weight,
+                                             balance_factor=balance_factor, filter_columns=filter_columns,
+                                             aggregations=aggregations, groupby_columns=groupby_columns,
+                                             correlation_aggregation_method=correlation_aggregation_method,
+                                             max_filter_columns=max_filter_columns,
+                                             max_aggregation_columns=max_aggregation_columns,
+                                             allow_multiple_aggregations=allow_multiple_aggregations,
+                                             allow_multiple_groupbys=allow_multiple_groupbys
                                              )
         explanation = explainer.generate_explanation()
 

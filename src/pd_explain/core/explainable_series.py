@@ -363,6 +363,9 @@ class ExpSeries(pd.Series):
         :return: explanation figures
         """
 
+        if explainer.lower().startswith('metainsight'):
+            raise ValueError("MetaInsight explainer is not supported for Series.")
+
         use_sampling = use_sampling if use_sampling is not None else get_use_sampling_value()
 
         factory = ExplainerFactory()

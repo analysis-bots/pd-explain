@@ -32,10 +32,33 @@ class MetaInsightExplainer(ExplainerInterface):
                  use_sampling: bool = True, sample_size: int | float = 5000,
                  max_filter_columns: int = 3, max_aggregation_columns: int = 3,
                  allow_multiple_aggregations: bool = False,
-                 allow_multiple_groupbys: bool = False,
+                 allow_multiple_groupbys: bool = False, num_bins: int = 10,
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
+        :param source_df: The source dataframe to explain.
+        :param top_k: The number of top MetaInsights to return.
+        :param min_commonness: The minimum proportion of values that a pattern must cover to be considered common.
+        :param no_exception_penalty_weight: The weight to apply to the actionability regularizer. This penalty lowers the
+        score of patterns that have no exceptions, making them less likely to be selected.
+        :param balance_factor: The weight to apply to exceptions, compared to the common patterns, when computing the score
+        of a MetaInsight. A higher value means causes MetaInsights with many exceptions to have a lower score.
+        :param filter_columns: The columns to filter on. If None, the filter columns will be inferred from the operation.
+        :param aggregations: The aggregations to use. If None, the aggregations will be inferred from the operation.
+        :param groupby_columns: The columns to group by. If None, the groupby columns will be inferred from the operation.
+        :param operation: The operation to use to infer the filter and groupby columns. If None, the filter_columns and
+        groupby_columns must be provided.
+        :param correlation_aggregation_method: The method to use for aggregating the correlation values. Can be 'avg', 'max' or 'sum'.
+        These values are used to determine the most correlated columns to the filter and groupby columns.
+        :param use_sampling: Whether to use sampling to speed up the explanation generation. If True, the source_df will be sampled.
+        :param sample_size: The size of the sample to take. Can be an integer for an absolute amount or a float between 0 and 1 for a relative amount.
+        :param max_filter_columns: The maximum number of filter columns to use when automatically inferring the filter columns.
+        :param max_aggregation_columns: The maximum number of aggregation columns to use when automatically inferring the aggregations.
+        :param allow_multiple_aggregations: Whether to allow multiple aggregations in the same MetaInsight. Can cause the MetaInsight to be more complex
+        and harder to interpret, but can also lead to more interesting insights.
+        :param allow_multiple_groupbys: Whether to allow multiple groupbys in the same MetaInsight. Can cause the MetaInsight to be more complex
+        and harder to interpret, but can also lead to more interesting insights.
+        :param num_bins: The number of bins to use when a filter column is numeric. This is used to discretize the numeric columns.
         """
         self.metainsights = None
         self.source_df = pd.DataFrame(source_df)
@@ -54,6 +77,7 @@ class MetaInsightExplainer(ExplainerInterface):
         self.groupby_columns = None
         self.allow_multiple_aggregations = allow_multiple_aggregations
         self.allow_multiple_groupbys = allow_multiple_groupbys
+        self.n_bins = num_bins
 
         if self.source_df is None:
             raise ValueError("source_df cannot be None")
@@ -97,8 +121,11 @@ class MetaInsightExplainer(ExplainerInterface):
                 self.filter_columns = filter_columns
 
         else:
-            raise ValueError(
-                "If no target_columns are provided, an operation must have been performed prior to using the MetaInsight explainer.")
+            if groupby_columns and aggregations:
+                handle_groupby = True
+            else:
+                raise ValueError(
+                    "If no filter_columns / groupby_columns + aggregations are provided, an operation must have been performed prior to using the MetaInsight explainer.")
 
         if handle_filter_or_join_or_provided_filters:
             self._prepare_case_filter_join(
@@ -240,6 +267,7 @@ class MetaInsightExplainer(ExplainerInterface):
             self.aggregations = [(col, 'mean') for col in best_numerical_cols] + [(col, 'std') for col in
                                                                                   best_numerical_cols]
 
+
     def visualize(self) -> None | str:
         if len(self.metainsights) == 0:
             return (f"""No common patterns detected for the given parameters:
@@ -248,10 +276,15 @@ class MetaInsightExplainer(ExplainerInterface):
                     Aggregations: {self.aggregations}""")
         else:
             num_rows = min(self.top_k, len(self.metainsights))
-            fig = plt.figure(figsize=(30, 40))
+            fig = plt.figure(figsize=(30, 30 * len(self.metainsights)))
             dynamic_hspace = min(1., (0.3 * num_rows))
-            main_grid = gridspec.GridSpec(nrows=num_rows + 1, ncols=1, figure=fig,
-                                          wspace=0.2, hspace=dynamic_hspace, height_ratios=[1] + [50] * num_rows)
+            outer_grid = gridspec.GridSpec(2, 1, hspace=0.05 if len(self.metainsights) > 2 else 0.3,
+                                           figure=fig,
+                                           height_ratios=[0.5, 99.5])
+            main_grid = gridspec.GridSpecFromSubplotSpec(
+                nrows=num_rows, ncols=1, subplot_spec=outer_grid[1, 0],
+                hspace=dynamic_hspace, wspace=0.2
+            )
             if any([True for mi in self.metainsights if len(mi.exceptions) > 0]):
                 need_second_column = True
             else:
@@ -259,7 +292,7 @@ class MetaInsightExplainer(ExplainerInterface):
             # Create a title grid as the first row, spanning two columns
             n_cols = 2 if need_second_column else 1
             title_grid = gridspec.GridSpecFromSubplotSpec(
-                nrows=1, ncols=n_cols, subplot_spec=main_grid[0, 0]
+                nrows=1, ncols=n_cols, subplot_spec=outer_grid[0, 0]
             )
             # Left title : "Common patterns detected"
             ax_left = fig.add_subplot(title_grid[0, 0])
@@ -272,7 +305,7 @@ class MetaInsightExplainer(ExplainerInterface):
                 ax_right.axis('off')
 
             for i, mi in enumerate(self.metainsights[:self.top_k]):
-                mi.visualize(fig=fig, subplot_spec=main_grid[i + 1, 0])
+                mi.visualize(fig=fig, subplot_spec=main_grid[i, 0])
 
             return None
 
@@ -375,7 +408,8 @@ class MetaInsightExplainer(ExplainerInterface):
 
         return all_correlations, numerical_corr
 
-    def _find_correlated_columns_multi(self, column_names: List[str] | List[List[str]], method='avg') -> Tuple[List[str], List[str]]:
+    def _find_correlated_columns_multi(self, column_names: List[str] | List[List[str]], method='avg') -> Tuple[
+        List[str], List[str]]:
         """
         Finds correlated columns for multiple target columns.
 
@@ -478,7 +512,8 @@ class MetaInsightExplainer(ExplainerInterface):
                                                         measures=self.aggregations,
                                                         breakdown_dimensions=self.groupby_columns,
                                                         extend_by_measure=self.allow_multiple_aggregations,
-                                                        extend_by_breakdown=self.allow_multiple_groupbys
+                                                        extend_by_breakdown=self.allow_multiple_groupbys,
+                                                        n_bins=self.n_bins
                                                         )
         self.can_run_visualize = True
         return self.metainsights

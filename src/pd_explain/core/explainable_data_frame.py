@@ -895,7 +895,8 @@ class ExpDataFrame(pd.DataFrame):
                 aggregations: List[Tuple[str, str]] = None, groupby_columns: List[List[str]] | List[str] = None,
                 correlation_aggregation_method: Literal['avg', 'max', 'sum'] = 'avg',
                 max_filter_columns: int = 3, max_aggregation_columns: int = 3,
-                allow_multiple_aggregations: bool = False, allow_multiple_groupbys: bool = False
+                allow_multiple_aggregations: bool = False, allow_multiple_groupbys: bool = False,
+                use_all_groupby_combinations: bool = False,
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
@@ -979,6 +980,9 @@ class ExpDataFrame(pd.DataFrame):
         :param allow_multiple_groupbys: MetaInsight explainer. Whether or not to allow multiple groupbys to be used in the same pattern.
         Defaults to False. May result in more complex and less interpretable patterns, possibly with multiple
         (almost or completely) disjoint indexes if set to True.
+        :param use_all_groupby_combinations:MetaInsight explainer. When automatically inferring on a result of a groupby operation, whether to
+        use all combinations of the groupby columns or just the provided ones. For example, if set to True and the groupby columns are ['A', 'B'],
+        the groupby columns will be [['A'], ['B'], ['A', 'B']]. If set to False, only the provided groupby columns will be used.
 
 
         :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.
@@ -1019,7 +1023,8 @@ class ExpDataFrame(pd.DataFrame):
                                              max_filter_columns=max_filter_columns,
                                              max_aggregation_columns=max_aggregation_columns,
                                              allow_multiple_aggregations=allow_multiple_aggregations,
-                                             allow_multiple_groupbys=allow_multiple_groupbys
+                                             allow_multiple_groupbys=allow_multiple_groupbys,
+                                             use_all_groupby_combinations=use_all_groupby_combinations
                                              )
         explanation = explainer.generate_explanation()
 

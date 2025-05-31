@@ -33,6 +33,7 @@ class MetaInsightExplainer(ExplainerInterface):
                  max_filter_columns: int = 3, max_aggregation_columns: int = 3,
                  allow_multiple_aggregations: bool = False,
                  allow_multiple_groupbys: bool = False, num_bins: int = 10,
+                 use_all_groupby_combinations: bool = False,
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -59,6 +60,9 @@ class MetaInsightExplainer(ExplainerInterface):
         :param allow_multiple_groupbys: Whether to allow multiple groupbys in the same MetaInsight. Can cause the MetaInsight to be more complex
         and harder to interpret, but can also lead to more interesting insights.
         :param num_bins: The number of bins to use when a filter column is numeric. This is used to discretize the numeric columns.
+        :param use_all_groupby_combinations: When automatically inferring on a result of a groupby operation, whether to
+        use all combinations of the groupby columns or just the provided ones. For example, if set to True and the groupby columns are ['A', 'B'],
+        the groupby columns will be [['A'], ['B'], ['A', 'B']]. If set to False, only the provided groupby columns will be used.
         """
         self.metainsights = None
         self.source_df = pd.DataFrame(source_df)
@@ -78,6 +82,7 @@ class MetaInsightExplainer(ExplainerInterface):
         self.allow_multiple_aggregations = allow_multiple_aggregations
         self.allow_multiple_groupbys = allow_multiple_groupbys
         self.n_bins = num_bins
+        self.use_all_groupby_combinations = use_all_groupby_combinations
 
         if self.source_df is None:
             raise ValueError("source_df cannot be None")
@@ -101,7 +106,10 @@ class MetaInsightExplainer(ExplainerInterface):
                 handle_filter_or_join_or_provided_filters = True
             elif isinstance(operation, GroupBy) and not groupby_columns:
                 self.groupby_columns = operation.group_attributes
+                # We want to convert the groupby columns to a list of lists, so that we can handle multiple groupby columns.
                 if isinstance(self.groupby_columns, str):
+                    self.groupby_columns = [self.groupby_columns]
+                if isinstance(self.groupby_columns, list) and any(isinstance(group, str) for group in self.groupby_columns):
                     self.groupby_columns = [self.groupby_columns]
                 self.source_df = pd.DataFrame(operation.source_df)
                 self.filter_columns = []
@@ -161,10 +169,16 @@ class MetaInsightExplainer(ExplainerInterface):
         :param aggregations: The aggregations to use. If None, we will use the most correlated columns to the groupby columns.
         """
         # Check if groupby_columns are in the source_df
-        if not all(col in self.source_df.columns for col in self.groupby_columns):
+        groupby_columns_set = set()
+        for group in self.groupby_columns:
+            if isinstance(group, str):
+                groupby_columns_set.add(group)
+            else:
+                groupby_columns_set.update(group)
+        if not all(col in self.source_df.columns for col in groupby_columns_set):
             raise ValueError("All groupby_columns must be present in the source dataframe")
 
-        correlated_cols, numerical_cols = self._find_correlated_columns_multi(self.groupby_columns,
+        correlated_cols, numerical_cols = self._find_correlated_columns_multi(groupby_columns_set,
                                                                               method=correlation_aggregation_method)
 
         len_filters = len(self.filter_columns)
@@ -213,11 +227,19 @@ class MetaInsightExplainer(ExplainerInterface):
                 self.aggregations += [col_agg_tuple for col_agg_tuple in col_agg_tuples if
                                       col_agg_tuple[0] not in self.groupby_columns]
 
-        # Finally, set the groupby columns to be every combination of the groupby columns
-        self.groupby_columns = list(itertools.combinations(self.groupby_columns, len(self.groupby_columns)))
+        # If the user wants to use all combinations of the groupby columns, we will do that.
+        if self.use_all_groupby_combinations:
+            # Set the groupby columns to be every combination of the groupby columns
+            groupby_columns = []
+            for i in range(1, len(groupby_columns_set) + 1):
+                groupby_columns += list(itertools.combinations(groupby_columns_set, i))
 
-        # Turn each tuple in that list into a list
-        self.groupby_columns = [list(group) for group in self.groupby_columns]
+            # Turn each tuple in that list into a list
+            self.groupby_columns = [list(group) for group in groupby_columns]
+        # Otherwise, only make sure that the groupby_columns are lists
+        else:
+            if isinstance(self.groupby_columns, str):
+                self.groupby_columns = [self.groupby_columns]
 
     def _prepare_case_filter_join(self,
                                   groupby_columns: List[List[str]] = None,
@@ -408,7 +430,7 @@ class MetaInsightExplainer(ExplainerInterface):
 
         return all_correlations, numerical_corr
 
-    def _find_correlated_columns_multi(self, column_names: List[str] | List[List[str]], method='avg') -> Tuple[
+    def _find_correlated_columns_multi(self, column_names: List[str] | List[List[str]] | set[str], method='avg') -> Tuple[
         List[str], List[str]]:
         """
         Finds correlated columns for multiple target columns.

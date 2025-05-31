@@ -212,6 +212,23 @@ class FedexExplainer(ExplainerInterface):
     def can_visualize(self) -> bool:
         return not self._do_not_visualize
 
-    def visualize(self):
-        # Fedex explainers perform the visualization in the generate_explanation method, so we don't need to do anything here.
+    def visualize(self, fedex_output=None, added_explanations=None):
+        if fedex_output is None:
+            # Fedex explainers perform the visualization in the generate_explanation method, so we don't need to do anything here.
+            return None
+        # If we got the output from an external source, we will visualize it here. This may happen if the explainer was
+        # used in a pipeline and the visualization was not done in the generate_explanation method.
+        title, scores, K, figs_in_row, explanations, bins, influence_vals, source_name, show_scores = fedex_output
+        self._operation.draw_figures(
+            title=title,
+            scores=scores,
+            K=K,
+            figs_in_row=figs_in_row,
+            explanations=explanations,
+            bins=bins,
+            influence_vals=influence_vals,
+            source_name=source_name,
+            show_scores=show_scores,
+            added_text=added_explanations
+        )
         return None

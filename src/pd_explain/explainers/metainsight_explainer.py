@@ -226,6 +226,8 @@ class MetaInsightExplainer(ExplainerInterface):
                     if col not in self.source_df.columns:
                         continue
                     # If the column is in the source_df, we will use the aggregations from the operation.
+                    if isinstance(agg_func_list, str):
+                        agg_func_list = [agg_func_list]
                     for agg_func in agg_func_list:
                         col_agg_tuples.append((col, agg_func))
                 self.aggregations += [col_agg_tuple for col_agg_tuple in col_agg_tuples if
@@ -294,24 +296,26 @@ class MetaInsightExplainer(ExplainerInterface):
                                                                                   best_numerical_cols]
 
 
-    def visualize(self) -> None | str:
-        if len(self.metainsights) == 0:
+    def visualize(self, metainsights: List[MetaInsight] = None) -> None | str:
+        if metainsights is None:
+            metainsights = self.metainsights
+        if len(metainsights) == 0:
             return (f"""No common patterns detected for the given parameters:
                     Filter columns: {self.filter_columns}
                     Groupby columns: {self.groupby_columns}
                     Aggregations: {self.aggregations}""")
         else:
-            num_rows = min(self.top_k, len(self.metainsights))
-            fig = plt.figure(figsize=(30, 30 * len(self.metainsights)))
+            num_rows = min(self.top_k, len(metainsights))
+            fig = plt.figure(figsize=(30, 30 * len(metainsights)))
             dynamic_hspace = min(1., (0.3 * num_rows))
-            outer_grid = gridspec.GridSpec(2, 1, hspace=0.05 if len(self.metainsights) > 2 else 0.3,
+            outer_grid = gridspec.GridSpec(2, 1, hspace=0.05 if len(metainsights) > 2 else 0.3,
                                            figure=fig,
                                            height_ratios=[0.5, 99.5])
             main_grid = gridspec.GridSpecFromSubplotSpec(
                 nrows=num_rows, ncols=1, subplot_spec=outer_grid[1, 0],
                 hspace=dynamic_hspace, wspace=0.2
             )
-            if any([True for mi in self.metainsights if len(mi.exceptions) > 0]):
+            if any([True for mi in metainsights if len(mi.exceptions) > 0]):
                 need_second_column = True
             else:
                 need_second_column = False
@@ -330,7 +334,7 @@ class MetaInsightExplainer(ExplainerInterface):
                 ax_right.set_title("Exceptions to (matching) common pattern (left) detected", fontsize=30)
                 ax_right.axis('off')
 
-            for i, mi in enumerate(self.metainsights[:self.top_k]):
+            for i, mi in enumerate(metainsights[:self.top_k]):
                 mi.visualize(fig=fig, subplot_spec=main_grid[i, 0])
 
             return None

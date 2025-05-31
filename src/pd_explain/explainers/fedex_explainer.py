@@ -25,7 +25,8 @@ class FedexExplainer(ExplainerInterface):
                  explainer='fedex', figs_in_row: int = 2, show_scores: bool = False, title: str = None,
                  corr_TH: float = 0.7, consider='right', value=None, attr=None, ignore=None,
                  use_sampling: bool = True, sample_size=5000, debug_mode: bool = False,
-                 add_llm_context_explanations: bool = True,
+                 add_llm_context_explanations: bool = False,
+                 do_not_visualize: bool = False,
                  *args, **kwargs):
         """
         Initialize the FedexExplainer object.
@@ -45,6 +46,9 @@ class FedexExplainer(ExplainerInterface):
         :param consider: The side of the join to consider in the explanation.
         :param use_sampling: Whether to use sampling to speed up the explanation generation process. Default is True.
         :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
+        :param add_llm_context_explanations: Whether to add LLM context explanations to the explanation. Defaults to False.
+        :param do_not_visualize: If True, the visualizations will not be generated. This is useful for when the explainer
+        is used in a context where visualizations are not needed, such as part of a pipeline.
         """
 
         if operation is None:
@@ -94,6 +98,7 @@ class FedexExplainer(ExplainerInterface):
         self._debug_mode = debug_mode
         self._add_llm_context_explanations = add_llm_context_explanations
         self._logger = QueryLogger()
+        self._do_not_visualize = do_not_visualize
 
     def generate_explanation(self):
 
@@ -107,7 +112,9 @@ class FedexExplainer(ExplainerInterface):
                 figs_in_row=self._figs_in_row, show_scores=self._show_scores, title=self._title, corr_TH=self._corr_TH,
                 explainer=self._explainer, consider=self._consider, cont=self._value, attr=self._attr,
                 ignore=self._ignore, use_sampling=self._use_sampling, sample_size=self._sample_size,
-                debug_mode=self._debug_mode, draw_figures=not self._add_llm_context_explanations, return_scores=True
+                debug_mode=self._debug_mode,
+                draw_figures=not self._add_llm_context_explanations and not self._do_not_visualize,
+                return_scores=True
             )
 
             # Write a textual version of the query, using the stored information in the operation object
@@ -203,7 +210,7 @@ class FedexExplainer(ExplainerInterface):
         return self._results
 
     def can_visualize(self) -> bool:
-        return True
+        return not self._do_not_visualize
 
     def visualize(self):
         # Fedex explainers perform the visualization in the generate_explanation method, so we don't need to do anything here.

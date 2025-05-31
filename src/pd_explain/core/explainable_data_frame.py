@@ -897,6 +897,7 @@ class ExpDataFrame(pd.DataFrame):
                 max_filter_columns: int = 3, max_aggregation_columns: int = 3,
                 allow_multiple_aggregations: bool = False, allow_multiple_groupbys: bool = False,
                 use_all_groupby_combinations: bool = False,
+                do_not_visualize: bool = False,
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
@@ -983,7 +984,7 @@ class ExpDataFrame(pd.DataFrame):
         :param use_all_groupby_combinations:MetaInsight explainer. When automatically inferring on a result of a groupby operation, whether to
         use all combinations of the groupby columns or just the provided ones. For example, if set to True and the groupby columns are ['A', 'B'],
         the groupby columns will be [['A'], ['B'], ['A', 'B']]. If set to False, only the provided groupby columns will be used.
-
+        :param do_not_visualize: If True, the explanation will not be visualized (if the explainer supports disabling visualization).
 
         :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.
         """
@@ -1024,7 +1025,8 @@ class ExpDataFrame(pd.DataFrame):
                                              max_aggregation_columns=max_aggregation_columns,
                                              allow_multiple_aggregations=allow_multiple_aggregations,
                                              allow_multiple_groupbys=allow_multiple_groupbys,
-                                             use_all_groupby_combinations=use_all_groupby_combinations
+                                             use_all_groupby_combinations=use_all_groupby_combinations,
+                                             do_not_visualize=do_not_visualize,
                                              )
         explanation = explainer.generate_explanation()
 

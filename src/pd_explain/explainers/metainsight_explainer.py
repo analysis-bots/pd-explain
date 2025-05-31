@@ -34,6 +34,7 @@ class MetaInsightExplainer(ExplainerInterface):
                  allow_multiple_aggregations: bool = False,
                  allow_multiple_groupbys: bool = False, num_bins: int = 10,
                  use_all_groupby_combinations: bool = False,
+                 do_not_visualize: bool = False,
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -63,6 +64,8 @@ class MetaInsightExplainer(ExplainerInterface):
         :param use_all_groupby_combinations: When automatically inferring on a result of a groupby operation, whether to
         use all combinations of the groupby columns or just the provided ones. For example, if set to True and the groupby columns are ['A', 'B'],
         the groupby columns will be [['A'], ['B'], ['A', 'B']]. If set to False, only the provided groupby columns will be used.
+        :param do_not_visualize: If True, the visualizations will not be generated. This is useful for when the explainer
+        is used in a pipeline and the visualizations are not needed.
         """
         self.metainsights = None
         self.source_df = pd.DataFrame(source_df)
@@ -83,6 +86,7 @@ class MetaInsightExplainer(ExplainerInterface):
         self.allow_multiple_groupbys = allow_multiple_groupbys
         self.n_bins = num_bins
         self.use_all_groupby_combinations = use_all_groupby_combinations
+        self._do_not_visualize = do_not_visualize
 
         if self.source_df is None:
             raise ValueError("source_df cannot be None")
@@ -332,7 +336,7 @@ class MetaInsightExplainer(ExplainerInterface):
             return None
 
     def can_visualize(self) -> bool:
-        return self.can_run_visualize
+        return self.can_run_visualize and not self._do_not_visualize
 
     def _find_correlated_columns(self, column_name: str) -> Tuple[List[Tuple[str, float]], List[Tuple[str, float]]]:
         """

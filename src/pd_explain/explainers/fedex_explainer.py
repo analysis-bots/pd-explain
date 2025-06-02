@@ -218,6 +218,9 @@ class FedexExplainer(ExplainerInterface):
             return None
         # If we got the output from an external source, we will visualize it here. This may happen if the explainer was
         # used in a pipeline and the visualization was not done in the generate_explanation method.
+        if isinstance(fedex_output, str):
+            # If the fedex_output is a string, it means that no explanation was generated, so we will not visualize anything.
+            return None
         title, scores, K, figs_in_row, explanations, bins, influence_vals, source_name, show_scores = fedex_output
         self._operation.draw_figures(
             title=title,

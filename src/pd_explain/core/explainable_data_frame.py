@@ -78,6 +78,7 @@ class ExpDataFrame(pd.DataFrame):
         self.operation = None
         self.explanation = None
         self.filter_items = None
+        self.last_used_explainer = None
 
     # We overwrite the constructor to ensure that an ExpDataFrame is returned when a new DataFrame is created.
     # This is necessary so that methods not overridden in this class, like iloc, return an ExpDataFrame.
@@ -1028,6 +1029,7 @@ class ExpDataFrame(pd.DataFrame):
                                              use_all_groupby_combinations=use_all_groupby_combinations,
                                              do_not_visualize=do_not_visualize,
                                              )
+        self.last_used_explainer = explainer
         explanation = explainer.generate_explanation()
 
         if explainer.can_visualize():

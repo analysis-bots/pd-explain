@@ -59,6 +59,7 @@ class ExpSeries(pd.Series):
         self.operation = None
         self.filter_items = []
         self.filter_query = None
+        self.last_used_explainer = None
 
 
     # We overwrite the constructor to ensure that an ExpSeries is returned when a new Series is created.
@@ -386,6 +387,7 @@ class ExpSeries(pd.Series):
             debug_mode=debug_mode,
             add_llm_context_explanations=add_llm_explanation_reasoning
         )
+        self.last_used_explainer = explainer
 
         explanation = explainer.generate_explanation()
 

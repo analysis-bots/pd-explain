@@ -89,12 +89,11 @@ class DeepDive(LLMIntegrationInterface):
                 "You will be given a user query that describes what the user wants to explore. "
                 "You will also be given the history of queries that have been generated so far in this iterative process,"
                 "as well as the findings derived from those queries. You will not be given the actual DataFrame or query results. "
-                "If there was an error executing a query, it will be provided in the history as well. "
+                "If there was an error executing a query, it will be provided in the history as well. Make absolutely sure you do not repeat errors. "
                 "Your available operators are: filtering using boolean conditions and groupby with aggregation functions [mean, sum, count, nunique, min, max, median, std, sem, var, size, prod]."
-                "All other operators, such as describe, apply, join, quantile, etc. are illegal and will result in an error. "
+                "All other operators and functions, such as describe, apply, join, quantile, query, etc. are illegal and will result in an error. "
                 "You can freely combine these operators or use lambda functions, but you must always return a DataFrame. "
-                "Do not ever perform column selection after a groupby operation, i.e. do not use .groupby('column_name')['another_column'].[some_agg_func](). "
-                "You may use column selection after filtering or join operations, but it must never be a single column. "
+                "Do not ever select only a single column after performing an operation. If you perform column selection, it must always be multiple columns."
                 "Your queries must never create a Series object, they must always return a DataFrame. "
                 "This is an iterative process, and it is expected that you will generate follow-up queries based on the results of previous queries. "
                 "Plan your queries such that they can potentially be followed up on in future iterations. You will be told which iteration you are in, and how many iterations are left. ")
@@ -140,7 +139,7 @@ class DeepDive(LLMIntegrationInterface):
                         f"{col} - numeric: mean={col_data.mean():.2f}, std={col_data.std():.2f}, median={col_data.median():.2f}, "
                         f"min={col_data.min():.2f}, max={col_data.max():.2f}\n")
                 else:
-                    data_description += f"{col} - categorical: unique values={col_data.nunique()}, value_counts={col_data.value_counts()[:15].to_dict()}\n"
+                    data_description += f"{col} - categorical: unique values={col_data.nunique()}\n"
         return data_description
 
     def _describe_input_format(self) -> str:
@@ -160,20 +159,16 @@ class DeepDive(LLMIntegrationInterface):
                 f"that you want to apply the query to. Use index 0 for the original DataFrame. "
                 "Example for a query on index i -  i: [x > 5], i: .groupby('column_name').mean(), etc. "
                 "Make sure you use the correct index for the query you want to apply, and never select an index above the current max index in the history. "
-                "Do not perform column selection after a groupby operation, i.e. do not use .groupby('column_name')['another_column'].[some_agg_func](). "
-                "You may however use column selection after filtering or join operations. "
                 "The query must be a valid Pandas query applicable using eval() with the syntax [df]{query}, where [df] "
                 "is a placeholder for the name of the actual DataFrame (which is not provided to you). "
                 "If you need to use the DataFrame's name (for example to filter it), use the placeholder [df] in your query, and the system will replace it with the actual DataFrame name. "
                 "For example, if you want to filter by a column, write [[df]['column_name'] > 5]. "
                 f"The output must be a list of queries, where each row in the list starts with a * symbol and ends with a new line. "
                 f"The list should be surrounded by <queries> and </queries> tags. so it can be easily extracted programmatically. "
-                f"Do not provide conclusions or summaries - this will be done in the final report, and is not your task. "
-                f"If the history is not empty, always perform follow-up queries to queries that diverged from the original DataFrame, "
-                f"and only do not do so if it is completely impossible to do so. Make sure to design your queries "
-                f"such that they can be followed up on in the next iteration. "
                 f"Avoid repeating queries that have already been applied in the history. "
-                f"If you use the std function, make sure to also specify the ddof parameters, otherwise std throws an error.")
+                f"If you use the std function, make sure to also specify the ddof parameters, otherwise std throws an error."
+                f"If you use the agg function, make sure to provide the aggregations as a dictionary, i.e. {{column_name: 'agg_func'}}, "
+                f"and not as a list of any kind, i.e. ['agg_func_1', 'agg_func_2'] as the list format will throw a NoneType error. ")
 
     def _format_history(self, history) -> str:
         """
@@ -262,10 +257,14 @@ class DeepDive(LLMIntegrationInterface):
                     f"History of queries and findings:\n{formatted_history}\n"
                     f"Data description:\n{data_description}\n"
                     f"Format description:\n{format_description}")
-                response = client(
-                    system_messages=[system_message],
-                    user_messages=[user_message]
-                )
+                try:
+                    response = client(
+                        system_messages=[system_message],
+                        user_messages=[user_message]
+                    )
+                # If anything goes wrong with the LLM, we break out of the loop
+                except Exception as e:
+                    break
                 # Extract the queries from the response
                 queries = self._extract_response(response, "<queries>", "</queries>")
                 if queries is None or len(queries) == 0:
@@ -422,6 +421,20 @@ class DeepDive(LLMIntegrationInterface):
     def _create_important_visualizations_tab(self, query_and_results: dict[int, QueryResultObject],
                                              visualization_queries: list[str | int],
                                              query_tree_str: dict[int, str]) -> widgets.Tab:
+        visualization_vbox = widgets.VBox(
+            layout=widgets.Layout(
+                width='100%',
+                height='100%',  # Set the height to 90vh to fill most of the screen
+                overflow_y='auto'  # Allow vertical scrolling if content is taller than 90vh
+            )
+        )
+        disclaimer = widgets.HTML(
+            value="<p style='font-weight: bold; padding-bottom: 10px; font-size: 14px;'>"
+                  "The queries presented in this tab are the ones deemed most important by the LLM when drawing up the conclusions "
+                  "from the analysis. <br>"
+                  "As such, these may not truly be the most important queries performed during the analysis."
+                  "</p>"
+        )
         #  Create the “Main Query Visualizations” tab,
         #  which itself has subtabs for each query.
         visualization_subtabs = widgets.Tab(
@@ -510,7 +523,8 @@ class DeepDive(LLMIntegrationInterface):
         for i, (_, title) in enumerate(subtabs):
             visualization_subtabs.set_title(i, title)
 
-        return visualization_subtabs
+        visualization_vbox.children = [disclaimer, visualization_subtabs]
+        return visualization_vbox
 
     def _create_query_tree_tab(self, history: pd.DataFrame, query_tree: dict[int, QueryResultObject], query_tree_str: dict[int, str]) -> widgets.Tab:
         """
@@ -549,7 +563,7 @@ class DeepDive(LLMIntegrationInterface):
         main_tabs = widgets.Tab(
             layout=widgets.Layout(
                 width='100%',
-                height='90vh',  # <— fix the height of the entire Tab widget to 90% of viewport
+                height='120vh',  # <— fix the height of the entire Tab widget to 90% of viewport
                 overflow_y='auto'  # <— enable scrolling on the outer Tab if it overflows
             )
         )
@@ -560,9 +574,18 @@ class DeepDive(LLMIntegrationInterface):
         else:
             formatted_report = final_report.replace('\n\n', '</p><p>')
             formatted_report = formatted_report.replace('\n', '<br>')
+            # Replace ** with <strong> and ** with </strong> for bold text
+            pattern = re.compile(r'\*\*(.*?)\*\*')
+            formatted_report = pattern.sub(r'<strong>\1</strong>', formatted_report)
             summary_html = f"""
             <div style='padding:20px; max-width:800px; line-height:1.5; font-family:Arial,sans-serif;'>
                 <p>{formatted_report}</p>
+                <br>
+                <br>
+                <p><strong>This report was generated by a LLM, and may contain inaccuracies or errors.</strong></p>
+                <p>Please review the findings and visualizations carefully, and use your own judgment to draw conclusions.</p>
+                <p>For more information about the queries the LLM deemed the most important when finalizing the report, please refer to the "Important Queries" tab.</p>
+                <p>To see the entire query tree and how the queries relate to each other, please refer to the "Query Tree" tab.</p>
             </div>
             """
         summary_tab = widgets.HTML(value=summary_html)

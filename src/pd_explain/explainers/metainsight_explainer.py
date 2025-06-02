@@ -24,6 +24,11 @@ class MetaInsightExplainer(ExplainerInterface):
     Exploratory Data Analysis by Ma et al. (2021).
     """
 
+    def __len__(self):
+        if self.metainsights is None:
+            return 0
+        return len(self.metainsights)
+
     def __init__(self, source_df, top_k=4, min_commonness: float = 0.5,
                  no_exception_penalty_weight=0.1, balance_factor: float = 1,
                  filter_columns: List[str] | str = None, aggregations: List[Tuple[str, str]] = None,

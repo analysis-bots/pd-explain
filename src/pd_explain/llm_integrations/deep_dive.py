@@ -1,31 +1,64 @@
 import itertools
-from typing import List, Tuple, Any
+from typing import List, Any
 from collections import namedtuple, defaultdict
 from dataclasses import dataclass
 import re
 import sys
 import os
+import ipywidgets as widgets
+import matplotlib.pyplot as plt
 
 import pandas as pd
 from pandas import DataFrame
 
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
+from pd_explain.explainers.fedex_explainer import FedexExplainer
+from pd_explain.explainers.metainsight_explainer import MetaInsightExplainer
 
 apply_result = namedtuple("apply_result", ["index",
                                            "result",
                                            "generating_query",
                                            "error_occurred"])
 
+
 @dataclass(frozen=False)
-class QueryResultObjects:
+class QueryResultObject:
     """
     A class to hold the results of a query applied to a DataFrame.
     It contains the findings from the FedEx and MetaInsight explainers, as well as any error that occurred.
     """
-    fedex: object = None
-    metainsight: object = None
+    fedex: FedexExplainer | None = None
+    metainsight: MetaInsightExplainer | None = None
     error: str | None = None
+
+
+tree_node = namedtuple("tree_node", ["source", "query", "children"])
+
+
+class QueryTree:
+    """
+    A class to built and maintain the query tree for the deep dive analysis.
+    """
+
+    def __init__(self, source_name: str = "Original DataFrame"):
+        self.tree = defaultdict(tree_node)
+        self.source_name = source_name
+        self.tree[0] = tree_node(source=None, query=source_name, children=[])
+
+    def add_node(self, source_idx: int, query: str, new_index: int) -> None:
+        """
+        :param source_idx: The index of the query that this query is based on.
+        :param query: The query to add to the tree.
+        :param new_index: The index of the new query in the tree.
+        """
+        if source_idx not in self.tree:
+            raise ValueError(f"Source index {source_idx} not found in the tree.")
+        self.tree[new_index] = tree_node(source=source_idx, query=query, children=[])
+        self.tree[source_idx].children.append(new_index)
+
+    def get_node(self, idx: int) -> tree_node | None:
+        return self.tree.get(idx, None)
 
 
 class DeepDive(LLMIntegrationInterface):
@@ -57,8 +90,9 @@ class DeepDive(LLMIntegrationInterface):
                 "You will also be given the history of queries that have been generated so far in this iterative process,"
                 "as well as the findings derived from those queries. You will not be given the actual DataFrame or query results. "
                 "If there was an error executing a query, it will be provided in the history as well. "
-                "Your available operators are: filtering using boolean conditions, groupby with aggregation functions [mean, sum, count, nunique, min, max, median, std, sem, var, size, prod], and join operations. "
-                "All other operators, such as describe(), apply(), etc. are illegal and will result in an error. "
+                "Your available operators are: filtering using boolean conditions and groupby with aggregation functions [mean, sum, count, nunique, min, max, median, std, sem, var, size, prod]."
+                "All other operators, such as describe, apply, join, quantile, etc. are illegal and will result in an error. "
+                "You can freely combine these operators or use lambda functions, but you must always return a DataFrame. "
                 "Do not ever perform column selection after a groupby operation, i.e. do not use .groupby('column_name')['another_column'].[some_agg_func](). "
                 "You may use column selection after filtering or join operations, but it must never be a single column. "
                 "Your queries must never create a Series object, they must always return a DataFrame. "
@@ -73,10 +107,11 @@ class DeepDive(LLMIntegrationInterface):
         to give the LLM more information about those columns.
         :return: A string description of the data in the DataFrame.
         """
-        data_description = (f"The DataFrame contains {self.dataframe.shape[0]} rows and {self.dataframe.shape[1]} columns. "
-                f"The columns are: " + ", ".join(
-            [f"{col}: {str(dtype)}" for col, dtype in self.dataframe.dtypes.items()])
-                )
+        data_description = (
+                    f"The DataFrame contains {self.dataframe.shape[0]} rows and {self.dataframe.shape[1]} columns. "
+                    f"The columns are: " + ", ".join(
+                [f"{col}: {str(dtype)}" for col, dtype in self.dataframe.dtypes.items()])
+                    )
         # Create a set of words from the user query to find relevant columns
         user_query_words = re.split(r"\s+|,|;|:|-|_|\.|\(|\)|\{|}|\[|]|\"|'|`", user_query)
         user_query_words = set([word.strip().lower() for word in user_query_words])
@@ -94,14 +129,16 @@ class DeepDive(LLMIntegrationInterface):
         # Find columns that match any of the combinations
         matching_columns = user_query_combinations.intersection(self.dataframe.columns)
         if len(matching_columns) > 0:
-            data_description += (f"\nThe user query potentially mentioned the following columns: {', '.join(matching_columns)}. "
-                                 f"Potentially relevant data about these columns is as follows (there may be missing or irrelevant columns in this list):\n")
+            data_description += (
+                f"\nThe user query potentially mentioned the following columns: {', '.join(matching_columns)}. "
+                f"Potentially relevant data about these columns is as follows (there may be missing or irrelevant columns in this list):\n")
             for col in matching_columns:
                 col_data = self.dataframe[col]
                 is_numeric = col_data.dtype.kind in 'biufcmM' and col_data.nunique() > 6
                 if is_numeric:
-                    data_description += (f"{col} - numeric: mean={col_data.mean():.2f}, std={col_data.std():.2f}, median={col_data.median():.2f}, "
-                                         f"min={col_data.min():.2f}, max={col_data.max():.2f}\n")
+                    data_description += (
+                        f"{col} - numeric: mean={col_data.mean():.2f}, std={col_data.std():.2f}, median={col_data.median():.2f}, "
+                        f"min={col_data.min():.2f}, max={col_data.max():.2f}\n")
                 else:
                     data_description += f"{col} - categorical: unique values={col_data.nunique()}, value_counts={col_data.value_counts()[:15].to_dict()}\n"
         return data_description
@@ -150,8 +187,13 @@ class DeepDive(LLMIntegrationInterface):
     def _apply(self, response: pd.Series, result_mapping: dict) -> List[apply_result]:
         if result_mapping is None:
             raise ValueError("Result mapping must be provided to apply the queries to the DataFrame.")
+        # If the LLM responded with something that ended up being None or empty and was not caught earlier,
+        # we return an empty list, as there is nothing to apply.
+        # Alternatively, we could raise an error, but that may crash the whole process, and possibly
+        # throw away the other perfectly valid results that were generated before this point, or may
+        # be generated later.
         if response is None or len(response) == 0:
-            raise ValueError("Response from LLM is empty or None. Cannot proceed with follow-up action.")
+            return []
         new_results = []
         # Apply the queries from the response to the DataFrame and update the history.
         for query in response:
@@ -182,7 +224,7 @@ class DeepDive(LLMIntegrationInterface):
         return new_results
 
     def do_llm_action(self, user_query: str = None) -> tuple[
-        DataFrame, str | None, defaultdict[Any, dict], list[Any] | list[str]]:
+        DataFrame, str | None, defaultdict[Any, QueryResultObject], list[str], QueryTree]:
         if user_query is None or len(user_query) == 0:
             raise ValueError("User query must be provided for deep dive analysis.")
         history = pd.DataFrame(data=[["Original DataFrame", None, None, None]],
@@ -204,7 +246,8 @@ class DeepDive(LLMIntegrationInterface):
         system_message = self._define_task()
         data_description = self._describe_data(user_query)
         format_description = self._describe_input_format() + self._describe_output_format()
-        query_and_results = defaultdict(dict)
+        query_and_results = defaultdict(QueryResultObject)
+        query_tree = QueryTree(source_name=self.source_name)
         # Temporarily disable console output, because some explainers print to the console, and we don't want that
         current_output = sys.stdout
         sys.stdout = open(os.devnull, 'w')  # Redirect stdout to null device to suppress output
@@ -213,11 +256,12 @@ class DeepDive(LLMIntegrationInterface):
                 # Format the history for the LLM
                 formatted_history = self._format_history(history)
                 # Create the user message for the LLM
-                user_message = (f"This is iteration {iteration + 1} out of {self.num_iterations} of the analysis process.\n"
-                                f"User query: {user_query}\n"
-                                f"History of queries and findings:\n{formatted_history}\n"
-                                f"Data description:\n{data_description}\n"
-                                f"Format description:\n{format_description}")
+                user_message = (
+                    f"This is iteration {iteration + 1} out of {self.num_iterations} of the analysis process.\n"
+                    f"User query: {user_query}\n"
+                    f"History of queries and findings:\n{formatted_history}\n"
+                    f"Data description:\n{data_description}\n"
+                    f"Format description:\n{format_description}")
                 response = client(
                     system_messages=[system_message],
                     user_messages=[user_message]
@@ -227,7 +271,8 @@ class DeepDive(LLMIntegrationInterface):
                 if queries is None or len(queries) == 0:
                     continue
                 queries = queries.split("\n")
-                queries = [query.replace("*", "").strip() for query in queries if query.strip() and query.startswith('*')]
+                queries = [query.replace("*", "").strip() for query in queries if
+                           query.strip() and query.startswith('*')]
                 # Split the queries into a Series
                 queries_series = pd.Series(queries)
                 # Apply the queries to the DataFrame and update the history
@@ -236,7 +281,7 @@ class DeepDive(LLMIntegrationInterface):
                     continue
                 # Update the history DataFrame with new results
                 for result in new_results:
-                    query_and_results[result.index][result.generating_query] = {}
+                    curr_index = len(history)
                     if result.error_occurred:
                         history = history._append({
                             "query": f"{result.index}: {result.generating_query}",
@@ -245,7 +290,7 @@ class DeepDive(LLMIntegrationInterface):
                             "error": str(result.result)
                         }, ignore_index=True)
                         # Store the error in the query and results mapping, so it can be used later
-                        query_and_results[result.index][result.generating_query] = QueryResultObjects(
+                        query_and_results[curr_index] = QueryResultObject(
                             fedex=None,
                             metainsight=None,
                             error=str(result.result)
@@ -253,11 +298,6 @@ class DeepDive(LLMIntegrationInterface):
                     else:
                         # Assuming FedEx and MetaInsight explainers are applied here
                         result_df = result.result
-                        query_and_results[result.index][result.generating_query] = QueryResultObjects(
-                            fedex=None,
-                            metainsight=None,
-                            error=None
-                        )
                         try:
                             fedex_findings = result_df.explain(
                                 explainer="fedex",
@@ -265,16 +305,17 @@ class DeepDive(LLMIntegrationInterface):
                                 do_not_visualize=True
                             )
                             # Store the raw FedEx findings in the query and results mapping
-                            query_and_results[result.index][result.generating_query].fedex = result_df.last_used_explainer
+                            query_and_results[curr_index].fedex = result_df.last_used_explainer
                             title, scores, K, figs_in_row, explanations, bins, influence_vals, source_name, show_scores = fedex_findings
                             fedex_findings = explanations
                             # Remove the LaTeX formatting from the FedEx findings
                             fedex_findings = fedex_findings.values.tolist()
-                            fedex_findings = [finding.replace("bf", "").replace("$", "").replace("\n", "") for finding in
+                            fedex_findings = [finding.replace("bf", "").replace("$", "").replace("\n", "") for finding
+                                              in
                                               fedex_findings]
                         except Exception as e:
-                            fedex_findings = e
-                            query_and_results[result.index][result.generating_query].fedex = None
+                            fedex_findings = f"Error: {str(e)}"
+                            query_and_results[curr_index].fedex = None
                         try:
                             metainsight_findings = result_df.explain(
                                 explainer="metainsight",
@@ -284,16 +325,18 @@ class DeepDive(LLMIntegrationInterface):
                                 max_aggregation_columns=3,
                             )
                             # Store the MetaInsight objects in the query and results mapping
-                            query_and_results[result.index][result.generating_query].metainsight = result_df.last_used_explainer
+                            query_and_results[curr_index].metainsight = result_df.last_used_explainer
                         except Exception as e:
-                            metainsight_findings = e
-                            query_and_results[result.index][result.generating_query].metainsight = None
+                            metainsight_findings = f"Error: {str(e)}"
+                            query_and_results[curr_index].metainsight = None
                         history = history._append({
                             "query": f"{result.index}: {result.generating_query}",
                             "fedex_explainer_findings": fedex_findings,
                             "metainsight_explainer_findings": metainsight_findings,
                             "error": None
                         }, ignore_index=True)
+                        # Update the query tree with the new query
+                        query_tree.add_node(result.index, result.generating_query, curr_index)
                     # Update the result history mapping with the new results
                     result_history_mapping[len(history) - 1] = result.result
             # At the end of the iterations, generate a final report
@@ -314,7 +357,8 @@ class DeepDive(LLMIntegrationInterface):
                                          f"{self._format_history(history)}\n"
                                          f"Ignore the error column, it is not relevant for the final report.\n"
                                          f"Extract the findings from the history, and generate a final report summarizing the findings, "
-                                         f"according to the user query. \n"
+                                         f"according to the user query. This report, while it should be concise, should be detailed enough for the user to "
+                                         f"understand and draw conclusions from.\n"
                                          f"Provide the report surrounded by <report> and </report> tags, so it can be easily extracted programmatically. "
                                          f"Also, provide a list of the most important queries that were used in the analysis. This list "
                                          f"should be a list of indexes from the history DataFrame, with a * symbol before each index and a new line after each index. "
@@ -340,7 +384,7 @@ class DeepDive(LLMIntegrationInterface):
                 # Re-enable console output if it was disabled
                 # Re-enable console output if it was disabled
                 sys.stdout = current_output if current_output else sys.__stdout__
-                return history, final_report, query_and_results, visualization_queries
+                return history, final_report, query_and_results, visualization_queries, query_tree
         finally:
             # Backup inside the finally block to ensure we restore all options even if an error occurs
             pd.set_option('display.max_rows', display_max_rows)
@@ -350,6 +394,190 @@ class DeepDive(LLMIntegrationInterface):
             # Re-enable console output if it was disabled
             sys.stdout = current_output if current_output else sys.__stdout__
 
+    def _create_query_string(self, query_idx: int, query_tree: QueryTree) -> str:
+        """
+        Create a string representation of the query ancestry for a given query index.
+        :param query_idx: The index of the query in the query tree.
+        :param query_tree: The query tree containing the queries and their ancestry.
+        :return: A string representation of the query ancestry.
+        """
+        current_query_node = query_tree.get_node(query_idx)
+        ancestor_idx = current_query_node.source
+        query_ancestry = []
+        # Traverse the query tree to find the ancestry of the current query
+        while ancestor_idx is not None:
+            query_ancestry.append(current_query_node)
+            ancestor_node = query_tree.get_node(ancestor_idx)
+            ancestor_idx = ancestor_node.source if ancestor_node else None
+            current_query_node = ancestor_node
+        # Reverse to show from root to current query
+        query_ancestry.reverse()
+        query_string = f"{self.source_name}"
+        if query_ancestry:
+            query_string += " -> " + " -> ".join(
+                [f"{node.query}" for node in query_ancestry if node.query is not None]
+            )
+        return query_string
 
-    def visualize_deep_dive(self, history, final_report, query_and_results, visualization_queries):
-        pass
+    def _create_important_visualizations_tab(self, query_and_results: dict[int, QueryResultObject],
+                                             visualization_queries: list[str | int],
+                                             query_tree_str: dict[int, str]) -> widgets.Tab:
+        #  Create the “Main Query Visualizations” tab,
+        #  which itself has subtabs for each query.
+        visualization_subtabs = widgets.Tab(
+            layout=widgets.Layout(
+                width='100%',
+                height='100%',  # <— let it inherit the parent's 90vh
+                overflow_y='auto'  # <— scroll if the content is taller
+            )
+        )
+
+        subtabs = []
+
+        if not visualization_queries:
+            no_viz = widgets.HTML(value="<p>No important queries were identified for visualization.</p>")
+            subtabs.append((no_viz, "No Visualizations"))
+
+        else:
+            for i, query_idx in enumerate(visualization_queries):
+                try:
+                    query_idx = int(query_idx.strip())
+                except ValueError:
+                    continue
+
+                query_info = query_and_results.get(query_idx, None)
+                if query_info is None:
+                    continue
+
+                something_visualized = False
+
+                query_string = query_tree_str[query_idx]
+                query_title = widgets.HTML(value=f"<h2 style='margin-top: 20px; margin-bottom: 10px; align: center;'>"
+                                                 f"Query {query_idx}: {query_string}</h2>")
+
+                # Build a VBox that contains all plots for this single query_idx
+                items_for_this_query = []
+                items_for_this_query.append(query_title)
+
+                # Visualize the FedEx and MetaInsight findings if they exist
+                if query_info.fedex is not None and len(query_info.fedex) > 0:
+                    fedex_title = widgets.HTML(value="<h3>Statistical Changes Analysis (FEDEx Explainer)</h3>")
+                    fedex_output = widgets.Output(layout=widgets.Layout(width='100%'))
+                    with fedex_output:
+                        plt.close('all')
+                        query_info.fedex.visualize(query_info.fedex._results)
+                        plt.show()
+                    items_for_this_query.append(fedex_title)
+                    items_for_this_query.append(fedex_output)
+                    something_visualized = True
+
+                if query_info.metainsight is not None and len(query_info.metainsight) > 0:
+                    meta_title = widgets.HTML(value="<h3>Pattern Detection (MetaInsight Explainer)</h3>")
+                    meta_output = widgets.Output(layout=widgets.Layout(width='100%'))
+                    with meta_output:
+                        plt.close('all')
+                        query_info.metainsight.visualize()
+                        plt.show()
+                    items_for_this_query.append(meta_title)
+                    items_for_this_query.append(meta_output)
+                    something_visualized = True
+
+                # If no visualizations were generated, add a message indicating that
+                if not something_visualized:
+                    items_for_this_query.append(
+                        widgets.HTML(value=f"<p>No visualizations available for this query</p>")
+                    )
+
+                # Wrap the plot outputs in a VBox _without_ imposing a fixed height here.
+                # If you give them no height, each Output widget will be as tall as its figure.
+                # The vertical scrollbar will come from the parent Tab, not from this VBox.
+                query_vbox = widgets.VBox(
+                    children=items_for_this_query,
+                    layout=widgets.Layout(
+                        width='100%',
+                        # *** Notice: we do NOT set height='800px' here. We let the figure expand to its full height. ***
+                        overflow_y='visible',  # <— let the children decide their own height
+                        overflow_x='auto',
+                        border='1px solid #ddd',
+                        padding='10px'
+                    )
+                )
+
+                subtabs.append((query_vbox, f"Query {query_idx}"))
+
+        # Now actually assign the children of visualization_subtabs
+        visualization_subtabs.children = [content for content, _ in subtabs]
+        for i, (_, title) in enumerate(subtabs):
+            visualization_subtabs.set_title(i, title)
+
+        return visualization_subtabs
+
+    def _create_query_tree_tab(self, history: pd.DataFrame, query_tree: dict[int, QueryResultObject], query_tree_str: dict[int, str]) -> widgets.Tab:
+        """
+        Create a tab for the query tree visualization.
+        :param history: The history DataFrame containing the queries and findings.
+        :param query_tree: The query tree containing the queries and their ancestry.
+        :param query_tree_str: A dictionary mapping query indices to their string representations.
+        :return: A Tab widget containing the query tree visualization.
+        """
+        # Placeholder for the Query Tree tab
+        query_tree_tab = widgets.HTML(value="<p>Query tree will be implemented in a future step.</p>")
+        return query_tree_tab
+
+    def visualize_deep_dive(self,
+                            history,
+                            final_report,
+                            query_and_results,
+                            visualization_queries,
+                            query_tree) -> widgets.Tab:
+        """
+        Visualize the deep dive analysis in a Jupyter notebook with a tabbed interface.
+
+        :param history: The history DataFrame containing the queries and findings.
+        :param final_report: The final report generated by the LLM.
+        :param query_and_results: A dictionary mapping query indices to their results.
+        :param visualization_queries: A list of query indices that are important for visualization.
+        :param query_tree: The query tree containing the queries and their ancestry.
+
+        :return: A Tab widget containing the visualizations.
+        """
+
+        # Use the query tree to create a string representation of each query
+        query_tree_str = {idx: self._create_query_string(idx, query_tree) for idx in query_tree.tree.keys()}
+
+        #  Create the main tabs: Summary | Important Queries | Query Tree
+        main_tabs = widgets.Tab(
+            layout=widgets.Layout(
+                width='100%',
+                height='90vh',  # <— fix the height of the entire Tab widget to 90% of viewport
+                overflow_y='auto'  # <— enable scrolling on the outer Tab if it overflows
+            )
+        )
+
+        # Tab 0: Text Summary / HTML
+        if final_report is None:
+            summary_html = "<p>No summary was generated.</p>"
+        else:
+            formatted_report = final_report.replace('\n\n', '</p><p>')
+            formatted_report = formatted_report.replace('\n', '<br>')
+            summary_html = f"""
+            <div style='padding:20px; max-width:800px; line-height:1.5; font-family:Arial,sans-serif;'>
+                <p>{formatted_report}</p>
+            </div>
+            """
+        summary_tab = widgets.HTML(value=summary_html)
+
+        visualizations_subtabs = self._create_important_visualizations_tab(
+            query_and_results, visualization_queries, query_tree_str
+        )
+
+        # Create a placeholder for Query Tree
+        query_tree_tab = self._create_query_tree_tab(history, query_tree, query_tree_str)
+
+        # Hook everything into the main_tabs widget
+        main_tabs.children = [summary_tab, visualizations_subtabs, query_tree_tab]
+        main_tabs.set_title(0, "Summary")
+        main_tabs.set_title(1, "Important Queries")
+        main_tabs.set_title(2, "Query Tree")
+
+        return main_tabs

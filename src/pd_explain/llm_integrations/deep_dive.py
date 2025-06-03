@@ -9,6 +9,7 @@ import ipywidgets as widgets
 import matplotlib.pyplot as plt
 
 import pandas as pd
+from IPython.display import display, HTML
 from pandas import DataFrame
 
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
@@ -59,6 +60,14 @@ class QueryTree:
 
     def get_node(self, idx: int) -> tree_node | None:
         return self.tree.get(idx, None)
+
+    def __getitem__(self, item):
+        """
+        Allows the QueryTree to be indexed like a dictionary.
+        :param item: The index of the query in the tree.
+        :return: The tree node at the given index.
+        """
+        return self.get_node(item)
 
 
 class DeepDive(LLMIntegrationInterface):
@@ -175,9 +184,16 @@ class DeepDive(LLMIntegrationInterface):
         Format the history of queries and findings for the LLM.
         This is a string representation of the history DataFrame.
         """
+        history_string = ""
         if history.empty:
             return "The history is empty."
-        return history.to_string(index=True, header=True)
+        # Truncate the history to the last 30 rows if it is too long, to avoid going over the token limit of the LLM.
+        if len(history) > 30:
+            history_string = ("History is too long, showing the last 30 rows:\n"
+                              f"{history.tail(30).to_string(index=True, header=True)}")
+        else:
+            history_string = history.to_string(index=True, header=True)
+        return history_string
 
     def _apply(self, response: pd.Series, result_mapping: dict) -> List[apply_result]:
         if result_mapping is None:
@@ -331,7 +347,7 @@ class DeepDive(LLMIntegrationInterface):
                         history = history._append({
                             "query": f"{result.index}: {result.generating_query}",
                             "fedex_explainer_findings": fedex_findings,
-                            "metainsight_explainer_findings": metainsight_findings,
+                            "metainsight_explainer_findings": [finding.__str__() for finding in metainsight_findings] ,
                             "error": None
                         }, ignore_index=True)
                         # Update the query tree with the new query
@@ -361,7 +377,8 @@ class DeepDive(LLMIntegrationInterface):
                                          f"Provide the report surrounded by <report> and </report> tags, so it can be easily extracted programmatically. "
                                          f"Also, provide a list of the most important queries that were used in the analysis. This list "
                                          f"should be a list of indexes from the history DataFrame, with a * symbol before each index and a new line after each index. "
-                                         f"This list should be surrounded by <vis> and </vis> tags, so it can be easily extracted programmatically. ")
+                                         f"This list should be surrounded by <vis> and </vis> tags, so it can be easily extracted programmatically. "
+                                         f"This list should be short, and only contain the most important queries that were used in the analysis. ")
             final_report_response = client(
                 system_messages=[final_report_system_message],
                 user_messages=[final_report_user_message]
@@ -380,7 +397,6 @@ class DeepDive(LLMIntegrationInterface):
                 # pd.set_option('display.max_columns', display_max_columns)
                 # pd.set_option('display.width', display_width)
                 # pd.set_option('display.max_colwidth', display_max_colwidth)
-                # Re-enable console output if it was disabled
                 # Re-enable console output if it was disabled
                 sys.stdout = current_output if current_output else sys.__stdout__
                 return history, final_report, query_and_results, visualization_queries, query_tree
@@ -420,7 +436,17 @@ class DeepDive(LLMIntegrationInterface):
 
     def _create_important_visualizations_tab(self, query_and_results: dict[int, QueryResultObject],
                                              visualization_queries: list[str | int],
-                                             query_tree_str: dict[int, str]) -> widgets.Tab:
+                                             query_tree_str: dict[int, str]) -> widgets.VBox:
+        """
+        Create a tab containing visualizations for the important queries identified by the LLM.
+
+        :param query_and_results: A dictionary mapping query indices to their results.
+        :param visualization_queries: A list of query indices that are deemed important for visualization.
+        :param query_tree_str: A dictionary mapping query indices to their string representations.
+
+        :return: A VBox containing the visualizations for the important queries.
+        """
+
         visualization_vbox = widgets.VBox(
             layout=widgets.Layout(
                 width='100%',
@@ -441,7 +467,7 @@ class DeepDive(LLMIntegrationInterface):
             layout=widgets.Layout(
                 width='100%',
                 height='100%',  # <— let it inherit the parent's 90vh
-                overflow_y='auto'  # <— scroll if the content is taller
+                overflow_y='auto',  # <— scroll if the content is taller,
             )
         )
 
@@ -526,7 +552,97 @@ class DeepDive(LLMIntegrationInterface):
         visualization_vbox.children = [disclaimer, visualization_subtabs]
         return visualization_vbox
 
-    def _create_query_tree_tab(self, history: pd.DataFrame, query_tree: dict[int, QueryResultObject], query_tree_str: dict[int, str]) -> widgets.Tab:
+
+    def _create_tree_node(self, node_index: int,  query_tree_str: dict[int, str], history: pd.DataFrame) -> widgets.VBox | None:
+        """
+        Creates a tree node for the query tree visualization.
+        Each tree node is a button that, when clicked, opens a new tab with the visualization of the findings from
+        the explainers.
+        Each button displays the query string, the findings, and in the case there was an error in the query,
+        is painted red and becomes unclickable.
+
+        :param node_index: The index of the tree node to create.
+        :param query_tree_str: A dictionary mapping query indices to their string representations.
+        :param history: The history DataFrame containing the queries and findings.
+        """
+        # Create a button for the tree node
+        node_query_str = query_tree_str.get(node_index, None)
+        # Error handling: if we somehow passed an invalid index, return None
+        if node_query_str is None:
+            return None
+        node_row = history.iloc[node_index] if node_index < len(history) else None
+        # Error handling for the same case
+        if node_row is None:
+            return None
+        error = node_row['error']
+        button_description = f"Query {node_index}: {node_query_str}" if node_index != 0 else f"Original DataFrame: {node_query_str}"
+        if error is not None:
+            # If there was an error, create a red button that is unclickable
+            button = widgets.Button(
+                description=button_description,
+                style=widgets.ButtonStyle(button_color='red'),
+                disabled=True,
+                layout=widgets.Layout(width='100%'),
+            )
+        else:
+            # If there was no error, create a clickable button
+            button = widgets.Button(
+                description=button_description,
+                layout=widgets.Layout(width='100%'),
+                disabled = node_index == 0,  # Disable the button for the original DataFrame (index 0) as it has no findings
+            )
+            # Set the onclick handler to open a new tab with the visualization of the findings
+            # button.on_click(lambda b, idx=node_index: self._open_visualization_tab(idx, history, query_tree_str))
+            # Test on-click: raise an alert with the query string
+            button.on_click(lambda b, idx=node_index: widgets.Output(
+                value=f"Clicked on query {idx}: {query_tree_str.get(idx, 'Unknown Query')}",
+            ))
+        fedex_finding_lines = node_row['fedex_explainer_findings']
+        metainsight_finding_lines = node_row['metainsight_explainer_findings']
+        finding_lines = ""
+        if isinstance(fedex_finding_lines, list) and len(fedex_finding_lines) > 0:
+            finding_lines += "<strong>FedEx Findings:</strong><br>" + "<br>".join(fedex_finding_lines) + "<br>"
+        if isinstance(metainsight_finding_lines, list) and len(metainsight_finding_lines) > 0:
+            finding_lines += "<strong>MetaInsight Findings:</strong><br>" + "<br>".join(metainsight_finding_lines) + "<br>"
+        if len(finding_lines) > 0:
+            findings_html = widgets.HTML(
+                value=finding_lines if finding_lines else "<p>No findings available for this query.</p>",
+                layout=widgets.Layout(width='100%')
+            )
+        else:
+            findings_html = widgets.HTML()
+
+        # Create a VBox to hold the button and the findings
+        tree_node_vbox = widgets.VBox(
+            children=[button, findings_html],
+            layout=widgets.Layout(
+                width='100%',
+                border='1px solid #ddd',
+                padding='10px',
+                margin='5px 0',
+            )
+        )
+        tree_node_vbox.children = [button, findings_html]
+        return tree_node_vbox
+
+
+
+    def _measure_depth(self, node: tree_node, query_tree: QueryTree) -> int:
+        """
+        Measure the depth of a node in the query tree.
+        :param node: The tree node to measure the depth of.
+        :param query_tree: The query tree containing the queries and their ancestry.
+        :return: The depth of the node in the query tree.
+        """
+        if node.source is None:
+            return 0
+        parent_node = query_tree.get_node(node.source)
+        if parent_node is None:
+            return 0
+        return 1 + self._measure_depth(parent_node, query_tree)
+
+    def _create_query_tree_tab(self, history: pd.DataFrame, query_tree: QueryTree,
+                               query_tree_str: dict[int, str]) -> widgets.HBox:
         """
         Create a tab for the query tree visualization.
         :param history: The history DataFrame containing the queries and findings.
@@ -534,9 +650,67 @@ class DeepDive(LLMIntegrationInterface):
         :param query_tree_str: A dictionary mapping query indices to their string representations.
         :return: A Tab widget containing the query tree visualization.
         """
-        # Placeholder for the Query Tree tab
-        query_tree_tab = widgets.HTML(value="<p>Query tree will be implemented in a future step.</p>")
-        return query_tree_tab
+        # The root, the original dataframe, is always at index 0
+        curr_node_index = 0
+        # Create a HBox to hold the query tree visualization
+        query_tree_box = widgets.HBox(
+            layout=widgets.Layout(
+                width='100%',
+                height='100%',
+                overflow_y='auto',
+                overflow_x='auto',  # Allow horizontal scrolling if needed
+            )
+        )
+        # Create the tree structure using BFS traversal
+        seen_set = set()
+        queue = [curr_node_index]
+        depth_map = defaultdict(list)
+        while len(queue) > 0:
+            # Pop the first node from the queue and make sure it has not been seen before
+            current_node_index = queue.pop(0)
+            if current_node_index in seen_set:
+                continue
+            seen_set.add(curr_node_index)
+            curr_node = query_tree[current_node_index]
+            # Add all of the children of the current node to the queue, if they have not been seen before
+            for child_index in curr_node.children:
+                if child_index not in seen_set:
+                    queue.append(child_index)
+            # Create a tree node for the current node
+            node_depth = self._measure_depth(curr_node, query_tree)
+            tree_node = self._create_tree_node(
+                current_node_index,
+                query_tree_str,
+                history
+            )
+            # Place the tree node in the appropriate layer based on its depth, and connect an arrow to it
+            # from its parent node if it has one.
+            if tree_node is not None:
+                depth_map[node_depth].append(tree_node)
+
+        layers = []
+        for depth in depth_map.keys():
+            # For each depth, add the tree nodes to the appropriate layer
+            new_layer = widgets.VBox(
+                layout=widgets.Layout(
+                    width='100%',
+                    # display='flex',
+                    # flex_direction='row',
+                    # flex_wrap='wrap',
+                    justify_content='center',
+                    align_items='center',
+                    padding='20px',
+                ),
+                children=depth_map[depth]
+            )
+            layers.append(new_layer)
+        # Add all layers to the query tree VBox
+        query_tree_box.children = layers
+        return query_tree_box
+
+
+
+
 
     def visualize_deep_dive(self,
                             history,
@@ -602,5 +776,38 @@ class DeepDive(LLMIntegrationInterface):
         main_tabs.set_title(0, "Summary")
         main_tabs.set_title(1, "Important Queries")
         main_tabs.set_title(2, "Query Tree")
+
+        # A complete hack to make the tabs display correctly in Jupyter notebook, so they won't be squished.Add commentMore actions
+        display(
+            HTML(
+                """
+                <style>
+                /* Make every Tab (jupyter-widgets.widget-tab) a vertical flex container */
+                .jupyter-widgets.widget-tab {
+                    display: flex !important;
+                    flex-direction: column;
+                    height: 100%;
+                }
+
+                /* Fix the TabBar at the top, allow horizontal scrolling of tab titles */
+                .jupyter-widgets.widget-tab > .p-TabBar {
+                    flex: 0 0 auto;         /* do not grow or shrink */
+                    overflow-x: auto;       /* horizontal scrollbar if too many tabs */
+                    white-space: nowrap;    /* keep each title on one line */
+                }
+                .jupyter-widgets.widget-tab > .p-TabBar .p-TabBar-tab {
+                    flex: 0 0 auto;         /* prevent individual titles from shrinking */
+                    white-space: nowrap;    /* show full text of each title */
+                }
+
+                /* Make the TabPanels area fill remaining space and scroll vertically */
+                .jupyter-widgets.widget-tab > .p-TabPanels {
+                    flex: 1 1 auto;         /* take up all leftover height */
+                    overflow-y: auto;       /* vertical scrollbar for content */
+                }
+                </style>
+                """
+            )
+        )
 
         return main_tabs

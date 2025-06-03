@@ -7,6 +7,7 @@ import sys
 import os
 import ipywidgets as widgets
 import matplotlib.pyplot as plt
+import textwrap
 
 import pandas as pd
 from IPython.display import display, HTML
@@ -184,16 +185,9 @@ class DeepDive(LLMIntegrationInterface):
         Format the history of queries and findings for the LLM.
         This is a string representation of the history DataFrame.
         """
-        history_string = ""
         if history.empty:
             return "The history is empty."
-        # Truncate the history to the last 30 rows if it is too long, to avoid going over the token limit of the LLM.
-        if len(history) > 30:
-            history_string = ("History is too long, showing the last 30 rows:\n"
-                              f"{history.tail(30).to_string(index=True, header=True)}")
-        else:
-            history_string = history.to_string(index=True, header=True)
-        return history_string
+        return history.to_string(index=True, header=True)
 
     def _apply(self, response: pd.Series, result_mapping: dict) -> List[apply_result]:
         if result_mapping is None:
@@ -325,9 +319,9 @@ class DeepDive(LLMIntegrationInterface):
                             fedex_findings = explanations
                             # Remove the LaTeX formatting from the FedEx findings
                             fedex_findings = fedex_findings.values.tolist()
-                            fedex_findings = [finding.replace("bf", "").replace("$", "").replace("\n", "") for finding
-                                              in
-                                              fedex_findings]
+                            pattern = re.compile(r'\$\\+bf{(.*?)}\$')
+                            fedex_findings = [pattern.sub(r'\1', finding) for finding in fedex_findings]
+                            fedex_findings = [finding.replace("(in green)", "").replace("\n", " ").replace("\\", "") for finding in fedex_findings]
                         except Exception as e:
                             fedex_findings = f"Error: {str(e)}"
                             query_and_results[curr_index].fedex = None
@@ -339,6 +333,7 @@ class DeepDive(LLMIntegrationInterface):
                                 max_filter_columns=3,
                                 max_aggregation_columns=3,
                             )
+                            metainsight_findings = [finding.__str__() for finding in metainsight_findings]
                             # Store the MetaInsight objects in the query and results mapping
                             query_and_results[curr_index].metainsight = result_df.last_used_explainer
                         except Exception as e:
@@ -347,11 +342,11 @@ class DeepDive(LLMIntegrationInterface):
                         history = history._append({
                             "query": f"{result.index}: {result.generating_query}",
                             "fedex_explainer_findings": fedex_findings,
-                            "metainsight_explainer_findings": [finding.__str__() for finding in metainsight_findings] ,
+                            "metainsight_explainer_findings": metainsight_findings ,
                             "error": None
                         }, ignore_index=True)
-                        # Update the query tree with the new query
-                        query_tree.add_node(result.index, result.generating_query, curr_index)
+                    # Update the query tree with the new query
+                    query_tree.add_node(result.index, result.generating_query, curr_index)
                     # Update the result history mapping with the new results
                     result_history_mapping[len(history) - 1] = result.result
             # At the end of the iterations, generate a final report
@@ -393,10 +388,10 @@ class DeepDive(LLMIntegrationInterface):
                 visualization_queries = [query.replace("*", "").strip() for query in visualization_queries if
                                          query.strip() and query.startswith('*')]
                 # Restore the pandas options that were changed
-                # pd.set_option('display.max_rows', display_max_rows)
-                # pd.set_option('display.max_columns', display_max_columns)
-                # pd.set_option('display.width', display_width)
-                # pd.set_option('display.max_colwidth', display_max_colwidth)
+                pd.set_option('display.max_rows', display_max_rows)
+                pd.set_option('display.max_columns', display_max_columns)
+                pd.set_option('display.width', display_width)
+                pd.set_option('display.max_colwidth', display_max_colwidth)
                 # Re-enable console output if it was disabled
                 sys.stdout = current_output if current_output else sys.__stdout__
                 return history, final_report, query_and_results, visualization_queries, query_tree
@@ -432,7 +427,71 @@ class DeepDive(LLMIntegrationInterface):
             query_string += " -> " + " -> ".join(
                 [f"{node.query}" for node in query_ancestry if node.query is not None]
             )
-        return query_string
+        # Replace the placeholder [df] with the source name
+        return query_string.replace("[df]", self.source_name)
+
+    def _create_single_query_visualization_content(self, query_idx: int,
+                                                   query_and_results: dict[int, QueryResultObject],
+                                                   query_tree_str: dict[int, str]) -> widgets.VBox:
+        """
+        Create a VBox containing visualizations for a single query.
+        This is a new helper method to modularize the visualization creation.
+
+        :param query_idx: The index of the query to visualize.
+        :param query_and_results: A dictionary mapping query indices to their results.
+        :param query_tree_str: A dictionary mapping query indices to their string representations.
+        :return: A VBox containing the visualizations for the query.
+        """
+        query_info = query_and_results.get(query_idx, None)
+        if query_info is None:
+            return widgets.VBox([widgets.HTML(value=f"<p>No results found for query {query_idx}.</p>")])
+
+        query_string = query_tree_str.get(query_idx, f"Unknown Query {query_idx}")
+        query_title = widgets.HTML(value=f"<h2 style='margin-top: 20px; margin-bottom: 10px; align: center;'>"
+                                         f"Query {query_idx}: {query_string}</h2>")
+
+        items_for_this_query = [query_title]
+        something_visualized = False
+
+        # Visualize the FedEx and MetaInsight findings if they exist
+        if query_info.fedex is not None and len(query_info.fedex) > 0:
+            fedex_title = widgets.HTML(value="<h3>Statistical Changes Analysis (FEDEx Explainer)</h3>")
+            fedex_output = widgets.Output(layout=widgets.Layout(width='100%'))
+            with fedex_output:
+                plt.close('all')  # Close previous plots to prevent overlap
+                query_info.fedex.visualize(query_info.fedex._results)
+                plt.show()
+            items_for_this_query.append(fedex_title)
+            items_for_this_query.append(fedex_output)
+            something_visualized = True
+
+        if query_info.metainsight is not None and len(query_info.metainsight) > 0:
+            meta_title = widgets.HTML(value="<h3>Pattern Detection (MetaInsight Explainer)</h3>")
+            meta_output = widgets.Output(layout=widgets.Layout(width='100%'))
+            with meta_output:
+                plt.close('all')  # Close previous plots
+                query_info.metainsight.visualize()
+                plt.show()
+            items_for_this_query.append(meta_title)
+            items_for_this_query.append(meta_output)
+            something_visualized = True
+
+        if not something_visualized:
+            items_for_this_query.append(
+                widgets.HTML(value=f"<p>No visualizations available for this query.</p>")
+            )
+
+        query_vbox = widgets.VBox(
+            children=items_for_this_query,
+            layout=widgets.Layout(
+                width='100%',
+                overflow_y='visible',  # Let content determine height
+                overflow_x='auto',
+                border='1px solid #ddd',
+                padding='10px'
+            )
+        )
+        return query_vbox
 
     def _create_important_visualizations_tab(self, query_and_results: dict[int, QueryResultObject],
                                              visualization_queries: list[str | int],
@@ -484,62 +543,10 @@ class DeepDive(LLMIntegrationInterface):
                 except ValueError:
                     continue
 
-                query_info = query_and_results.get(query_idx, None)
-                if query_info is None:
-                    continue
-
-                something_visualized = False
-
-                query_string = query_tree_str[query_idx]
-                query_title = widgets.HTML(value=f"<h2 style='margin-top: 20px; margin-bottom: 10px; align: center;'>"
-                                                 f"Query {query_idx}: {query_string}</h2>")
-
-                # Build a VBox that contains all plots for this single query_idx
-                items_for_this_query = []
-                items_for_this_query.append(query_title)
-
-                # Visualize the FedEx and MetaInsight findings if they exist
-                if query_info.fedex is not None and len(query_info.fedex) > 0:
-                    fedex_title = widgets.HTML(value="<h3>Statistical Changes Analysis (FEDEx Explainer)</h3>")
-                    fedex_output = widgets.Output(layout=widgets.Layout(width='100%'))
-                    with fedex_output:
-                        plt.close('all')
-                        query_info.fedex.visualize(query_info.fedex._results)
-                        plt.show()
-                    items_for_this_query.append(fedex_title)
-                    items_for_this_query.append(fedex_output)
-                    something_visualized = True
-
-                if query_info.metainsight is not None and len(query_info.metainsight) > 0:
-                    meta_title = widgets.HTML(value="<h3>Pattern Detection (MetaInsight Explainer)</h3>")
-                    meta_output = widgets.Output(layout=widgets.Layout(width='100%'))
-                    with meta_output:
-                        plt.close('all')
-                        query_info.metainsight.visualize()
-                        plt.show()
-                    items_for_this_query.append(meta_title)
-                    items_for_this_query.append(meta_output)
-                    something_visualized = True
-
-                # If no visualizations were generated, add a message indicating that
-                if not something_visualized:
-                    items_for_this_query.append(
-                        widgets.HTML(value=f"<p>No visualizations available for this query</p>")
-                    )
-
-                # Wrap the plot outputs in a VBox _without_ imposing a fixed height here.
-                # If you give them no height, each Output widget will be as tall as its figure.
-                # The vertical scrollbar will come from the parent Tab, not from this VBox.
-                query_vbox = widgets.VBox(
-                    children=items_for_this_query,
-                    layout=widgets.Layout(
-                        width='100%',
-                        # *** Notice: we do NOT set height='800px' here. We let the figure expand to its full height. ***
-                        overflow_y='visible',  # <— let the children decide their own height
-                        overflow_x='auto',
-                        border='1px solid #ddd',
-                        padding='10px'
-                    )
+                query_vbox = self._create_single_query_visualization_content(
+                    query_idx=query_idx,
+                    query_and_results=query_and_results,
+                    query_tree_str=query_tree_str
                 )
 
                 subtabs.append((query_vbox, f"Query {query_idx}"))
@@ -553,7 +560,8 @@ class DeepDive(LLMIntegrationInterface):
         return visualization_vbox
 
 
-    def _create_tree_node(self, node_index: int,  query_tree_str: dict[int, str], history: pd.DataFrame) -> widgets.VBox | None:
+    def _create_tree_node(self, node_index: int,  query_tree_str: dict[int, str], history: pd.DataFrame,
+                          query_and_results, parent_index: int = None) -> widgets.VBox | None:
         """
         Creates a tree node for the query tree visualization.
         Each tree node is a button that, when clicked, opens a new tab with the visualization of the findings from
@@ -575,54 +583,161 @@ class DeepDive(LLMIntegrationInterface):
         if node_row is None:
             return None
         error = node_row['error']
-        button_description = f"Query {node_index}: {node_query_str}" if node_index != 0 else f"Original DataFrame: {node_query_str}"
+
+        # Create the text that will go into the visualization for this node.
+        fedex_finding_lines = node_row['fedex_explainer_findings']
+        metainsight_finding_lines = node_row['metainsight_explainer_findings']
+        finding_lines = ""
+        query_str = textwrap.fill(node_query_str, width=50).replace('\n', '<br>')
+        if node_index != 0:
+            finding_lines += f"<strong>Query:</strong> {query_str}"
+        if isinstance(fedex_finding_lines, list) and len(fedex_finding_lines) > 0:
+            if len(finding_lines) > 0:
+                finding_lines += "<br>"
+            finding_lines += f"<strong>FedEx Findings:</strong> {len(fedex_finding_lines)}"
+        if isinstance(metainsight_finding_lines, list) and len(metainsight_finding_lines) > 0:
+            if len(finding_lines) > 0:
+                finding_lines += "<br>"
+            finding_lines += f"<strong>MetaInsight Findings:</strong> {len(metainsight_finding_lines)}"
+        if parent_index is not None:
+            if len(finding_lines) > 0:
+                finding_lines += "<br>"
+            finding_lines += f"<strong>Parent:</strong> {parent_index if parent_index != 0 else 'Original DataFrame'}"
+        if len(finding_lines) > 0:
+            findings_html = widgets.HTML(
+                value=finding_lines if finding_lines else "<p>No findings available for this query.</p>",
+            )
+        else:
+            findings_html = widgets.HTML()
+
+        if node_index != 0 and error is None:
+            # If there are findings to visualize
+            if len(metainsight_finding_lines) > 0 or len(fedex_finding_lines) > 0:
+                button_description = f"Visualize findings for query {node_index}"
+                button_disabled = False
+            else:
+                # If there are no findings to visualize, we still create a button, but it is disabled
+                button_description = f"Nothing to visualize for query {node_index}"
+                button_disabled = True
+        elif node_index == 0:
+            button_description = f"Original DataFrame: {node_query_str}"
+            button_disabled = True
+        else:
+            button_description = f"Error computing query {node_index}"
+            button_disabled = True
+
+        button_layout = widgets.Layout(width='210px',
+                                       height='auto',
+                                       white_space='normal',
+                                       text_wrap='auto',
+                                       justify_self='center',
+                                       align_self='center',
+                                       )
         if error is not None:
             # If there was an error, create a red button that is unclickable
             button = widgets.Button(
                 description=button_description,
-                style=widgets.ButtonStyle(button_color='red'),
                 disabled=True,
-                layout=widgets.Layout(width='100%'),
+                button_style='danger',
+                layout=button_layout,
             )
         else:
             # If there was no error, create a clickable button
             button = widgets.Button(
                 description=button_description,
-                layout=widgets.Layout(width='100%'),
-                disabled = node_index == 0,  # Disable the button for the original DataFrame (index 0) as it has no findings
+                disabled = button_disabled,  # Disable the button for the original DataFrame (index 0) as it has no findings
+                tooltip=f"Click to visualize findings for query {node_index}",
+                button_style='info' if node_index != 0 else 'primary',
+                layout=button_layout,
             )
-            # Set the onclick handler to open a new tab with the visualization of the findings
-            # button.on_click(lambda b, idx=node_index: self._open_visualization_tab(idx, history, query_tree_str))
-            # Test on-click: raise an alert with the query string
-            button.on_click(lambda b, idx=node_index: widgets.Output(
-                value=f"Clicked on query {idx}: {query_tree_str.get(idx, 'Unknown Query')}",
-            ))
-        fedex_finding_lines = node_row['fedex_explainer_findings']
-        metainsight_finding_lines = node_row['metainsight_explainer_findings']
-        finding_lines = ""
-        if isinstance(fedex_finding_lines, list) and len(fedex_finding_lines) > 0:
-            finding_lines += "<strong>FedEx Findings:</strong><br>" + "<br>".join(fedex_finding_lines) + "<br>"
-        if isinstance(metainsight_finding_lines, list) and len(metainsight_finding_lines) > 0:
-            finding_lines += "<strong>MetaInsight Findings:</strong><br>" + "<br>".join(metainsight_finding_lines) + "<br>"
-        if len(finding_lines) > 0:
-            findings_html = widgets.HTML(
-                value=finding_lines if finding_lines else "<p>No findings available for this query.</p>",
-                layout=widgets.Layout(width='100%')
-            )
-        else:
-            findings_html = widgets.HTML()
+
+            # Define the click handler for the button
+            def on_button_click(b, clicked_query_idx=node_index):
+                # Create the content for the new tab using the helper method
+                new_tab_visualization_content = self._create_single_query_visualization_content(
+                    clicked_query_idx,
+                    query_and_results=query_and_results,
+                    query_tree_str=query_tree_str
+                )
+
+                # Create a close button for the new tab
+                close_button = widgets.Button(
+                    description="Close Tab",
+                    button_style='danger',
+                    layout=widgets.Layout(width='100px', margin='10px auto 25px auto')  # Center the close button
+                )
+
+                # Create a VBox to hold the visualization and the close button
+                # This ensures the close button is part of the tab's content and scrolls with it
+                tab_container_vbox = widgets.VBox([close_button, new_tab_visualization_content])
+
+                # Get current children and titles from the main tabs widget
+                # Convert to lists to allow modification
+                self._current_main_tab_children = list(self._main_tabs.children)
+                self._current_main_tab_titles = [self._main_tabs.get_title(i) for i in
+                                                 range(len(self._main_tabs.children))]
+
+                # Add the new tab content and title
+                self._current_main_tab_children.append(tab_container_vbox)
+                new_tab_title = f"Viz: Query {clicked_query_idx}"
+                self._current_main_tab_titles.append(new_tab_title)
+
+                # Update the main tabs' children and titles
+                self._main_tabs.children = tuple(self._current_main_tab_children)
+                for i, title in enumerate(self._current_main_tab_titles):
+                    self._main_tabs.set_title(i, title)
+
+                # Set the newly added tab as the selected one
+                self._main_tabs.selected_index = len(self._current_main_tab_children) - 1
+
+                # Define the click handler for the close button
+                def on_close_button_click(cb):
+                    # Find the index of the tab to close
+                    # We iterate through the current children to find the exact widget instance
+                    try:
+                        tab_to_close_index = self._current_main_tab_children.index(tab_container_vbox)
+                    except ValueError:
+                        # Tab might have already been removed by another close button or action
+                        print("Error: Tab not found for closing.")
+                        return
+
+                    # Remove the tab content and title from the lists
+                    del self._current_main_tab_children[tab_to_close_index]
+                    del self._current_main_tab_titles[tab_to_close_index]
+
+                    # Update the main tabs' children and titles
+                    self._main_tabs.children = tuple(self._current_main_tab_children)
+                    for i, title in enumerate(self._current_main_tab_titles):
+                        self._main_tabs.set_title(i, title)
+
+                    # Adjust selected index if the closed tab was the active one
+                    if self._main_tabs.selected_index == tab_to_close_index:
+                        if len(self._current_main_tab_children) > 0:
+                            # Select the last remaining tab, or the previous one if available
+                            self._main_tabs.selected_index = min(tab_to_close_index,
+                                                                 len(self._current_main_tab_children) - 1)
+                        else:
+                            # This case should ideally not be hit as initial tabs are not closable
+                            pass
+                    elif self._main_tabs.selected_index > tab_to_close_index:
+                        # If a tab after the closed one was selected, its index shifts left
+                        self._main_tabs.selected_index -= 1
+
+                close_button.on_click(on_close_button_click)
+
+            button.on_click(on_button_click)
 
         # Create a VBox to hold the button and the findings
         tree_node_vbox = widgets.VBox(
             children=[button, findings_html],
             layout=widgets.Layout(
-                width='100%',
                 border='1px solid #ddd',
                 padding='10px',
                 margin='5px 0',
+                align_items='stretch',  # Ensures children expand to full width
+                width='100%',  # Important: take full width of parent VBox
             )
         )
-        tree_node_vbox.children = [button, findings_html]
         return tree_node_vbox
 
 
@@ -642,7 +757,7 @@ class DeepDive(LLMIntegrationInterface):
         return 1 + self._measure_depth(parent_node, query_tree)
 
     def _create_query_tree_tab(self, history: pd.DataFrame, query_tree: QueryTree,
-                               query_tree_str: dict[int, str]) -> widgets.HBox:
+                               query_tree_str: dict[int, str], query_and_results) -> widgets.HBox:
         """
         Create a tab for the query tree visualization.
         :param history: The history DataFrame containing the queries and findings.
@@ -652,15 +767,6 @@ class DeepDive(LLMIntegrationInterface):
         """
         # The root, the original dataframe, is always at index 0
         curr_node_index = 0
-        # Create a HBox to hold the query tree visualization
-        query_tree_box = widgets.HBox(
-            layout=widgets.Layout(
-                width='100%',
-                height='100%',
-                overflow_y='auto',
-                overflow_x='auto',  # Allow horizontal scrolling if needed
-            )
-        )
         # Create the tree structure using BFS traversal
         seen_set = set()
         queue = [curr_node_index]
@@ -678,34 +784,56 @@ class DeepDive(LLMIntegrationInterface):
                     queue.append(child_index)
             # Create a tree node for the current node
             node_depth = self._measure_depth(curr_node, query_tree)
-            tree_node = self._create_tree_node(
+            new_node = self._create_tree_node(
                 current_node_index,
                 query_tree_str,
-                history
+                history,
+                parent_index=curr_node.source if curr_node.source is not None else None,
+                query_and_results=query_and_results
             )
             # Place the tree node in the appropriate layer based on its depth, and connect an arrow to it
             # from its parent node if it has one.
-            if tree_node is not None:
-                depth_map[node_depth].append(tree_node)
+            if new_node is not None:
+                depth_map[node_depth].append(new_node)
 
         layers = []
         for depth in depth_map.keys():
+            title_html = widgets.HTML(
+                value=f"<h3 style='text-align: center;'>Depth {depth}</h3>",
+                layout=widgets.Layout(
+                    width='100%',
+                    text_align='center',
+                    margin='10px 0'
+                )
+            )
             # For each depth, add the tree nodes to the appropriate layer
             new_layer = widgets.VBox(
                 layout=widgets.Layout(
-                    width='100%',
-                    # display='flex',
-                    # flex_direction='row',
-                    # flex_wrap='wrap',
-                    justify_content='center',
-                    align_items='center',
+                    min_width='300px',  # Minimum width for each layer
+                    width='auto',  # Let width grow to fit content
+                    flex='1 1 0px',  # Allow all columns to have same width if possible
+                    align_items='stretch',  # Important: makes child nodes fill column width
                     padding='20px',
                 ),
-                children=depth_map[depth]
+                children=[title_html, *depth_map[depth]]
             )
             layers.append(new_layer)
-        # Add all layers to the query tree VBox
-        query_tree_box.children = layers
+
+        query_tree_box = widgets.HBox(
+            layout=widgets.Layout(
+                width='100%',
+                height='100%',
+                overflow_y='auto',
+                overflow_x='auto',
+                overflow='auto',
+                display='flex',
+                flex_direction='row',
+                align_items='flex-start',
+                flex_flow='row nowrap',  # Ensure horizontal scroll
+                flex_wrap='nowrap' # ensures horizontal arrangement, and overflow-x handles it
+            ),
+            children=layers
+        )
         return query_tree_box
 
 
@@ -737,10 +865,11 @@ class DeepDive(LLMIntegrationInterface):
         main_tabs = widgets.Tab(
             layout=widgets.Layout(
                 width='100%',
-                height='120vh',  # <— fix the height of the entire Tab widget to 90% of viewport
+                height='90vh',  # <— fix the height of the entire Tab widget to 90% of viewport
                 overflow_y='auto'  # <— enable scrolling on the outer Tab if it overflows
             )
         )
+        self._main_tabs = main_tabs  # Store the main tabs for later use in the close button handler
 
         # Tab 0: Text Summary / HTML
         if final_report is None:
@@ -769,7 +898,7 @@ class DeepDive(LLMIntegrationInterface):
         )
 
         # Create a placeholder for Query Tree
-        query_tree_tab = self._create_query_tree_tab(history, query_tree, query_tree_str)
+        query_tree_tab = self._create_query_tree_tab(history, query_tree, query_tree_str, query_and_results=query_and_results)
 
         # Hook everything into the main_tabs widget
         main_tabs.children = [summary_tab, visualizations_subtabs, query_tree_tab]

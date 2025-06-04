@@ -94,7 +94,10 @@ class MetaInsightExplainer(ExplainerInterface):
         self._do_not_visualize = do_not_visualize
 
         if self.source_df is None:
-            raise ValueError("source_df cannot be None")
+            raise ValueError("Source dataframe cannot be None")
+
+        if self.source_df.empty:
+            raise ValueError("Source dataframe cannot be empty")
 
         if not isinstance(self.top_k, int) or self.top_k <= 0:
             raise ValueError("k must be a positive integer")

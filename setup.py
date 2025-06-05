@@ -65,6 +65,10 @@ setup(
         'external-explainers>=1.0.0',
         'python-dotenv~=1.0.0',
         'openai~=1.66.0',
+        'ipywidgets>=8.1.0',
+        'ipycytoscape>=1.3.0',
+        'together>=1.4.6',
+        'openai>=1.66.5'
     ],
     cmdclass = {
         'update_dependencies': UpdateDependenciesCommand,

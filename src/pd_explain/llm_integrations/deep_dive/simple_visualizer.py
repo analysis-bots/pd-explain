@@ -1,6 +1,8 @@
 from collections import defaultdict
 import re
 import textwrap
+from typing import Callable
+
 import ipywidgets as widgets
 import matplotlib.pyplot as plt
 from IPython.display import display, HTML
@@ -181,6 +183,81 @@ class SimpleDeepDiveVisualizer:
         visualization_vbox.children = [disclaimer, visualization_subtabs]
         return visualization_vbox
 
+    def _create_on_button_click_handler(self, node_index, query_tree_str: dict[int, str]) -> callable:
+        def on_button_click(b, clicked_query_idx=node_index):
+            # Create the content for the new tab using the helper method
+            new_tab_visualization_content = self._create_single_query_visualization_content(
+                clicked_query_idx,
+                query_tree_str=query_tree_str
+            )
+
+            # Create a close button for the new tab
+            close_button = widgets.Button(
+                description="Close Tab",
+                button_style='danger',
+                layout=widgets.Layout(width='100px', margin='10px auto 25px auto')  # Center the close button
+            )
+
+            # Create a VBox to hold the visualization and the close button
+            # This ensures the close button is part of the tab's content and scrolls with it
+            tab_container_vbox = widgets.VBox([close_button, new_tab_visualization_content])
+
+            # Get current children and titles from the main tabs widget
+            # Convert to lists to allow modification
+            self._current_main_tab_children = list(self.main_tabs.children)
+            self._current_main_tab_titles = [self.main_tabs.get_title(i) for i in
+                                             range(len(self.main_tabs.children))]
+
+            # Add the new tab content and title
+            self._current_main_tab_children.append(tab_container_vbox)
+            new_tab_title = f"Viz: Query {clicked_query_idx}"
+            self._current_main_tab_titles.append(new_tab_title)
+
+            # Update the main tabs' children and titles
+            self.main_tabs.children = tuple(self._current_main_tab_children)
+            for i, title in enumerate(self._current_main_tab_titles):
+                self.main_tabs.set_title(i, title)
+
+            # Set the newly added tab as the selected one
+            self.main_tabs.selected_index = len(self._current_main_tab_children) - 1
+
+            # Define the click handler for the close button
+            def on_close_button_click(cb):
+                # Find the index of the tab to close
+                # We iterate through the current children to find the exact widget instance
+                try:
+                    tab_to_close_index = self._current_main_tab_children.index(tab_container_vbox)
+                except ValueError:
+                    # Tab might have already been removed by another close button or action
+                    print("Error: Tab not found for closing.")
+                    return
+
+                # Remove the tab content and title from the lists
+                del self._current_main_tab_children[tab_to_close_index]
+                del self._current_main_tab_titles[tab_to_close_index]
+
+                # Update the main tabs' children and titles
+                self.main_tabs.children = tuple(self._current_main_tab_children)
+                for i, title in enumerate(self._current_main_tab_titles):
+                    self.main_tabs.set_title(i, title)
+
+                # Adjust selected index if the closed tab was the active one
+                if self.main_tabs.selected_index == tab_to_close_index:
+                    if len(self._current_main_tab_children) > 0:
+                        # Select the last remaining tab, or the previous one if available
+                        self.main_tabs.selected_index = min(tab_to_close_index,
+                                                            len(self._current_main_tab_children) - 1)
+                    else:
+                        # This case should ideally not be hit as initial tabs are not closable
+                        pass
+                elif self.main_tabs.selected_index > tab_to_close_index:
+                    # If a tab after the closed one was selected, its index shifts left
+                    self.main_tabs.selected_index -= 1
+
+            close_button.on_click(on_close_button_click)
+
+        return on_button_click
+
     def _create_tree_node(self, node_index: int, query_tree_str: dict[int, str],
                           parent_index: int = None) -> widgets.VBox | None:
         """
@@ -272,79 +349,10 @@ class SimpleDeepDiveVisualizer:
                 layout=button_layout,
             )
 
-            # Define the click handler for the button
-            def on_button_click(b, clicked_query_idx=node_index):
-                # Create the content for the new tab using the helper method
-                new_tab_visualization_content = self._create_single_query_visualization_content(
-                    clicked_query_idx,
-                    query_tree_str=query_tree_str
-                )
-
-                # Create a close button for the new tab
-                close_button = widgets.Button(
-                    description="Close Tab",
-                    button_style='danger',
-                    layout=widgets.Layout(width='100px', margin='10px auto 25px auto')  # Center the close button
-                )
-
-                # Create a VBox to hold the visualization and the close button
-                # This ensures the close button is part of the tab's content and scrolls with it
-                tab_container_vbox = widgets.VBox([close_button, new_tab_visualization_content])
-
-                # Get current children and titles from the main tabs widget
-                # Convert to lists to allow modification
-                self._current_main_tab_children = list(self.main_tabs.children)
-                self._current_main_tab_titles = [self.main_tabs.get_title(i) for i in
-                                                 range(len(self.main_tabs.children))]
-
-                # Add the new tab content and title
-                self._current_main_tab_children.append(tab_container_vbox)
-                new_tab_title = f"Viz: Query {clicked_query_idx}"
-                self._current_main_tab_titles.append(new_tab_title)
-
-                # Update the main tabs' children and titles
-                self.main_tabs.children = tuple(self._current_main_tab_children)
-                for i, title in enumerate(self._current_main_tab_titles):
-                    self.main_tabs.set_title(i, title)
-
-                # Set the newly added tab as the selected one
-                self.main_tabs.selected_index = len(self._current_main_tab_children) - 1
-
-                # Define the click handler for the close button
-                def on_close_button_click(cb):
-                    # Find the index of the tab to close
-                    # We iterate through the current children to find the exact widget instance
-                    try:
-                        tab_to_close_index = self._current_main_tab_children.index(tab_container_vbox)
-                    except ValueError:
-                        # Tab might have already been removed by another close button or action
-                        print("Error: Tab not found for closing.")
-                        return
-
-                    # Remove the tab content and title from the lists
-                    del self._current_main_tab_children[tab_to_close_index]
-                    del self._current_main_tab_titles[tab_to_close_index]
-
-                    # Update the main tabs' children and titles
-                    self.main_tabs.children = tuple(self._current_main_tab_children)
-                    for i, title in enumerate(self._current_main_tab_titles):
-                        self.main_tabs.set_title(i, title)
-
-                    # Adjust selected index if the closed tab was the active one
-                    if self.main_tabs.selected_index == tab_to_close_index:
-                        if len(self._current_main_tab_children) > 0:
-                            # Select the last remaining tab, or the previous one if available
-                            self.main_tabs.selected_index = min(tab_to_close_index,
-                                                                len(self._current_main_tab_children) - 1)
-                        else:
-                            # This case should ideally not be hit as initial tabs are not closable
-                            pass
-                    elif self.main_tabs.selected_index > tab_to_close_index:
-                        # If a tab after the closed one was selected, its index shifts left
-                        self.main_tabs.selected_index -= 1
-
-                close_button.on_click(on_close_button_click)
-
+            on_button_click = self._create_on_button_click_handler(
+                node_index=node_index,
+                query_tree_str=query_tree_str
+            )
             button.on_click(on_button_click)
 
         # Create a VBox to hold the button and the findings

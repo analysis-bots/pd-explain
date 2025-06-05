@@ -13,7 +13,7 @@ from pd_explain.llm_integrations import Client
 from pd_explain.llm_integrations.deep_dive.simple_visualizer import SimpleDeepDiveVisualizer
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.deep_dive.data_structures import apply_result, QueryResultObject, QueryTree
-from pd_explain.llm_integrations.deep_dive.rich_visualizer import RichDeepDiveVisualizer
+from pd_explain.llm_integrations.deep_dive.graph_visualizer import GraphDeepDiveVisualizer
 
 
 class DeepDive(LLMIntegrationInterface):
@@ -381,7 +381,7 @@ class DeepDive(LLMIntegrationInterface):
     def do_follow_up_action(self, history: pd.DataFrame = None, final_report=None,
                             query_and_results: dict[int, QueryResultObject] = None,
                             visualization_queries: list[int | str] = None, query_tree: QueryTree = None,
-                            source_name: str = None, visualization_type: Literal['rich', 'simple'] = "rich"
+                            source_name: str = None, visualization_type: Literal['graph', 'simple'] = "graph"
                             ):
         """
         Visualize the results of the deep dive analysis.
@@ -403,7 +403,7 @@ class DeepDive(LLMIntegrationInterface):
         """
         all_params_provided = history is not None and final_report is not None and query_and_results is not None \
                               and visualization_queries is not None and query_tree is not None
-        visualizer_class = RichDeepDiveVisualizer if visualization_type == "rich" else SimpleDeepDiveVisualizer
+        visualizer_class = GraphDeepDiveVisualizer if visualization_type == "graph" else SimpleDeepDiveVisualizer
         visualizer = visualizer_class(
             history=history,
             query_and_results=query_and_results,

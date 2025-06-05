@@ -8,17 +8,18 @@ import traceback
 
 import pandas as pd
 from pandas import DataFrame
+from together.error import InvalidRequestError
 
 from pd_explain.llm_integrations import Client
-from pd_explain.llm_integrations.deep_dive.simple_visualizer import SimpleDeepDiveVisualizer
+from pd_explain.llm_integrations.automated_data_exploration.simple_visualizer import SimpleAutomatedExplorationVisualizer
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
-from pd_explain.llm_integrations.deep_dive.data_structures import apply_result, QueryResultObject, QueryTree
-from pd_explain.llm_integrations.deep_dive.graph_visualizer import GraphDeepDiveVisualizer
+from pd_explain.llm_integrations.automated_data_exploration.data_structures import apply_result, QueryResultObject, QueryTree
+from pd_explain.llm_integrations.automated_data_exploration.graph_visualizer import GraphAutomatedExplorationVisualizer
 
 
-class DeepDive(LLMIntegrationInterface):
+class AutomatedDataExploration(LLMIntegrationInterface):
     """
-    A class to facilitate automated "deep dive" analysis of a DataFrame using a large language model (LLM).
+    A class to facilitate automated "deep dive" exploration and analysis of a DataFrame using a large language model (LLM).
     Deep dive analysis is designed such that given a user query of what they want to explore, the LLM will
     generate queries to explore the DataFrame, which will then be analyzed by our explainers to provide insights,
     following which the LLM will generate more queries to further explore the DataFrame.
@@ -110,8 +111,15 @@ class DeepDive(LLMIntegrationInterface):
                 "FedEx findings are the most important statistical changes as a result of the query, and MetaInsight "
                 "findings are the most significant patterns detected in the data after the query was applied.\n")
 
-    def _describe_output_format(self, queries_per_iteration: int) -> str:
-        return (f"You are expected to generate {queries_per_iteration} queries. "
+    def _describe_output_format(self, queries_per_iteration: int, history: pd.DataFrame) -> str:
+        num_errors = history[history['error'].notnull()].shape[0]
+        recent_errors = history.tail(10)[history['error'].notnull()].shape[0]
+        # If there are too many errors in the history, we want to increase the number of queries per iteration
+        if num_errors > history.shape[0] / 3 or recent_errors > 3:
+            queries_per_iteration *= 2
+        return (f"You are expected to generate at-least {queries_per_iteration} queries. "
+                f"Increase this number as needed if there is a significant number of failed queries (errors in the history) or if there are a lot recent errors. "
+                f"Be aggressive about increasing the number of queries, especially if you see that we are not getting enough insights to produce anything meaningful. "
                 f"Each query must be in the format index: query, where index is the index of the row in the history "
                 f"that you want to apply the query to. Use index 0 for the original DataFrame. "
                 "Example for a query on index i -  i: [x > 5], i: .groupby('column_name').mean(), etc. "
@@ -218,12 +226,13 @@ class DeepDive(LLMIntegrationInterface):
         client = Client()
         system_message = self._define_task()
         data_description = self._describe_data(user_query)
-        format_description = self._describe_input_format() + self._describe_output_format(queries_per_iteration)
+        format_description = self._describe_input_format() + self._describe_output_format(queries_per_iteration, history)
         query_and_results = defaultdict(QueryResultObject)
         query_tree = QueryTree(source_name=self.source_name)
         # Temporarily disable console output, because some explainers print to the console, and we don't want that
         current_output = sys.stdout
         sys.stdout = open(os.devnull, 'w')  # Redirect stdout to null device to suppress output
+        print_error = False
         try:
             for iteration in range(num_iterations):
                 # Format the history for the LLM
@@ -235,16 +244,16 @@ class DeepDive(LLMIntegrationInterface):
                     f"History of queries and findings:\n{formatted_history}\n"
                     f"Data description:\n{data_description}\n"
                     f"Format description:\n{format_description}")
+                # If anything goes wrong with the LLM, we break out of the loop.
+                # Examples of errors that can occur are:
+                # - Rate limit exceeded
+                # - LLM not responding and timing out
                 try:
                     response = client(
                         system_messages=[system_message],
                         user_messages=[user_message]
                     )
-                # If anything goes wrong with the LLM, we break out of the loop.
-                # Examples of errors that can occur are:
-                # - Rate limit exceeded
-                # - LLM not responding and timing out
-                except Exception as e:
+                except InvalidRequestError:
                     break
                 # Extract the queries from the response
                 queries = self._extract_response(response, "<queries>", "</queries>")
@@ -325,6 +334,9 @@ class DeepDive(LLMIntegrationInterface):
                     query_tree.add_node(result.index, result.generating_query, curr_index)
                     # Update the result history mapping with the new results
                     result_history_mapping[len(history) - 1] = result.result
+            if history.empty:
+                print_error = True
+                return history, None, query_and_results, [], query_tree
             # At the end of the iterations, generate a final report
             final_report_system_message = ("You are part of an automated data exploration system on Pandas DataFrames. "
                                            "You have two tasks."
@@ -363,12 +375,12 @@ class DeepDive(LLMIntegrationInterface):
                 visualization_queries = visualization_queries.split("\n")
                 visualization_queries = [query.replace("*", "").strip() for query in visualization_queries if
                                          query.strip() and query.startswith('*')]
-                self.history = history
-                self.final_report = final_report
-                self.query_and_results = query_and_results
-                self.visualization_queries = visualization_queries
-                self.query_tree = query_tree
-                return history, final_report, query_and_results, visualization_queries, query_tree
+            self.history = history
+            self.final_report = final_report
+            self.query_and_results = query_and_results
+            self.visualization_queries = visualization_queries
+            self.query_tree = query_tree
+            return history, final_report, query_and_results, visualization_queries, query_tree
         finally:
             # Restore the pandas display options and console output to their original state
             # This is inside the finally block to ensure it always runs, even if an error occurs
@@ -377,6 +389,8 @@ class DeepDive(LLMIntegrationInterface):
             pd.set_option('display.width', display_width)
             pd.set_option('display.max_colwidth', display_max_colwidth)
             sys.stdout = current_output if current_output else sys.__stdout__
+            if print_error:
+                print("LLM failed to generate any queries. ")
 
     def do_follow_up_action(self, history: pd.DataFrame = None, final_report=None,
                             query_and_results: dict[int, QueryResultObject] = None,
@@ -403,20 +417,28 @@ class DeepDive(LLMIntegrationInterface):
         """
         all_params_provided = history is not None and final_report is not None and query_and_results is not None \
                               and visualization_queries is not None and query_tree is not None
-        visualizer_class = GraphDeepDiveVisualizer if visualization_type == "graph" else SimpleDeepDiveVisualizer
-        visualizer = visualizer_class(
-            history=history,
-            query_and_results=query_and_results,
-            visualization_queries=visualization_queries,
-            query_tree=query_tree,
-            final_report=final_report,
-            source_name=source_name if source_name else self.source_name
-        )
+        visualizer_class = GraphAutomatedExplorationVisualizer if visualization_type == "graph" else SimpleAutomatedExplorationVisualizer
         if all_params_provided:
-            return visualizer.visualize_deep_dive()
+            visualizer = visualizer_class(
+                history=history,
+                query_and_results=query_and_results,
+                visualization_queries=visualization_queries,
+                query_tree=query_tree,
+                final_report=final_report,
+                source_name=source_name if source_name else self.source_name
+            )
+            return visualizer.visualize_data_exploration()
         all_self_params_exist = self.history is not None and self.final_report is not None \
                                 and self.query_and_results is not None and self.visualization_queries is not None \
                                 and self.query_tree is not None
         if not all_self_params_exist:
             raise ValueError("No deep dive analysis has been performed yet. Please run do_llm_action() first.")
-        return visualizer.visualize_deep_dive()
+        visualizer = visualizer_class(
+            history=self.history,
+            query_and_results=self.query_and_results,
+            visualization_queries=self.visualization_queries,
+            query_tree=self.query_tree,
+            final_report=self.final_report,
+            source_name=source_name if source_name else self.source_name
+        )
+        return visualizer.visualize_data_exploration()

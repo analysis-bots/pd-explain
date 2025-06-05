@@ -39,6 +39,7 @@ sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.core.explainable_series import ExpSeries
 from pd_explain.query_recommenders.llm_based_query_recommender import LLMBasedQueryRecommender
+from pd_explain.llm_integrations.automated_data_exploration import AutomatedDataExploration
 
 
 class ExpDataFrame(pd.DataFrame):
@@ -79,6 +80,7 @@ class ExpDataFrame(pd.DataFrame):
         self.explanation = None
         self.filter_items = None
         self.last_used_explainer = None
+        self.data_explorer = None
 
     # We overwrite the constructor to ensure that an ExpDataFrame is returned when a new DataFrame is created.
     # This is necessary so that methods not overridden in this class, like iloc, return an ExpDataFrame.
@@ -129,6 +131,99 @@ class ExpDataFrame(pd.DataFrame):
             return_all_options=return_all_options,
         )
         return recommender.recommend()
+
+
+    def automated_data_exploration(self, user_query: str, num_iterations: int = 10,
+                                   queries_per_iteration: int = 5, fedex_top_k: int = 3, metainsight_top_k: int = 2,
+                                   metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
+                                   visualization_type: Literal['graph', 'simple'] = 'graph'
+                                   ):
+        """
+        Use LLMs to perform automated deep dive analysis on the DataFrame based on the user's request.
+        Deep dive analysis iteratively generates a query tree on the DataFrame, where at each iteration the
+        queries are ran, analyzed, and the next queries are generated based on the results of the previous queries.
+        The end result includes a report summarizing the analysis, as well as visualizations of the most important
+        queries and of the query tree in a widget.
+        This may take a while to run, depending on the number of iterations and queries per iteration.
+
+        :param user_query: What the user wants to analyze in the DataFrame. Example: "Explore the relationship between
+        column A and column B".
+        :param num_iterations: Number of iterations to run the deep dive analysis. Default is 10. Note that each iteration
+        will call the LLM once.
+        :param queries_per_iteration: Number of queries to generate per iteration. Default is 5. This number is not set in
+        stone, and may go up during the process if the LLM's queries fail too often.
+        :param fedex_top_k: Number of top findings to return from the FEDEx explainer. Default is 3.
+        :param metainsight_top_k: Number of top findings to return from the MetaInsight explainer. Default is 2.
+        :param metainsight_max_filter_cols: Maximum number of columns to analyze distribution of in the MetaInsight
+        explainer. Default is 3.
+        :param metainsight_max_agg_cols: Maximum number of columns to aggregate by in the MetaInsight explainer. Default is 3.
+        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
+        visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
+
+        :return: A widget containing the deep dive analysis results, including a report and visualizations.
+
+        :raises ValueError: If the user_query is not a string, or if any of the parameters are not positive integers.
+        """
+        if not isinstance(user_query, str):
+            raise ValueError("user_query must be a string describing what you want to analyze in the DataFrame.")
+        if not isinstance(num_iterations, int) or num_iterations <= 0:
+            raise ValueError("num_iterations must be a positive integer.")
+        if not isinstance(queries_per_iteration, int) or queries_per_iteration <= 0:
+            raise ValueError("queries_per_iteration must be a positive integer.")
+        if not isinstance(fedex_top_k, int) or fedex_top_k <= 0:
+            raise ValueError("fedex_top_k must be a positive integer.")
+        if not isinstance(metainsight_top_k, int) or metainsight_top_k <= 0:
+            raise ValueError("metainsight_top_k must be a positive integer.")
+        if not isinstance(metainsight_max_filter_cols, int) or metainsight_max_filter_cols <= 0:
+            raise ValueError("metainsight_max_filter_cols must be a positive integer.")
+        if not isinstance(metainsight_max_agg_cols, int) or metainsight_max_agg_cols <= 0:
+            raise ValueError("metainsight_max_agg_cols must be a positive integer.")
+
+        # Create the AutomatedDataExploration object with the provided parameters.
+        self.data_explorer = AutomatedDataExploration(
+            dataframe=self,
+            source_name=get_calling_params_name(self)
+        )
+        # Run the deep dive analysis with the user query and the parameters.
+        self.data_explorer.do_llm_action(
+            user_query=user_query,
+            num_iterations=num_iterations,
+            queries_per_iteration=queries_per_iteration,
+            fedex_top_k=fedex_top_k,
+            metainsight_top_k=metainsight_top_k,
+            metainsight_max_filter_cols=metainsight_max_filter_cols,
+            metainsight_max_agg_cols=metainsight_max_agg_cols
+        )
+        # Visualize and save the results in the exploration_visualization property.
+        exploration_visualization = self.data_explorer.do_follow_up_action(visualization_type=visualization_type)
+        return exploration_visualization
+
+    def save_data_exploration(self, file_path: str):
+        """
+        Save the data exploration results to a file.
+        Uses dill to serialize the data_explorer object.
+        :param file_path: The path to save the data exploration results to.
+        """
+        if self.data_explorer is None:
+            raise ValueError("No data exploration has been performed yet. Please run automated_data_exploration() first.")
+        import dill
+        with open(file_path, 'wb') as file:
+            dill.dump(self.data_explorer, file)
+
+
+    def visualize_from_saved_data_exploration(self, file_path: str, visualization_type: Literal['graph', 'simple'] = 'graph'):
+        """
+        Visualize the data exploration results from a saved file.
+        Uses dill to deserialize the data_explorer object.
+        :param file_path: The path to load the data exploration results from.
+        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
+        visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
+        """
+        import dill
+        with open(file_path, 'rb') as file:
+            self.data_explorer = dill.load(file)
+        return self.data_explorer.do_follow_up_action(visualization_type=visualization_type)
+
 
     @property
     def _constructor_sliced(self) -> Callable[..., ExpSeries]:

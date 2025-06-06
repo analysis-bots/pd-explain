@@ -80,17 +80,30 @@ class OutlierExplainerInterface(ExplainerInterface):
         self._explanation = None
         self._add_llm_context_explanations = add_llm_context_explanations
         self._operation = operation
+        self._explainer = None
+        self._query = None
+        self._added_text = None
+        self._explanations = None
 
     def generate_explanation(self):
-        explainer = OutlierExplainer()
-        self._explanation = explainer.explain(df_agg=self._df_agg, df_in=self._df_in, g_att=self._g_att,
+        self._explainer = OutlierExplainer()
+        self._explanation = self._explainer.explain(df_agg=self._df_agg, df_in=self._df_in, g_att=self._g_att,
                                               g_agg=self._g_agg,
                                               agg_method=self._agg_method, target=self._target, dir=self._dir,
                                               control=self._control, hold_out=self._hold_out,
-                                              draw_plot=not self._add_llm_context_explanations)
+                                              # Always delay the drawing of the plot to the visualization step
+                                              draw_plot=False)
+
+        return self._explanation
+
+    def can_visualize(self) -> bool:
+        return self._explanation is not None and isinstance(self._explanation, tuple) and len(self._explanation) > 0
+
+    def visualize(self):
+        self._added_text = None
+        self._explanations = self._explainer.pred_to_human_readable(self._explanation[4])[0]
         if self._add_llm_context_explanations and isinstance(self._explanation, tuple):
-            explanations = explainer.pred_to_human_readable(self._explanation[4])[0]
-            query = self._operation.source_name + ".groupby('" + self._g_att + "').agg({'" + self._g_agg + "':'" + \
+            self._query = self._operation.source_name + ".groupby('" + self._g_att + "').agg({'" + self._g_agg + "':'" + \
                     self._agg_method + "'})"
             reasoner = ExplanationReasoning(
                 data=self._df_in,
@@ -98,21 +111,26 @@ class OutlierExplainerInterface(ExplainerInterface):
                 dir="high" if self._dir == 1 else "low",
                 target=self._target,
                 query_type='outlier',
-                query=query,
-                explanations_found=explanations,
-                source_name = self._operation.source_name
+                query=self._query,
+                explanations_found=self._explanations,
+                source_name=self._operation.source_name
             )
             reasoning = reasoner.do_llm_action()
-            added_text = {
+            self._added_text = {
                 "text": reasoning,
                 "position": "bottom"
             }
-            explainer.draw_bar_plot(*self._explanation, added_text=added_text)
-            self._explanation = None
-        return self._explanation
+        return self._explainer.draw_bar_plot(*self._explanation, added_text=self._added_text)
 
-    def can_visualize(self) -> bool:
-        return True
+    def get_explanations(self, indexes: list[int] = None) -> tuple[str, any]:
+        if self._explanation is None:
+            raise ValueError("Explanations have not been generated yet. Please call generate_explanation() first.")
 
-    def visualize(self):
-        return self._explanation
+        textual_description = (f"Outlier explainer for query {self._query}, explaining the target {self._target}'s "
+                               f"outlier status in the direction {'high' if self._dir == 1 else 'low'} produced the following: ")
+        out = {
+            "explanation": self._explanations,
+            "added LLM context": self._added_text
+        }
+
+        return textual_description, out

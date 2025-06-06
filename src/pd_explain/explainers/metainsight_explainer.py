@@ -159,6 +159,12 @@ class MetaInsightExplainer(ExplainerInterface):
                 operation=operation
             )
 
+        # If the operation is available, store a string representing it and its type for later use.
+        if operation is not None:
+            self._query, self._query_type = self._create_query_string(operation)
+        else:
+            self._query, self._query_type = None, None
+
         if self.aggregations is None and not aggregations:
             raise ValueError("No aggregations provided, and no viable aggregation options were found automatically.")
         if self.groupby_columns is None:
@@ -555,3 +561,35 @@ class MetaInsightExplainer(ExplainerInterface):
                                                         )
         self.can_run_visualize = True
         return self.metainsights
+
+
+    def get_explanations(self, indexes=None) -> tuple[str, List[str]]:
+        """
+        Get explanations after they have already been generated.
+        If the explanations have not been generated yet, this method will generate them.
+
+        :param indexes: Optional list of indexes to get explanations for. If None, return all explanations.
+        :return: A tuple containing:
+            1. A string describing what the explanation is about.
+            2. The explanation itself, which is a list of the string representations of the MetaInsights.
+        """
+        if self.metainsights is None:
+            raise ValueError("Explanations have not been generated yet. Please call generate_explanation() first.")
+
+        if self._query is not None:
+            if self._query_type == 'groupby':
+                textual_description = (f"The MetaInsight explainer has been run on the result of the groupby query '{self._query}',"
+                                        f"and has found that the groupby operation induces the following common patterns: ")
+            else:
+                textual_description = (f"The MetaInsight explainer has been run on the result of the query '{self._query}', "
+                                        f"and has found the following common patterns: ")
+
+        else:
+            textual_description = "The MetaInsight explainer has found the following common patterns in the data: " \
+
+        if indexes is None:
+            return textual_description, self.metainsights
+        else:
+            if not isinstance(indexes, list):
+                return textual_description, [self.metainsights[indexes]]
+            return textual_description, [self.metainsights[i].__str__ for i in indexes]

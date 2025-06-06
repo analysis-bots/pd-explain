@@ -40,6 +40,8 @@ sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 from pd_explain.core.explainable_series import ExpSeries
 from pd_explain.query_recommenders.llm_based_query_recommender import LLMBasedQueryRecommender
 from pd_explain.llm_integrations.automated_data_exploration import AutomatedDataExploration
+from pd_explain.explainers.outlier_explainer import OutlierExplainer
+from pd_explain.explainers.explainer_interface import ExplainerInterface
 
 
 class ExpDataFrame(pd.DataFrame):
@@ -79,7 +81,7 @@ class ExpDataFrame(pd.DataFrame):
         self.operation = None
         self.explanation = None
         self.filter_items = None
-        self.last_used_explainer = None
+        self.last_used_explainer: ExplainerInterface | None = None
         self.data_explorer = None
 
     # We overwrite the constructor to ensure that an ExpDataFrame is returned when a new DataFrame is created.
@@ -132,15 +134,14 @@ class ExpDataFrame(pd.DataFrame):
         )
         return recommender.recommend()
 
-
     def automated_data_exploration(self, user_query: str, num_iterations: int = 10,
                                    queries_per_iteration: int = 5, fedex_top_k: int = 3, metainsight_top_k: int = 2,
                                    metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
                                    visualization_type: Literal['graph', 'simple'] = 'graph'
                                    ):
         """
-        Use LLMs to perform automated deep dive analysis on the DataFrame based on the user's request.
-        Deep dive analysis iteratively generates a query tree on the DataFrame, where at each iteration the
+        Use LLMs to perform automated exploration and analysis on the DataFrame based on the user's request.
+        Automated exploration iteratively generates a query tree on the DataFrame, where at each iteration the
         queries are ran, analyzed, and the next queries are generated based on the results of the previous queries.
         The end result includes a report summarizing the analysis, as well as visualizations of the most important
         queries and of the query tree in a widget.
@@ -148,7 +149,7 @@ class ExpDataFrame(pd.DataFrame):
 
         :param user_query: What the user wants to analyze in the DataFrame. Example: "Explore the relationship between
         column A and column B".
-        :param num_iterations: Number of iterations to run the deep dive analysis. Default is 10. Note that each iteration
+        :param num_iterations: Number of iterations to run the automated exploration for. Default is 10. Note that each iteration
         will call the LLM once.
         :param queries_per_iteration: Number of queries to generate per iteration. Default is 5. This number is not set in
         stone, and may go up during the process if the LLM's queries fail too often.
@@ -160,7 +161,7 @@ class ExpDataFrame(pd.DataFrame):
         :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
         visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
 
-        :return: A widget containing the deep dive analysis results, including a report and visualizations.
+        :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
 
         :raises ValueError: If the user_query is not a string, or if any of the parameters are not positive integers.
         """
@@ -184,7 +185,7 @@ class ExpDataFrame(pd.DataFrame):
             dataframe=self,
             source_name=get_calling_params_name(self)
         )
-        # Run the deep dive analysis with the user query and the parameters.
+        # Run the automated exploration with the user query and the parameters.
         self.data_explorer.do_llm_action(
             user_query=user_query,
             num_iterations=num_iterations,
@@ -205,13 +206,14 @@ class ExpDataFrame(pd.DataFrame):
         :param file_path: The path to save the data exploration results to.
         """
         if self.data_explorer is None:
-            raise ValueError("No data exploration has been performed yet. Please run automated_data_exploration() first.")
+            raise ValueError(
+                "No data exploration has been performed yet. Please run automated_data_exploration() first.")
         import dill
         with open(file_path, 'wb') as file:
             dill.dump(self.data_explorer, file)
 
-
-    def visualize_from_saved_data_exploration(self, file_path: str, visualization_type: Literal['graph', 'simple'] = 'graph'):
+    def visualize_from_saved_data_exploration(self, file_path: str,
+                                              visualization_type: Literal['graph', 'simple'] = 'graph'):
         """
         Visualize the data exploration results from a saved file.
         Uses dill to deserialize the data_explorer object.
@@ -224,6 +226,63 @@ class ExpDataFrame(pd.DataFrame):
             self.data_explorer = dill.load(file)
         return self.data_explorer.do_follow_up_action(visualization_type=visualization_type)
 
+    def follow_up_with_automated_data_exploration(self, explanation_indexes: list[int] = None,
+                                                  num_iterations: int = 10,
+                                                  queries_per_iteration: int = 5, fedex_top_k: int = 3,
+                                                  metainsight_top_k: int = 2,
+                                                  metainsight_max_filter_cols: int = 3,
+                                                  metainsight_max_agg_cols: int = 3,
+                                                  visualization_type: Literal['graph', 'simple'] = 'graph'
+                                                  ):
+        """
+        Use the automated data exploration feature to follow up on specific explanations received from the last called explain() method.
+        This method will automatically try to follow up on explanations, to try and draw further insights from them, as well
+        as corroborate them if possible.
+        Refer to the documentation of the automated_data_exploration() method for more details on the parameters aside from
+        the explanation_indexes parameter.
+
+        :param explanation_indexes: A list of indexes of the explanations to follow up on. The indexes for each explainer go as follows:
+                                    - FEDEx: Top left to bottom right, row by row. Top left plot is index 0, to the right on the
+                                    same row is index 1 (and so on the same row), then the next row starts with index 2, and so on.
+                                    - MetaInsight: Top to bottom. Index 0 is the top plot, index 1 is the plot below it, and so on.
+                                    - Many to One explainer: by row order. First row is index 0, second row is index 1, and so on.
+                                    - Outlier explainer: Irrelevant, as it only has one explanation.
+                                    All explainers but the Outlier explainer require at least one explanation index to be provided.
+        :param num_iterations: Number of iterations to run the automated exploration for. Default is 10.
+        :param queries_per_iteration: Number of queries to generate per iteration. Default is 5.
+        :param fedex_top_k: Number of top findings to return from the FEDEx explainer. Default is 3.
+        :param metainsight_top_k: Number of top findings to return from the MetaInsight explainer. Default is 2.
+        :param metainsight_max_filter_cols: Maximum number of columns to analyze distribution of in the MetaInsight
+                                            explainer. Default is 3.
+        :param metainsight_max_agg_cols: Maximum number of columns to aggregate by in the MetaInsight explainer. Default is 3.
+        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
+                                   visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
+        :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
+        """
+        if self.last_used_explainer is None:
+            raise ValueError("No explainer has been used yet. Please run explain() first.")
+        indexes_valid = (isinstance(explanation_indexes, list) and len(explanation_indexes) > 0
+                         and all(isinstance(idx, int) for idx in explanation_indexes)) \
+                        or (isinstance(explanation_indexes, int) and explanation_indexes >= 0)
+        if not isinstance(self.last_used_explainer, OutlierExplainer) and not indexes_valid:
+            raise ValueError("If the explainer last used on this DataFrame is not the outlier explainer, you must "
+                             "provide a list of explanation indexes to follow up on. ")
+
+        description, findings = self.last_used_explainer.get_explanations(indexes=explanation_indexes)
+        explorer_query = f"{description}\n {findings}\n"
+        explorer_query += ("Follow up on these findings to further explore that data in relation to these findings. "
+                           "If there are explanations added by a LLM, make it a priority to corroborate and expand on them, "
+                           "and on why they may be true or untrue in regards to the explanation generated by the explainer.")
+        return self.automated_data_exploration(
+            user_query=explorer_query,
+            num_iterations=num_iterations,
+            queries_per_iteration=queries_per_iteration,
+            fedex_top_k=fedex_top_k,
+            metainsight_top_k=metainsight_top_k,
+            metainsight_max_filter_cols=metainsight_max_filter_cols,
+            metainsight_max_agg_cols=metainsight_max_agg_cols,
+            visualization_type=visualization_type
+        )
 
     @property
     def _constructor_sliced(self) -> Callable[..., ExpSeries]:

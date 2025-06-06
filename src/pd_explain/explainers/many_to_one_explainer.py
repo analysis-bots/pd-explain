@@ -164,6 +164,8 @@ class ManyToOneExplainer(ExplainerInterface):
         self._explain_errors = explain_errors
         self._error_explanation_threshold = error_explanation_threshold
         self._add_llm_context_explanations = add_llm_context_explanations
+        self._added_explanations = None
+        self._query_string = None
 
         if operation is not None:
             if hasattr(operation, 'source_name'):
@@ -344,6 +346,8 @@ class ManyToOneExplainer(ExplainerInterface):
             raise ValueError(
                 "If this dataframe is not the result of a groupby operation, you must provide the labels.")
         else:
+            if operation is not None:
+                self._query, _ = self._create_query_string(operation=operation)
             # Extract the source and result df from the operation, if one is provided.
             if source_df is None:
                 source_df = DataFrame(operation.source_df)
@@ -622,3 +626,23 @@ class ManyToOneExplainer(ExplainerInterface):
         self._ran_explainer = True
 
         return self._explanations
+
+
+    def get_explanations(self, indexes=None) -> tuple[str, str]:
+        """
+        Get explanations after they have already been generated.
+        If the explanations have not been generated yet, this method should raise an error.
+        :param indexes: Optional list of indexes to get explanations for. If None, return all explanations.
+        :return: A tuple containing:
+        1. A string describing what the explanation is about.
+        2. A string of the DataFrame containing the explanations, or a subset of it if indexes are provided.
+        """
+        if not self._ran_explainer:
+            raise RuntimeError("You must run the explainer before getting the explanations.")
+
+        textual_description = f"The many to one explainer provided the following explanations for the labels {self._labels.unique()} in relation to the source dataframe '{self._source_name}'. " \
+
+        if indexes is None:
+            return textual_description, self._explanations.to_string()
+        else:
+            return textual_description, self._explanations.iloc[indexes].to_string()

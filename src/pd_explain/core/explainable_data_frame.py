@@ -137,7 +137,8 @@ class ExpDataFrame(pd.DataFrame):
     def automated_data_exploration(self, user_query: str, num_iterations: int = 10,
                                    queries_per_iteration: int = 5, fedex_top_k: int = 3, metainsight_top_k: int = 2,
                                    metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
-                                   visualization_type: Literal['graph', 'simple'] = 'graph'
+                                   visualization_type: Literal['graph', 'simple'] = 'graph',
+                                   verbose: bool = False,
                                    ):
         """
         Use LLMs to perform automated exploration and analysis on the DataFrame based on the user's request.
@@ -160,6 +161,7 @@ class ExpDataFrame(pd.DataFrame):
         :param metainsight_max_agg_cols: Maximum number of columns to aggregate by in the MetaInsight explainer. Default is 3.
         :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
         visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
+        :param verbose: If True, will print additional information about the process. Default is False.
 
         :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
 
@@ -193,7 +195,8 @@ class ExpDataFrame(pd.DataFrame):
             fedex_top_k=fedex_top_k,
             metainsight_top_k=metainsight_top_k,
             metainsight_max_filter_cols=metainsight_max_filter_cols,
-            metainsight_max_agg_cols=metainsight_max_agg_cols
+            metainsight_max_agg_cols=metainsight_max_agg_cols,
+            verbose=verbose
         )
         # Visualize and save the results in the exploration_visualization property.
         exploration_visualization = self.data_explorer.do_follow_up_action(visualization_type=visualization_type)
@@ -232,7 +235,8 @@ class ExpDataFrame(pd.DataFrame):
                                                   metainsight_top_k: int = 2,
                                                   metainsight_max_filter_cols: int = 3,
                                                   metainsight_max_agg_cols: int = 3,
-                                                  visualization_type: Literal['graph', 'simple'] = 'graph'
+                                                  visualization_type: Literal['graph', 'simple'] = 'graph',
+                                                  verbose=False
                                                   ):
         """
         Use the automated data exploration feature to follow up on specific explanations received from the last called explain() method.
@@ -281,7 +285,8 @@ class ExpDataFrame(pd.DataFrame):
             metainsight_top_k=metainsight_top_k,
             metainsight_max_filter_cols=metainsight_max_filter_cols,
             metainsight_max_agg_cols=metainsight_max_agg_cols,
-            visualization_type=visualization_type
+            visualization_type=visualization_type,
+            verbose=verbose
         )
 
     @property

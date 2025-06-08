@@ -49,7 +49,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "as well as the findings derived from those queries. You will not be given the actual DataFrame or query results. "
                 "If there was an error executing a query, it will be provided in the history as well. Make absolutely sure you do not repeat errors. "
                 "Your available operators are: filtering using boolean conditions and groupby with aggregation functions [mean, sum, count, nunique, min, max, median, std, sem, var, size, prod]."
-                "All other operators and functions, such as describe, apply, join, quantile, query, etc. are illegal and will result in an error. "
+                "All other operators and functions, such as describe, apply, join, quantile, query, reset_index, etc. are illegal and will result in an error. "
                 "You can freely combine these operators or use lambda functions, but you must always return a DataFrame. "
                 "Do not ever select only a single column after performing an operation. If you perform column selection, it must always be multiple columns."
                 "Your queries must never create a Series object, they must always return a DataFrame. "
@@ -69,16 +69,30 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 f"The columns are: " + ", ".join(
             [f"{col}: {str(dtype)}" for col, dtype in self.dataframe.dtypes.items()])
         )
-        # Create a set of words from the user query to find relevant columns
-        user_query_words = re.split(r"\s+|,|;|:|-|_|\.|\(|\)|\{|}|\[|]|\"|'|`", user_query)
+        # We want to find combinations of words in the user query that may match column names.
+        # First, we identify candidate words from the user query by:
+        # 1. Splitting the user query and the names of the columns into words
+        # 2. Checking if any of the words in the user query are equal to any of the words in the column names.
+        # 3. Finally, we generate combinations of the candidate words to find potential full column names.
+        # Note: I tried an approach using Hamming distance to find similar words, but even with a threshold of 2
+        # it produced too many false positives and made the output have too many columns that were not relevant.
+        # Also note: trying to use the words as is without this filtering, in any case where the user query is long,
+        # will result in this taking too long (I tried with an 88 word query, and it didn't end even after 20 minutes).
+        pattern = re.compile(r"\s+|,|;|:|-|_|\.|\(|\)|\{|}|\[|]|\"|'|`|\n+")
+        user_query_words = pattern.split(user_query)
         user_query_words = set([word.strip().lower() for word in user_query_words])
-        # Create every possible combination of words from the user query, with each combination appearing as
-        # a string with no spaces, a string a space between each word, a string with hyphens between each word,
-        # and a string with underscores between each word.
+        user_query_words = {word for word in user_query_words if len(word) > 1}  # Remove empty strings
+        column_words = [word for col in self.dataframe.columns for word in pattern.split(col) if word.strip()]
+        candidate_set = set()
+        for word in user_query_words:
+            # Check if the word is a substring of any column name
+            for col in column_words:
+                if word == col:
+                    candidate_set.add(col)
         user_query_combinations = set()
         # Assuming, hopefully reasonably, that column names are not longer than 5 words,
         for i in range(1, 6):
-            for combination in itertools.combinations(user_query_words, i):
+            for combination in itertools.combinations(candidate_set, i):
                 user_query_combinations.add(''.join(combination))
                 user_query_combinations.add(' '.join(combination))
                 user_query_combinations.add('-'.join(combination))
@@ -185,7 +199,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
 
     def do_llm_action(self, user_query: str = None, num_iterations: int = 10,
                       queries_per_iteration: int = 5, fedex_top_k: int = 4, metainsight_top_k: int = 2,
-                      metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3) \
+                      metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
+                      verbose=False) \
             -> tuple[DataFrame, str | None, defaultdict[Any, QueryResultObject], list[str], QueryTree]:
         """
         Perform the deep dive analysis on the DataFrame using the LLM.
@@ -197,6 +212,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         :param metainsight_top_k: The number of top findings to return from the MetaInsight explainer.
         :param metainsight_max_filter_cols: The maximum number of filter columns to use in the MetaInsight explainer.
         :param metainsight_max_agg_cols: The maximum number of columns to use for aggregation in the MetaInsight explainer.
+        :param verbose: If True, print additional information during the analysis.
 
         :return: A tuple containing:
             - history: A DataFrame containing the history of queries and findings.
@@ -229,12 +245,11 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         format_description = self._describe_input_format() + self._describe_output_format(queries_per_iteration, history)
         query_and_results = defaultdict(QueryResultObject)
         query_tree = QueryTree(source_name=self.source_name)
-        # Temporarily disable console output, because some explainers print to the console, and we don't want that
-        current_output = sys.stdout
-        sys.stdout = open(os.devnull, 'w')  # Redirect stdout to null device to suppress output
         print_error = False
         try:
             for iteration in range(num_iterations):
+                if verbose:
+                    print(f"Starting iteration {iteration + 1}/{num_iterations}")
                 # Format the history for the LLM
                 formatted_history = self._format_history(history)
                 # Create the user message for the LLM
@@ -264,14 +279,19 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                            query.strip() and query.startswith('*')]
                 # Split the queries into a Series
                 queries_series = pd.Series(queries)
+                if verbose:
+                    print(f"\t - Generated {len(queries_series)} queries for iteration {iteration + 1}")
                 # Apply the queries to the DataFrame and update the history
                 new_results = self._apply(queries_series, result_history_mapping)
                 if not new_results:
                     continue
                 # Update the history DataFrame with new results
                 for result in new_results:
+                    # print(f"\t - Checking query: {result.generating_query} (index: {result.index})")
                     curr_index = len(history)
                     if result.error_occurred:
+                        if verbose:
+                            print(f"\t - Error occurred while applying query: {result.generating_query}")
                         history = history._append({
                             "query": f"{result.index}: {result.generating_query}",
                             "fedex_explainer_findings": None,
@@ -285,14 +305,19 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             error=str(result.result)
                         )
                     else:
-                        # Assuming FedEx and MetaInsight explainers are applied here
                         result_df = result.result
+                        fedex_finding_str = ""
+                        metainsight_finding_str = ""
                         try:
+                            # Temporarily disable stdout because FEDEx can print to console if they find nothing
+                            current_output = sys.stdout
+                            sys.stdout = open(os.devnull, 'w')  # Redirect stdout to null device to suppress output
                             fedex_findings = result_df.explain(
                                 explainer="fedex",
                                 top_k=fedex_top_k,
                                 do_not_visualize=True
                             )
+                            sys.stdout = current_output if current_output else sys.__stdout__
                             # Store the raw FedEx findings in the query and results mapping
                             query_and_results[curr_index].fedex = result_df.last_used_explainer
                             title, scores, K, figs_in_row, explanations, bins, influence_vals, source_name, show_scores = fedex_findings
@@ -303,6 +328,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             fedex_findings = [pattern.sub(r'\1', finding) for finding in fedex_findings]
                             fedex_findings = [finding.replace("(in green)", "").replace("\n", " ").replace("\\", "") for
                                               finding in fedex_findings]
+                            if verbose:
+                                fedex_finding_str = f"{len(fedex_findings)} FEDEx findings"
                         except Exception as e:
                             # Commented out line can potentially give more information to the LLM on how to avoid the error,
                             # but in most cases, it just takes up more tokens (which we don't have a lot of),
@@ -320,10 +347,17 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             metainsight_findings = [finding.__str__() for finding in metainsight_findings]
                             # Store the MetaInsight objects in the query and results mapping
                             query_and_results[curr_index].metainsight = result_df.last_used_explainer
+                            if verbose:
+                                metainsight_finding_str = f"{len(metainsight_findings)} MetaInsight findings"
                         except Exception as e:
                             # metainsight_findings = f"Error: {str(e)}"
                             metainsight_findings = f"Error"
                             query_and_results[curr_index].metainsight = None
+                        if verbose:
+                            if metainsight_finding_str or fedex_finding_str:
+                                print(f"\t - Query {result.generating_query} produced {fedex_finding_str} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}")
+                            else:
+                                print(f"\t - Query {result.generating_query} produced no findings.")
                         history = history._append({
                             "query": f"{result.index}: {result.generating_query}",
                             "fedex_explainer_findings": fedex_findings,
@@ -388,9 +422,9 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             pd.set_option('display.max_columns', display_max_columns)
             pd.set_option('display.width', display_width)
             pd.set_option('display.max_colwidth', display_max_colwidth)
-            sys.stdout = current_output if current_output else sys.__stdout__
             if print_error:
                 print("LLM failed to generate any queries. ")
+
 
     def do_follow_up_action(self, history: pd.DataFrame = None, final_report=None,
                             query_and_results: dict[int, QueryResultObject] = None,

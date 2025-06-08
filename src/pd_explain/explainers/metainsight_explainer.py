@@ -12,6 +12,7 @@ from fedex_generator.Operations.Operation import Operation
 from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
+from fedex_generator.commons.utils import get_calling_params_name
 
 from typing import List, Tuple, Literal
 
@@ -92,6 +93,7 @@ class MetaInsightExplainer(ExplainerInterface):
         self.n_bins = num_bins
         self.use_all_groupby_combinations = use_all_groupby_combinations
         self._do_not_visualize = do_not_visualize
+        self._source_name = get_calling_params_name(source_df)
 
         if self.source_df is None:
             raise ValueError("Source dataframe cannot be None")
@@ -563,33 +565,22 @@ class MetaInsightExplainer(ExplainerInterface):
         return self.metainsights
 
 
-    def get_explanations(self, indexes=None) -> tuple[str, List[str]]:
+    def get_explanation_in_textual_description(self, index:int) -> str:
         """
         Get explanations after they have already been generated.
         If the explanations have not been generated yet, this method will generate them.
 
-        :param indexes: Optional list of indexes to get explanations for. If None, return all explanations.
-        :return: A tuple containing:
-            1. A string describing what the explanation is about.
-            2. The explanation itself, which is a list of the string representations of the MetaInsights.
+        :param index: The index of the explanation to get.
+        :return: A human-readable string that explains what was found, and the explanation itself.
         """
         if self.metainsights is None:
             raise ValueError("Explanations have not been generated yet. Please call generate_explanation() first.")
 
-        if self._query is not None:
-            if self._query_type == 'groupby':
-                textual_description = (f"The MetaInsight explainer has been run on the result of the groupby query '{self._query}',"
-                                        f"and has found that the groupby operation induces the following common patterns: ")
-            else:
-                textual_description = (f"The MetaInsight explainer has been run on the result of the query '{self._query}', "
-                                        f"and has found the following common patterns: ")
+        metainsight = self.metainsights[index]
 
-        else:
-            textual_description = "The MetaInsight explainer has found the following common patterns in the data: " \
-
-        if indexes is None:
-            return textual_description, self.metainsights
-        else:
-            if not isinstance(indexes, list):
-                return textual_description, [self.metainsights[indexes]]
-            return textual_description, [self.metainsights[i].__str__ for i in indexes]
+        textual_description = (f"Using automated analysis on the dataframe {self._source_name}, we have found "
+                               f"the common pattern in the data: {metainsight.__str__().replace("\n", "")}\n")
+        if len(metainsight.exceptions) > 0:
+            textual_description += f"Exceptions to this pattern were found:\n"
+        textual_description += metainsight.get_exceptions_string()
+        return textual_description

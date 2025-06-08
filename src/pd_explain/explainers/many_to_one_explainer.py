@@ -90,7 +90,7 @@ class ManyToOneExplainer(ExplainerInterface):
         self._num_bins = num_bins
         self._binning_method = binning_method
         self._bin_numeric = bin_numeric
-        self._label_name = label_name if label_name is not None else 'label'
+        self._label_name = label_name
 
         if labels is None or len(labels) == 0:
             self._source_df, self._labels = self._create_groupby_labels(operation=operation)
@@ -117,6 +117,9 @@ class ManyToOneExplainer(ExplainerInterface):
         # If the labels are already a Series object, we simply use them as they are.
         else:
             self._labels = labels
+
+        if self._label_name is None:
+            self._label_name = self._labels.name if (hasattr(self._labels, 'name') and self._labels.name is not None) else 'label'
 
         if self._source_df.shape[0] != len(self._labels):
             raise ValueError("The number of rows in the source DataFrame and the number of labels must be equal.")
@@ -166,6 +169,7 @@ class ManyToOneExplainer(ExplainerInterface):
         self._add_llm_context_explanations = add_llm_context_explanations
         self._added_explanations = None
         self._query_string = None
+        self.out_df = None
 
         if operation is not None:
             if hasattr(operation, 'source_name'):
@@ -599,6 +603,8 @@ class ManyToOneExplainer(ExplainerInterface):
             llm_explanations = reasoning.do_llm_action()
             out_df['LLM Explanation'] = llm_explanations
 
+        self.out_df = out_df
+
         return out_df
 
     def generate_explanation(self):
@@ -628,21 +634,30 @@ class ManyToOneExplainer(ExplainerInterface):
         return self._explanations
 
 
-    def get_explanations(self, indexes=None) -> tuple[str, str]:
+    def get_explanation_in_textual_description(self, index: int) -> str:
         """
-        Get explanations after they have already been generated.
+        Get the explanation for a specific index in a textual description format.
         If the explanations have not been generated yet, this method should raise an error.
-        :param indexes: Optional list of indexes to get explanations for. If None, return all explanations.
-        :return: A tuple containing:
-        1. A string describing what the explanation is about.
-        2. A string of the DataFrame containing the explanations, or a subset of it if indexes are provided.
+        :param index: A single index to get the explanation for.
+        :return: A human-readable string that explains the operation performed, what was found, and the explanation itself.
         """
         if not self._ran_explainer:
             raise RuntimeError("You must run the explainer before getting the explanations.")
 
-        textual_description = f"The many to one explainer provided the following explanations for the labels {self._labels.unique()} in relation to the source dataframe '{self._source_name}'. " \
+        explanation = self.out_df.iloc[index]
+        textual_description = (f"For the dataframe {self._source_name}, "
+                               f"we used automated analysis to create rule based explanations for groupings in the data.\n")
+        if self._label_name is not None:
+            textual_description += (f"The labels used for the groupings were taken from a series called '{self._label_name}', "
+                                    f"which may also correspond to a column in the dataframe.\n")
+        textual_description += (
+                               f"For the group {explanation.name[0]}, we found the following rule: {explanation.name[1]}.\n"
+                               f"This explanation covers {(explanation['Coverage'] * 100):.2f}% of the data in the group, "
+                               f"and has a separation error (coverage of points outside the group) of {(explanation['Separation Error'] * 100):.2f}%.\n"
+        )
+        if self._explain_errors:
+            textual_description += (f"The separation error originates from the following groups: {explanation['Separation Error Origins']}.\n")
+        if 'LLM Explanation' in explanation:
+            textual_description += (f"Using a LLM, it suggested the following context to the explanation: {explanation['LLM Explanation']}\n")
+        return textual_description
 
-        if indexes is None:
-            return textual_description, self._explanations.to_string()
-        else:
-            return textual_description, self._explanations.iloc[indexes].to_string()

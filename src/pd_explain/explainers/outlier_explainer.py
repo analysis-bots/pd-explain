@@ -1,7 +1,10 @@
+import re
+
 from pd_explain.explainers.explainer_interface import ExplainerInterface
 from external_explainers import OutlierExplainer
 from fedex_generator.Operations.GroupBy import GroupBy
 from pd_explain.llm_integrations.explanation_reasoning import ExplanationReasoning
+from fedex_generator.commons.utils import get_calling_params_name
 
 from pandas import DataFrame, Series
 from typing import List
@@ -122,15 +125,24 @@ class OutlierExplainerInterface(ExplainerInterface):
             }
         return self._explainer.draw_bar_plot(*self._explanation, added_text=self._added_text)
 
-    def get_explanations(self, indexes: list[int] = None) -> tuple[str, any]:
+    def get_explanation_in_textual_description(self, index = None) -> str:
+        """
+        Get the explanation for a specific index in a textual description format.
+
+        :param index: Ignored, since there is only a single explanation for outliers. Needed to be compatible with the interface.
+        :return: A human-readable string that explains the operation performed, what was found, and the explanation itself.
+        """
         if self._explanation is None:
             raise ValueError("Explanations have not been generated yet. Please call generate_explanation() first.")
 
-        textual_description = (f"Outlier explainer for query {self._query}, explaining the target {self._target}'s "
-                               f"outlier status in the direction {'high' if self._dir == 1 else 'low'} produced the following: ")
-        out = {
-            "explanation": self._explanations,
-            "added LLM context": self._added_text
-        }
+        textual_description = (f"After running the query {self._query} on the dataframe {self._operation.source_name}, "
+                               f"the value {self._target} was suspected to be a a {'high' if self._dir == 1 else 'low'} outlier. "
+                               f"Using automated analysis, we found that: ")
+        pattern = re.compile(r"\$\\bf(.*?)\$")
+        textual_description += f"{pattern.sub(r'\1', self._explanations).replace("\n", " ")}. \n"
+        if self._added_text is not None:
+            textual_description += (f"Using a LLM to reason about this explanation, without access to the data or ability to "
+                                    f"query it, it suggested that the following may provide additional context to the findings: "
+                                    f"{self._added_text['text'].replace('\n', ' ')}. \n")
 
-        return textual_description, out
+        return textual_description

@@ -43,14 +43,12 @@ class ExplainerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_explanations(self, indexes: list[int] =None) -> tuple[str, Any]:
+    def get_explanation_in_textual_description(self, index: int) -> str:
         """
-        Get explanations after they have already been generated.
+        Get the explanation for a specific index in a textual description format.
         If the explanations have not been generated yet, this method should raise an error.
-        :param indexes: Optional list of indexes to get explanations for. If None, return all explanations.
-        :return: A tuple containing:
-        1. An string describing what the explanation is about.
-        2. The explanation itself, which can be in any format (e.g., a dictionary, a list, a DataFrame, etc.).
+        :param index: A single index to get the explanation for.
+        :return: A human-readable string that explains the operation performed, what was found, and the explanation itself.
         """
         pass
 

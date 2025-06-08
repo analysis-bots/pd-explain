@@ -1,3 +1,4 @@
+import copy
 import itertools
 from typing import List, Any, Literal
 from collections import defaultdict
@@ -54,7 +55,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "Do not ever select only a single column after performing an operation. If you perform column selection, it must always be multiple columns."
                 "Your queries must never create a Series object, they must always return a DataFrame. "
                 "This is an iterative process, and it is expected that you will generate follow-up queries based on the results of previous queries. "
-                "Plan your queries such that they can potentially be followed up on in future iterations. You will be told which iteration you are in, and how many iterations are left. ")
+                "Plan your queries such that they can potentially be followed up on in future iterations. You will be told which iteration you are in, and how many iterations are left. "
+                )
 
     def _describe_data(self, user_query: str) -> str:
         """
@@ -136,12 +138,14 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 f"Be aggressive about increasing the number of queries, especially if you see that we are not getting enough insights to produce anything meaningful. "
                 f"Each query must be in the format index: query, where index is the index of the row in the history "
                 f"that you want to apply the query to. Use index 0 for the original DataFrame. "
-                "Example for a query on index i -  i: [x > 5], i: .groupby('column_name').mean(), etc. "
+                "Example for a query on index i -  i: [x > 5], i: .groupby('column_name').mean(), etc. Never use a groupby within or as a filter query."
                 "Make sure you use the correct index for the query you want to apply, and never select an index above the current max index in the history. "
                 "The query must be a valid Pandas query applicable using eval() with the syntax [df]{query}, where [df] "
                 "is a placeholder for the name of the actual DataFrame (which is not provided to you). "
                 "If you need to use the DataFrame's name (for example to filter it), use the placeholder [df] in your query, and the system will replace it with the actual DataFrame name. "
-                "For example, if you want to filter by a column, write [[df]['column_name'] > 5]. "
+                "For example, if you want to filter by a column, write [[df]['column_name'] > 5]. The usage of square brackets must "
+                "never be done outside of a filter query or column selection, and the inside of a filter query must never be any operation but simple comparisons. "
+                "For example, [[df].groupby('column_name').mean() > 5] is not a valid query, but [[df]['column_name'] > 5] is. "
                 f"The output must be a list of queries, where each row in the list starts with a * symbol and ends with a new line. "
                 f"The list should be surrounded by <queries> and </queries> tags. so it can be easily extracted programmatically. "
                 f"Avoid repeating queries that have already been applied in the history. "
@@ -177,7 +181,12 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             index, query_string = query.split(':', 1)
             index = int(index.strip())
             query_string = query_string.strip()
-            query_string_fixed = query_string.replace("[df]", "df_to_query")  # Replace [df] with df_to_query
+            # Sometimes, the LLM puts decides that writing [[df].groupby...] is a good idea. It is not.
+            if query_string.startswith("[[df].groupby("):
+                query_string = query_string[len("[[df]"):]
+                query_string = query_string[:-1]  # Remove the last character, which is the closing bracket
+            # Replace [df] placeholder with df_to_query
+            query_string_fixed = query_string.replace("[df]", "df_to_query")
             # Apply the query to the DataFrame
             df_to_query = result_mapping.get(index, None)
             if df_to_query is None:
@@ -263,16 +272,23 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 # Examples of errors that can occur are:
                 # - Rate limit exceeded
                 # - LLM not responding and timing out
+                if verbose:
+                    print(f"\t - Sending request to LLM")
                 try:
                     response = client(
                         system_messages=[system_message],
                         user_messages=[user_message]
                     )
-                except InvalidRequestError:
+                except InvalidRequestError as e:
+                    if verbose:
+                        print(f"\t - LLM request failed with error: {e}")
+                        print(f"\t - Stopping iterations early.")
                     break
                 # Extract the queries from the response
                 queries = self._extract_response(response, "<queries>", "</queries>")
                 if queries is None or len(queries) == 0:
+                    if verbose:
+                        print(f"\t - LLM did not generate queries or got the format wrong and queries could not be extracted during iteration {iteration + 1}. ")
                     continue
                 queries = queries.split("\n")
                 queries = [query.replace("*", "").strip() for query in queries if
@@ -291,7 +307,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     curr_index = len(history)
                     if result.error_occurred:
                         if verbose:
-                            print(f"\t - Error occurred while applying query: {result.generating_query}")
+                            print(f"\t - Error occurred while applying query: {result.generating_query} - {result.result}")
                         history = history._append({
                             "query": f"{result.index}: {result.generating_query}",
                             "fedex_explainer_findings": None,
@@ -309,15 +325,11 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                         fedex_finding_str = ""
                         metainsight_finding_str = ""
                         try:
-                            # Temporarily disable stdout because FEDEx can print to console if they find nothing
-                            current_output = sys.stdout
-                            sys.stdout = open(os.devnull, 'w')  # Redirect stdout to null device to suppress output
                             fedex_findings = result_df.explain(
                                 explainer="fedex",
                                 top_k=fedex_top_k,
                                 do_not_visualize=True
                             )
-                            sys.stdout = current_output if current_output else sys.__stdout__
                             # Store the raw FedEx findings in the query and results mapping
                             query_and_results[curr_index].fedex = result_df.last_used_explainer
                             title, scores, K, figs_in_row, explanations, bins, influence_vals, source_name, show_scores = fedex_findings

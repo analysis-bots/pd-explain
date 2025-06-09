@@ -139,7 +139,8 @@ class ExpDataFrame(pd.DataFrame):
                                    metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
                                    visualization_type: Literal['graph', 'simple'] = 'graph',
                                    verbose: bool = False,
-                                   input_df: 'ExpDataFrame' = None
+                                   input_df: 'ExpDataFrame' = None,
+                                   max_iterations_to_add: int = 3
                                    ):
         """
         Use LLMs to perform automated exploration and analysis on the DataFrame based on the user's request.
@@ -164,6 +165,9 @@ class ExpDataFrame(pd.DataFrame):
         visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
         :param verbose: If True, will print additional information about the process. Default is False.
         :param input_df: Optional parameter to pass an input DataFrame to replace the self DataFrame.
+        :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
+        Default is 3. This can help mitigate cases where the LLM fails too many iterations and thus does not get enough
+        information.
 
         :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
 
@@ -198,7 +202,8 @@ class ExpDataFrame(pd.DataFrame):
             metainsight_top_k=metainsight_top_k,
             metainsight_max_filter_cols=metainsight_max_filter_cols,
             metainsight_max_agg_cols=metainsight_max_agg_cols,
-            verbose=verbose
+            verbose=verbose,
+            max_iterations_to_add=max_iterations_to_add
         )
         # Visualize and save the results in the exploration_visualization property.
         exploration_visualization = self.data_explorer.do_follow_up_action(visualization_type=visualization_type)
@@ -238,7 +243,8 @@ class ExpDataFrame(pd.DataFrame):
                                                   metainsight_max_filter_cols: int = 3,
                                                   metainsight_max_agg_cols: int = 3,
                                                   visualization_type: Literal['graph', 'simple'] = 'graph',
-                                                  verbose=False
+                                                  verbose=False,
+                                                  max_iterations_to_add: int = 3
                                                   ):
         """
         Use the automated data exploration feature to follow up on specific explanations received from the last called explain() method.
@@ -265,6 +271,8 @@ class ExpDataFrame(pd.DataFrame):
         :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
                                    visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
         :param verbose: If True, will print additional information about the process. Default is False.
+        :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
+        Default is 3.
         :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
         """
         if self.last_used_explainer is None:
@@ -298,7 +306,8 @@ class ExpDataFrame(pd.DataFrame):
             metainsight_max_agg_cols=metainsight_max_agg_cols,
             visualization_type=visualization_type,
             verbose=verbose,
-            input_df=input_df
+            input_df=input_df,
+            max_iterations_to_add=max_iterations_to_add
         )
 
     @property

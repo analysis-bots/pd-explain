@@ -58,14 +58,11 @@ class QueryRefiner(LLMIntegrationInterface):
                        "You will also be provided with historic queries from this process. "
                        "Your task is to analyze and explain why the score is what it is, which the actor will then use to refine the query. Explicitly state the good and bad parts (if there are any) of the query. "
                        "Alternatively, if the query has an error in it (error message or score of 0), suggest a fix for it. "
-                       "This analysis should be short, 1 sentence per query."
-                       "Additionally, suggest constraints on the query that would make it more interesting. "
-                       "Constraints must be given as a python expression on a dataframe called 'query_result', which can be evaluated to "
-                       "a boolean value. If you would like to not add a constraint, write None instead in the position corresponding "
-                       "to the query. However, not adding constraints is not recommended and should only be done if there is no way to add a meaningful constraint. "
-                       "The constraints should have 1 clause at most. Avoid generating similar constraints to the ones already generated. "
-                       "Avoid constraints that are a simple filter, such as query_result['column'] > 0. Those are not interesting constraints. "
-                       "Make constraints more specific as the iterations go on. Make sure the columns in the constraints match the column names you are provided. "
+                       "This analysis should be short."
+                       "If possible, rate each attribute of the query and dataframe by estimating its potential interestingness according "
+                       "to the given queries."
+                       "If the query has constraints, explain the correlation between the constraints and what the actor should do."
+                       ""
                        f"{self._explain_scoring_method()}")
 
         return critic_task
@@ -197,6 +194,48 @@ class QueryRefiner(LLMIntegrationInterface):
         # Main loop of the process - iterate n times, each time getting critic feedback on existing recommendations,
         # then using that feedback to refine the recommendations using the actor.
         recommendations = None
+        # Preliminary step: have a LLM create an interestingness metric and constraints for the queries.
+        preliminary_system_message = (
+            "You are part of a query recommending process for a Pandas DataFrame. "
+            "Your task is to create an interestingness metric and constraints for the queries that will be generated, with "
+            "the goal of maximizing the interestingness of the queries. "
+        )
+        preliminary_user_message = (
+            f"The DataFrame is named {self.df_name}. "
+            f"The DataFrame has the following columns: {self.df.columns.tolist()}. "
+            f"The column types are: {self.df.dtypes.to_dict()}. "
+            f"The DataFrame has {self.df.shape[0]} rows and {self.df.shape[1]} columns. "
+            f"The user requests are: {self.user_requests}. These should have the highest priority. "
+            f"The queries generated as the initial recommendations are: {list(self.recommendations.keys())}. "
+            f"Both the metric and the constraints should be in the format of a python expression on a dataframe called 'query_result', "
+            f"that can be run directly using eval(). The constraints should return a boolean value, and the metric a float between 0 and 1. "
+            f"Return the metric's code between <metric> and </metric>, and the constraints between <constraints> and </constraints> tags, "
+            f"so they can be extracted programmatically. They should each be valid python functions. The constraints must not have "
+            f"sub functions defined inside them, since we will be detecting each function inside the set by the 'def' keyword. "
+            f"Also, all constraints should have a docstring that gives a short description of what they are, which will be provided "
+            f"to the next step in the automated process. "
+            f"There should also be a title for the metric, which should be returned between <title> and </title> tags, clearly stating what the metric is measuring. "
+            f"There should be exactly one metric, and it can have as many lines of code as needed, though do try to keep it simple."
+            f"There can be multiple constraints, but they should not be overly complex. Their goal is to maximize the interestingness of the queries when "
+            f"composing your interestingness metric and our own custom metrics, which are based on the KS test and coefficient of variation. "
+            f"(try not to have overlap of your metric with our metrics)."
+        )
+        preliminary_response = client(
+            system_messages=[preliminary_system_message],
+            user_messages=[preliminary_user_message],
+        )
+        # Extract the metric and constraints from the response
+        metric_code = self._extract_response(preliminary_response, "<metric>", "</metric>")
+        constraints_code = self._extract_response(preliminary_response, "<constraints>", "</constraints>")
+        title = self._extract_response(preliminary_response, "<title>", "</title>")
+        # Compile the metric code and constraints code
+        if metric_code is None or constraints_code is None or title is None:
+            raise ValueError("The preliminary response did not contain the required tags. "
+                             "Please check the response and try again.")
+        constraints_list = constraints_code.split("def ")
+        constraints_list = [f"def {constraint.strip()}" for constraint in constraints_list if constraint.strip()]
+        constraints_list = [constraint for constraint in constraints_list if len(constraint) > 0]
+        constraints_titles = [constraint.split('"""', 2)[1].strip() for constraint in constraints_list]
         try:
             for i in range(self.n):
                 previous_constraints = []

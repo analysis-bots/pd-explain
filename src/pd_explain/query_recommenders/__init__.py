@@ -20,7 +20,7 @@ dotenv.load_dotenv(env_path, override=False)
 logger = QueryLogger()
 
 # Methods to set up logging for the query recommender
-class LoggingSetupFunction:
+class LoggingSetupFunctions:
 
     @staticmethod
     def set_use_logging(use_logging: bool):
@@ -43,11 +43,13 @@ class LoggingSetupFunction:
         # Update the logger's log file location
         logger.log_file_location = log_file_location
 
+logger._set_use_logging_func = LoggingSetupFunctions.set_use_logging
+
 
 if consts.DOT_ENV_PD_EXPLAIN_LOG_QUERIES not in os.environ:
-    LoggingSetupFunction.set_use_logging(False)
+    LoggingSetupFunctions.set_use_logging(False)
 if consts.DOT_ENV_PD_EXPLAIN_LOG_FILE_LOCATION not in os.environ:
-    LoggingSetupFunction.set_log_file_location(os.path.join(package_dir, consts.PD_EXPLAIN_DEFAULT_LOG_FILE_LOCATION))
+    LoggingSetupFunctions.set_log_file_location(os.path.join(package_dir, consts.PD_EXPLAIN_DEFAULT_LOG_FILE_LOCATION))
 
 
 

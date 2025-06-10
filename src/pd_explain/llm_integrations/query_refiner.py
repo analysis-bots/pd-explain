@@ -1,6 +1,8 @@
 import re
 
 import pandas as pd
+# This isn't used in the code, but the LLM may use numpy functions, so we import it to avoid errors.
+import numpy as np
 from pandas import DataFrame, Series
 from typing import Callable
 
@@ -17,7 +19,7 @@ class QueryRefiner(LLMIntegrationInterface):
     """
 
     def __init__(self, df: DataFrame, df_name: str, recommendations: list[str] | pd.Series, score_function: Callable[[str, pd.DataFrame], tuple[dict, float]],
-                 score_function_name = "Statistical difference from original distribution", k=4, user_requests: str= None, n=2, return_all_options: bool = False):
+                 score_function_name = "Statistical difference from original distribution", k=4, user_requests: str= None, n=3, return_all_options: bool = True):
         """
         Initialize the QueryRefiner with a DataFrame and a set of recommendations.
 
@@ -193,6 +195,8 @@ class QueryRefiner(LLMIntegrationInterface):
             f"the same <metric> and </metric> tags, and likewise for the constraints and titles. "
             f"You also can not make any assumptions about what a query's result will contain, since this process may yield "
             f"many different queries, so you should write metrics and constraints that can always be applied to any DataFrame. "
+            f"It is also very important that you properly normalize the metrics to be between 0 and 1, as otherwise scores may explore. "
+            f"Also, if a metric is negative (lower is better), you should invert it to be positive (higher is better)."
         )
         preliminary_response = client(
             system_messages=[preliminary_system_message],
@@ -286,7 +290,7 @@ class QueryRefiner(LLMIntegrationInterface):
                 constraint_title = constraint_titles_mapping.get(constraint, f"{constraint}")
                 query_dict[f"Constraint {idx}: {constraint_title}"] = None
                 idx += 1
-            query_dict["Summary"] = summaries[i] if i < len(summaries) else None
+            query_dict["Critic summary"] = summaries[i] if i < len(summaries) else None
             # If there is an error, we skip the query and keep the None values in the history.
             if query_result["error"]:
                 query_dict["Error in query"] = True
@@ -325,6 +329,30 @@ class QueryRefiner(LLMIntegrationInterface):
         return history
 
 
+    def _handle_list_string(self, list_str: str, line_start: str ="*", line_end: str = "\n") -> list[str]:
+        """
+        Handle a string that is a list of items, where each item is separated by a line_start and line_end.
+        This is used to extract the queries from the LLM response.
+
+        :param list_str: The string to handle.
+        :param line_start: The string that indicates the start of each item in the list.
+        :param line_end: The string that indicates the end of each item in the list.
+
+        :return: A list of items extracted from the string.
+        """
+        if not list_str:
+            return []
+        items = list_str.split(line_end)
+        items = [item.strip() for item in items if item.strip().startswith(line_start)]
+        # The critic sometimes provides the constraints as a numbered list, despite the instructions to not do so.
+        # So, we use a regex to remove leading numbers and periods from the constraints.
+        pattern = re.compile(r'^\d+\.\s*')
+        items = [pattern.sub('*', item) for item in items]
+        items = [item[len(line_start):].strip() if item.startswith(line_start) else item.strip() for item in items]
+        return items
+
+
+
 
     def do_llm_action(self) -> pd.Series | None | str:
         """
@@ -332,9 +360,6 @@ class QueryRefiner(LLMIntegrationInterface):
         """
         client = Client()
         actor = LLMQueryRecommender(self.df, self.df_name)
-        critic_user_messages = []
-        critic_responses = []
-        actor_user_messages = []
         actor_responses = []
         critic_task = self._define_critic_task()
         actor_task = self._define_actor_task()
@@ -351,6 +376,7 @@ class QueryRefiner(LLMIntegrationInterface):
         pd.set_option('display.max_colwidth', None)  # No limit on column width
         # Preliminary step: have a LLM create an interestingness metric and constraints for the queries.
         metrics, constraints, metrics_titles_dict, constraint_titles_dict = self._do_preliminary_LLM_call(client)
+        print("Finished creating metrics and constraints.")
         # Create the history DataFrame
         history_columns = ["query", "Error in query", f"Metric 1: {self.score_function_name}"]
         idx = 2
@@ -363,7 +389,7 @@ class QueryRefiner(LLMIntegrationInterface):
             constraint_title = constraint_titles_dict.get(constraint, f"{constraint}")
             history_columns.append(f"Constraint {idx}: {constraint_title}")
             idx += 1
-        history_columns.append("Summary")
+        history_columns.append("Critic summary")
         history_df = pd.DataFrame(columns=history_columns)
         applied_initial_recommendations = actor.do_follow_up_action(self.initial_recommendations)
         history_df = self._add_to_history(history_df, applied_initial_recommendations, metrics, metrics_titles_dict, constraints,
@@ -372,11 +398,11 @@ class QueryRefiner(LLMIntegrationInterface):
         # then using that feedback to refine the recommendations using the actor.
         try:
             for i in range(self.n):
-                critic_message = (f"This is iteration number {i + 1} of the refinement process. The current history is"
+                print(f"Starting iteration {i + 1} / {self.n} of the refinement process.")
+                critic_message = (f"This is iteration number {i + 1} / {self.n} of the refinement process. The current history is"
                                   f" {self._create_history_string(history_df, get_only_head=True, head_len=(history_df.shape[0] - self.k))}\n")
                 critic_message += f"The current queries are: {self._create_history_string(history_df, get_only_tail=True, tail_len=self.k)}\n"
                 critic_message += self._create_data_explanation() + self._create_critic_format_instructions()
-                critic_user_messages.append(critic_message)
                 # Get the critic's response. We avoid using the assistant messages from the previous iterations,
                 # because it can lead to too large of a context window.
                 critic_response = client(
@@ -385,43 +411,19 @@ class QueryRefiner(LLMIntegrationInterface):
                 )
                 critic_long_response = self._extract_response(critic_response, "<critic>", "</critic>")
                 critic_summaries = self._extract_response(critic_response, "<summary>", "</summary>")
-                # The critic sometimes provides the constraints as a numbered list, despite the instructions to not do so.
-                # So, we use a regex to remove leading numbers and periods from the constraints.
-                pattern = r"\d+\.\s*|-\s*"
-                critic_constraints = re.sub(pattern, "*", critic_constraints)
-                # Break up the scores and constraints into lists and clean them up
-                critic_scores = critic_scores.split("\n")
-                critic_constraints = critic_constraints.split("\n")
-                critic_scores = [score.replace("*", "").strip() for score in critic_scores if len(score) > 1]
-                critic_constraints = [constraint.replace("*", "").strip() for constraint in critic_constraints if len(constraint) > 1]
-                # Sometimes, empty strings happen because of the above split, so we need to filter them out.
-                critic_scores = [score for score in critic_scores if len(score) > 1]
-                critic_constraints = [constraint for constraint in critic_constraints if len(constraint) > 1]
-                for j, constraint in enumerate(critic_constraints):
-                    constraints[j].append(constraint)
-                critic_response = ""
-                for score, constraint in zip(critic_scores, critic_constraints):
-                    # The critic's response is a list of scores and constraints, one for each query.
-                    # We need to format it so that it is easy to read.
-                    if len(score) > 0:
-                        critic_response += f"Score explanations: {score}, "
-                    if len(constraint) > 0:
-                        critic_response += f"Constraint recommendation: {constraint}"
-                    critic_response += "\n"
-                critic_responses.append(critic_response)
-                # Likewise with the actor, the first iteration includes a full explanation of the source and target dataframes,
-                # while the rest of the iterations only include the query list and the actor format instructions.
-                actor_message = ""
-                if i >= 1:
-                    actor_message += f"This is iteration number {i + 1} of the refinement process. The previous iteration history is (in CSV format): {history.to_csv()}\n"
-                actor_message += self._create_data_explanation() + self._create_query_list() + self._create_actor_format_instructions()
-                if len(self.initial_recommendations) < self.k:
-                    actor_message += (f"There should have been {self.k} queries, but due to errors, there are only {len(self.initial_recommendations)} queries. "
-                                      f"Please make sure to generate more queries using the information provided. ")
-                actor_message += f"The critic's analysis is: {critic_response}. "
-                if not history.empty:
-                    actor_message += f"The history of this process is (in order from beginning to end): {history}. "
-                actor_user_messages.append(actor_message)
+                if critic_long_response is None or len(critic_long_response) < 1:
+                    print("The critic did not provide a response. Stopping the process.")
+                    break
+                critic_long_responses = self._handle_list_string(critic_long_response, line_start="*", line_end="\n")
+                critic_summaries = self._handle_list_string(critic_summaries, line_start="*", line_end="\n")
+                # Replace the empty Critic summary of the current recommendations (aka the last k rows of the history DataFrame)
+                # with the summaries provided by the critic.
+                history_df.loc[history_df.shape[0] - self.k:, "Critic summary"] = critic_summaries
+                actor_message = (f"This is iteration number {i + 1} / {self.n} of the refinement process. The current history is"
+                                  f" {self._create_history_string(history_df, get_only_head=True, head_len=(history_df.shape[0] - self.k))}\n")
+                actor_message += f"The queries generated in the previous iteration are: {self._create_history_string(history_df, get_only_tail=True, tail_len=self.k)}\n"
+                actor_message += f"The critic's analysis of the queries is: {critic_long_responses}. \n"
+                actor_message += self._create_data_explanation() + self._create_actor_format_instructions()
                 # Get the actor's response
                 actor_response = actor.do_llm_action(
                     system_messages=[actor_task],
@@ -432,31 +434,9 @@ class QueryRefiner(LLMIntegrationInterface):
                 actor_responses.append(actor_response)
                 # Apply the actor's response to the DataFrame and get the results
                 applied_actor_response = actor.do_follow_up_action(actor_response)
-                recommendations = {}
-                # Score the queries
-                for j, zipped in enumerate(applied_actor_response.items()):
-                    query, query_result = zipped
-                    # Score the query
-                    scores, score, constraints_dict = self.score_function(query, query_result, constraints[j])
-                    recommendations[query] = {
-                        "query_result": query_result["result"],
-                        "score_dict": scores,
-                        "score": score,
-                        "constraints": constraints_dict,
-                    }
-                # Add the previous queries to the history
-                previous_queries = list(self.initial_recommendations.keys())
-                previous_scores = [self.initial_recommendations[query]['score'] for query in previous_queries]
-                previous_critics = [response.replace("*", "").strip() for response in critic_response.split("\n") if response]
-                # Sometimes, empty strings happen because of the above split, so we need to filter them out.
-                previous_critics = [critic for critic in previous_critics if len(critic) > 1]
-                history = pd.concat([history, pd.DataFrame({
-                    "query": previous_queries,
-                    "score": previous_scores,
-                    "explanation": previous_critics,
-                })], ignore_index=True)
-                self.initial_recommendations = recommendations
-                print(f"Finished iteration {i + 1} of the refinement process. ")
+                # Add the new queries to the history DataFrame
+                history_df = self._add_to_history(history_df, applied_actor_response, metrics, metrics_titles_dict,
+                                                    constraints, constraint_titles_dict, summaries=["Not seen by critic yet"] * len(applied_actor_response))
         except Exception as e:
             # If the LLM fails, we need to handle it gracefully.
             print(
@@ -465,28 +445,62 @@ class QueryRefiner(LLMIntegrationInterface):
             )
         # Once the process is complete, we need to get the final recommendations by their score.
         # These recommendations are the highest scoring queries produced throughout the process.
-        history = history[["query", "score"]]
-        recs = pd.DataFrame(columns=["query", "score"])
-        for query, query_dict in self.initial_recommendations.items():
-            recs = pd.concat([recs, pd.DataFrame({
-                "query": [query],
-                "score": [query_dict["score"]]
-            })], ignore_index=True)
-        recs = pd.concat([recs, history], ignore_index=True)
-        # If there are any duplicate queries, we only keep the last one.
-        recs = recs.drop_duplicates(subset=["query"], keep="last")
-        # Keep the k highest scoring queries.
-        recs = recs.sort_values(by=["score"], ascending=False)
-        recs = recs.reset_index(drop=True)
-        print(f"Number of final recommendations: {len(recs)}")
-        if not self.return_all_options:
-            # If we are not returning all options, we only keep the top k recommendations.
-            recs = recs.head(self.k)
+        fedex_col_name = f"Metric 1: {self.score_function_name}"
+        """
+        I debated what to go with - unified scores, or only the FEDEx scores.
+        On the one hand, the unified scores can be more informative, since they take everything into account.
+        On the other hand, FEDEx is the only one we actually know ahead of time (and is kind of the main goal), and the 
+        functions and constraints put out by the LLM may be unreliable or even outright silly.
+        I ended up going with just the FEDEx scores, since they are the most reliable and we know what they mean. 
+        This relegates the other metrics and constraints to being there to guide the LLM to produce better queries, but not to actually be used in the final scoring.
+        """
+        # # Option 1 - use unified scores to sort the queries.
+        # unified_scores = []
+        # # Create a unified score for each query. This score is the average of the scores of all metrics,
+        # # multiplied by the ratio of the number of constraints that are upheld by the query.
+        # for i, row in history_df.iterrows():
+        #     # Get the scores of the metrics
+        #     metric_scores = [row[col] for col in history_df.columns if col.startswith("Metric")]
+        #     # There can be strings in the score if errors occurred in the metric calculation,
+        #     metric_scores = [score for score in metric_scores if isinstance(score, (int, float))]
+        #     # Get the constraints that are upheld by the query
+        #     constraints_upheld = [row[col] for col in history_df.columns if col.startswith("Constraint") and row[col] is True]
+        #     # There can be strings in the constraints if errors occurred in the constraint calculation,
+        #     constraints_upheld = [constraint for constraint in constraints_upheld if isinstance(constraint, bool)]
+        #     # Calculate the unified score
+        #     if len(metric_scores) > 0:
+        #         unified_score = sum(metric_scores) / len(metric_scores)
+        #         if len(constraints_upheld) > 0:
+        #             unified_score *= len(constraints_upheld) / len(constraints)
+        #         # If no constraints are upheld, we multiply the score by 0.05 to give it a small value, but not zero,
+        #         else:
+        #             unified_score *= 0.05
+        #     else:
+        #         unified_score = 0
+        #     unified_scores.append(unified_score)
+        # # Add the unified scores to the history DataFrame
+        # history_df["Unified score"] = unified_scores
+        # # Sort the history DataFrame by the unified score in descending order
+        # history_df = history_df.sort_values(by="Unified score", ascending=False)
+
+        # Option 2 - use only the FEDEx scores to sort the queries.
+        # Sort the history DataFrame by the FEDEx score in descending order
+        history_df = history_df.sort_values(by=fedex_col_name, ascending=False)
+
+
+        if self.return_all_options:
+            # If we want to return all options, we return the entire history DataFrame.
+            recs = history_df
+        else:
+            # Otherwise, we return the top k queries from the history DataFrame.
+            recs = history_df.head(self.k)
         # Reset pd options to original values
         pd.set_option('display.max_rows', display_max_rows)
         pd.set_option('display.max_columns', display_max_columns)
         pd.set_option('display.width', display_width)
         pd.set_option('display.max_colwidth', display_max_colwidth)
+        recs = recs.rename(columns={fedex_col_name: "FEDEx Interestingness Score"})
+        recs = recs.drop(columns=["Critic summary"], errors='ignore')
         return recs
 
 

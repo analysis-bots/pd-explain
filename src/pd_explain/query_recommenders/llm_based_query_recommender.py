@@ -64,10 +64,6 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
         except Exception as e:
             scores = {"Scoring Error": str(np.nan)}
             score = 0
-            print(f"An error occurred while scoring query {query}: {e}. \n"
-                  f"This is not intentional, so we would appreciate it if you could report this issue at "
-                  f"https://github.com/analysis-bots/pd-explain")
-
 
         return scores, score
 
@@ -79,10 +75,23 @@ class LLMBasedQueryRecommender(QueryRecommenderInterface):
         """
         logger = QueryLogger()
         # Get the last queries done on the dataframe
-        history = logger.get_log(dataframe_name=self.df_name)
+        history = logger.get_log(dataframe_name=self.df_name, k=40)
         recommender = LLMQueryRecommender(self.df, self.df_name, history=history, user_requests=self.user_requests, k=self.k)
         # Apply the generated queries to the dataframe then score them
         recommendations = recommender.do_llm_action()
+        print("Finished generating initial recommendations.")
+        if self.n == 0:
+            applied_recommendations = recommender.do_follow_up_action(recommendations)
+            scores = []
+            for query, query_result in applied_recommendations.items():
+                if query_result["error"]:
+                    scores.append(0)
+                    continue
+                _, score = self._score_query(query, query_result["result"])
+                scores.append(score)
+            recommendations = DataFrame({"query": recommendations, "score": scores})
+            recommendations = recommendations.sort_values(by="score", ascending=False).reset_index(drop=True)
+            return recommendations
         refiner = QueryRefiner(self.df, self.df_name, recommendations, score_function=self._score_query, k=self.k, n=self.n,
                                user_requests=self.user_requests, return_all_options=self.return_all_options)
         refined_recommendations = refiner.do_llm_action()

@@ -4,6 +4,7 @@ import datetime
 import shutil
 import pandas as pd
 from pd_explain.query_recommenders import consts as consts
+import dotenv
 
 @singleton
 class QueryLogger:
@@ -19,6 +20,8 @@ class QueryLogger:
                 f.write("dataframe_name,query,interestingness_score,timestamp\n")
         self._log = pd.DataFrame(pd.read_csv(self.log_file_location, index_col=0))
         self._write_index_flag = False
+        self._set_use_logging_func = lambda use_logging: None
+
 
 
     @property
@@ -34,6 +37,7 @@ class QueryLogger:
         Set the use_logging flag.
         """
         self._use_logging = bool(value)
+        self._set_use_logging_func(self._use_logging)
 
     @property
     def log_file_location(self):

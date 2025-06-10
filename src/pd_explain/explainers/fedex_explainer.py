@@ -6,7 +6,7 @@ import re
 
 from fedex_generator.Operations.Filter import Filter
 from pd_explain.llm_integrations import ExplanationReasoning
-# from pd_explain.query_recommenders.query_logger import QueryLogger
+from pd_explain.query_recommenders.query_logger import QueryLogger
 from pd_explain.query_recommenders.query_score_functions import score_queries
 
 
@@ -24,6 +24,7 @@ class FedexExplainer(ExplainerInterface):
                  use_sampling: bool = True, sample_size=5000, debug_mode: bool = False,
                  add_llm_context_explanations: bool = False,
                  do_not_visualize: bool = False,
+                 log_query: bool = True,
                  *args, **kwargs):
         """
         Initialize the FedexExplainer object.
@@ -46,6 +47,7 @@ class FedexExplainer(ExplainerInterface):
         :param add_llm_context_explanations: Whether to add LLM context explanations to the explanation. Defaults to False.
         :param do_not_visualize: If True, the visualizations will not be generated. This is useful for when the explainer
         is used in a context where visualizations are not needed, such as part of a pipeline.
+        :param log_query: If True, the query will be logged to the query logger. Defaults to True.
         """
 
         if operation is None:
@@ -94,7 +96,8 @@ class FedexExplainer(ExplainerInterface):
         self._sample_size = sample_size
         self._debug_mode = debug_mode
         self._add_llm_context_explanations = add_llm_context_explanations
-        # self._logger = QueryLogger()
+        self._logger = QueryLogger()
+        self._log_query = log_query
         self._do_not_visualize = do_not_visualize
         self._added_explanations = None
         self._query = None
@@ -120,14 +123,15 @@ class FedexExplainer(ExplainerInterface):
 
             self._query, self._query_type = self._create_query_string(operation=self._operation)
 
-            # score = score_queries(scores)
-            #
-            # Log the query to the query logger
-            # self._logger.log_query(
-            #     dataframe_name=self._operation.source_name,
-            #     query=query,
-            #     score=score
-            # )
+            if self._log_query:
+                score = score_queries(scores)
+
+                # Log the query to the query logger
+                self._logger.log_query(
+                    dataframe_name=self._operation.source_name,
+                    query=self._query,
+                    score=score
+                )
 
         if isinstance(self._operation, Filter):
             self._original_operation.cor_deleted_atts = self._operation.cor_deleted_atts

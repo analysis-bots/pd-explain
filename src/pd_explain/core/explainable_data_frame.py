@@ -29,7 +29,6 @@ from typing import (
     Sequence,
     Union,
     List, Callable, Literal, Tuple, )
-from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
 from pd_explain.explainers import ExplainerFactory
 from pd_explain.utils.global_values import get_use_sampling_value
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype, DropKeep
@@ -99,8 +98,8 @@ class ExpDataFrame(pd.DataFrame):
 
         return _c
 
-    def llm_recommend(self, custom_requests=None, num_recommendations=4, num_iterations=2,
-                      return_all_options: bool = False):
+    def llm_recommend(self, custom_requests=None, num_recommendations=5, num_iterations=3,
+                      return_all_options: bool = True):
         """
         Generate queries for the DataFrame using the LLM.
 
@@ -1079,6 +1078,7 @@ class ExpDataFrame(pd.DataFrame):
                 allow_multiple_aggregations: bool = False, allow_multiple_groupbys: bool = False,
                 use_all_groupby_combinations: bool = False,
                 do_not_visualize: bool = False,
+                log_query: bool = True,
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
@@ -1099,6 +1099,7 @@ class ExpDataFrame(pd.DataFrame):
         :param show_scores: Fedex explainer. show scores on explanation.
         :param title: Fedex / outlier / shapley explainers. explanation title.
         :param corr_TH: Fedex explainer. Correlation threshold, above this threshold the columns are considered correlated.
+        :param log_query: Fedex explainer. If true, the query that produced the explanation will be logged.
         :param target: Outlier explainer. Target value for the outlier explainer
         :param dir: Outlier explainer. Direction for the outlier explainer. Can be either 'high' or 'low'.
         :param consider: Fedex explainer. Which side of a join to consider for the explanation. Can be either 'left' or 'right'.
@@ -1208,6 +1209,7 @@ class ExpDataFrame(pd.DataFrame):
                                              allow_multiple_groupbys=allow_multiple_groupbys,
                                              use_all_groupby_combinations=use_all_groupby_combinations,
                                              do_not_visualize=do_not_visualize,
+                                             log_query=log_query
                                              )
         self.last_used_explainer = explainer
         explanation = explainer.generate_explanation()

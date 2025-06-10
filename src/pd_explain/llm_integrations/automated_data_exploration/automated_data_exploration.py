@@ -9,9 +9,11 @@ from pandas import DataFrame
 from together.error import InvalidRequestError
 
 from pd_explain.llm_integrations import Client
-from pd_explain.llm_integrations.automated_data_exploration.simple_visualizer import SimpleAutomatedExplorationVisualizer
+from pd_explain.llm_integrations.automated_data_exploration.simple_visualizer import \
+    SimpleAutomatedExplorationVisualizer
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
-from pd_explain.llm_integrations.automated_data_exploration.data_structures import apply_result, QueryResultObject, QueryTree
+from pd_explain.llm_integrations.automated_data_exploration.data_structures import apply_result, QueryResultObject, \
+    QueryTree
 from pd_explain.llm_integrations.automated_data_exploration.graph_visualizer import GraphAutomatedExplorationVisualizer
 
 
@@ -182,9 +184,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             # Return only the specified part of the history
             return history.iloc[start_index:end_index].to_string(index=True, header=True)
 
-
-
-
     def _apply(self, response: pd.Series, result_mapping: dict) -> List[apply_result]:
         if result_mapping is None:
             raise ValueError("Result mapping must be provided to apply the queries to the DataFrame.")
@@ -229,9 +228,9 @@ class AutomatedDataExploration(LLMIntegrationInterface):
 
         return new_results
 
-
     def _format_summary_query(self, history: pd.DataFrame, user_query: str,
-                              total_parts: int = None, part: int = None, existing_summary: str = None) -> tuple[str, str]:
+                              total_parts: int = None, part: int = None, existing_summary: str = None) -> tuple[
+        str, str]:
         """
         Format a summary query for the LLM to generate a final report.
         This is a string representation of the history DataFrame, along with the user query.
@@ -277,14 +276,14 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 f"{existing_summary}\n"
             )
         final_report_user_message += (f"Ignore the error column, it is not relevant for the final report.\n"
-                                     f"Extract the findings from the history, and generate a final report summarizing the findings, "
-                                     f"according to the user query. This report, while it should be concise, should be detailed enough for the user to "
-                                     f"understand and draw conclusions from.\n"
-                                     f"Provide the report surrounded by <report> and </report> tags, so it can be easily extracted programmatically. "
-                                     f"Also, provide a list of the most important queries that were used in the analysis. This list "
-                                     f"should be a list of indexes from the history DataFrame, with a * symbol before each index and a new line after each index. "
-                                     f"This list should be surrounded by <vis> and </vis> tags, so it can be easily extracted programmatically. "
-                                     f"This list should be short, and only contain the most important queries that were used in the analysis. ")
+                                      f"Extract the findings from the history, and generate a final report summarizing the findings, "
+                                      f"according to the user query. This report, while it should be concise, should be detailed enough for the user to "
+                                      f"understand and draw conclusions from.\n"
+                                      f"Provide the report surrounded by <report> and </report> tags, so it can be easily extracted programmatically. "
+                                      f"Also, provide a list of the most important queries that were used in the analysis. This list "
+                                      f"should be a list of indexes from the history DataFrame, with a * symbol before each index and a new line after each index. "
+                                      f"This list should be surrounded by <vis> and </vis> tags, so it can be easily extracted programmatically. "
+                                      f"This list should be short, and only contain the most important queries that were used in the analysis. ")
         return final_report_system_message, final_report_user_message
 
     def do_llm_action(self, user_query: str = None, num_iterations: int = 10,
@@ -333,7 +332,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         client = Client()
         system_message = self._define_task()
         data_description = self._describe_data(user_query)
-        format_description = self._describe_input_format() + self._describe_output_format(queries_per_iteration, history)
+        format_description = self._describe_input_format() + self._describe_output_format(queries_per_iteration,
+                                                                                          history)
         query_and_results = defaultdict(QueryResultObject)
         query_tree = QueryTree(source_name=self.source_name)
         print_error = False
@@ -374,23 +374,28 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                         print(f"\t - LLM request failed with error: {e}")
                         print(f"\t - Truncating history seen by the LLM by {truncate_by} rows and retrying...")
                         if iterations_added <= max_iterations_to_add:
-                            print(f"\t - Adding one additional iteration to compensate, now {max_iterations} iterations in total.")
+                            print(
+                                f"\t - Adding one additional iteration to compensate, now {max_iterations} iterations in total.")
                         else:
-                            print(f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
+                            print(
+                                f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
                     iteration_num += 1
                     continue
                 # Extract the queries from the response
                 queries = self._extract_response(response, "<queries>", "</queries>")
                 if queries is None or len(queries) == 0:
                     if verbose:
-                        print(f"\t - LLM did not generate queries or got the format wrong and queries could not be extracted during iteration {iteration_num + 1}. ")
+                        print(
+                            f"\t - LLM did not generate queries or got the format wrong and queries could not be extracted during iteration {iteration_num + 1}. ")
                         if iterations_added < max_iterations_to_add:
                             iterations_added += 1
                             max_iterations += 1
                         if iterations_added <= max_iterations_to_add:
-                            print(f"\t - Adding one additional iteration to compensate, now {max_iterations} iterations in total.")
+                            print(
+                                f"\t - Adding one additional iteration to compensate, now {max_iterations} iterations in total.")
                         else:
-                            print(f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
+                            print(
+                                f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
                     iteration_num += 1
                     continue
                 queries = queries.split("\n")
@@ -411,7 +416,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     curr_index = len(history)
                     if result.error_occurred:
                         if verbose:
-                            print(f"\t - Error occurred while applying query: {result.generating_query} - {result.result}")
+                            print(
+                                f"\t - Error occurred while applying query: {result.generating_query} - {result.result}")
                         history = history._append({
                             "query": f"{result.index}: {result.generating_query}",
                             "fedex_explainer_findings": None,
@@ -432,7 +438,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             fedex_findings = result_df.explain(
                                 explainer="fedex",
                                 top_k=fedex_top_k,
-                                do_not_visualize=True
+                                do_not_visualize=True,
+                                log_query=False
                             )
                             # Store the raw FedEx findings in the query and results mapping
                             query_and_results[curr_index].fedex = result_df.last_used_explainer
@@ -471,7 +478,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             query_and_results[curr_index].metainsight = None
                         if verbose:
                             if metainsight_finding_str or fedex_finding_str:
-                                print(f"\t - Query {result.generating_query} produced {fedex_finding_str} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}")
+                                print(
+                                    f"\t - Query {result.generating_query} produced {fedex_finding_str} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}")
                             else:
                                 print(f"\t - Query {result.generating_query} produced no findings.")
                         history = history._append({
@@ -515,7 +523,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     total_parts *= 2  # Double the number of parts to try and fit the history
                     if verbose:
                         print(f"\t - LLM request for generating final report failed with error: {e}")
-                        print(f"\t - Trying to generate final report again by splitting history into {total_parts} parts.")
+                        print(
+                            f"\t - Trying to generate final report again by splitting history into {total_parts} parts.")
 
             # Extract the final report from the response
             final_report = self._extract_response(final_report_response, "<report>", "</report>")
@@ -541,7 +550,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             pd.set_option('display.max_colwidth', display_max_colwidth)
             if print_error:
                 print("LLM failed to generate any queries. ")
-
 
     def do_follow_up_action(self, history: pd.DataFrame = None, final_report=None,
                             query_and_results: dict[int, QueryResultObject] = None,

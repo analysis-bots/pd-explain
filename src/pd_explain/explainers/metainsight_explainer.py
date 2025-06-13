@@ -153,7 +153,8 @@ class MetaInsightExplainer(ExplainerInterface):
             self._prepare_case_filter_join(
                 groupby_columns=groupby_columns,
                 correlation_aggregation_method=correlation_aggregation_method,
-                aggregations=aggregations
+                aggregations=aggregations,
+                operation=operation
             )
         elif handle_groupby:
             self._prepare_case_groupby(
@@ -266,7 +267,8 @@ class MetaInsightExplainer(ExplainerInterface):
     def _prepare_case_filter_join(self,
                                   groupby_columns: List[List[str]] = None,
                                   correlation_aggregation_method: Literal['avg', 'max', 'sum'] = 'avg',
-                                  aggregations: List[Tuple[str, str]] = None) -> None:
+                                  aggregations: List[Tuple[str, str]] = None,
+                                  operation: Operation = None) -> None:
         """
         Prepare the filter columns, aggregations and groupby columns in the case we are automatically
         inferring from a filter or join operation.
@@ -280,8 +282,23 @@ class MetaInsightExplainer(ExplainerInterface):
         if not all(col in self.source_df.columns for col in self.filter_columns):
             raise ValueError("All target_columns must be present in the source dataframe")
 
+        # Handle the case where there is only 1 value to the filter column after a filter operation
+        need_restore_source_df = False
+        if len(self.source_df[self.filter_columns].nunique()) == 1:
+            source_df = self.source_df
+            # This case should really only happen with filters. If it happened with a join, it may just be
+            # that there was only one value to the column to begin with
+            if isinstance(operation, Filter):
+                self.source_df = operation.source_df
+            need_restore_source_df = True
+
+
         correlated_cols, numerical_cols = self._find_correlated_columns_multi(self.filter_columns,
                                                                               method=correlation_aggregation_method)
+
+        if need_restore_source_df:
+            # noinspection PyUnboundLocalVariable
+            self.source_df = source_df
 
         # It is possible that filtering only left us with 1 value in the filtered columns. If that happened,
         # we want to remove those columns because we won't be able to get anything from them.

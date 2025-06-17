@@ -37,7 +37,7 @@ sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.core.explainable_series import ExpSeries
-from pd_explain.query_recommenders.llm_based_query_recommender import LLMBasedQueryRecommender
+from pd_explain.experimental.query_recommenders import LLMBasedQueryRecommender
 from pd_explain.llm_integrations.automated_data_exploration import AutomatedDataExploration
 from pd_explain.explainers.outlier_explainer import OutlierExplainer
 from pd_explain.explainers.explainer_interface import ExplainerInterface
@@ -98,10 +98,11 @@ class ExpDataFrame(pd.DataFrame):
 
         return _c
 
-    def llm_recommend(self, custom_requests=None, num_recommendations=5, num_iterations=3,
-                      return_all_options: bool = True):
+    def llm_recommend_experimental(self, custom_requests=None, num_recommendations=5, num_iterations=3,
+                                   return_all_options: bool = True):
         """
         Generate queries for the DataFrame using the LLM.
+        Please note that this feature is experimental and may not work as expected or produce meaningful results.
 
         :param custom_requests: Custom requests to be sent to the LLM. Optional.
         :param num_recommendations: Number of recommendations to generate. Default is 4.
@@ -221,7 +222,8 @@ class ExpDataFrame(pd.DataFrame):
         with open(file_path, 'wb') as file:
             dill.dump(self.data_explorer, file)
 
-    def visualize_from_saved_data_exploration(self, file_path: str,
+    @staticmethod
+    def visualize_from_saved_data_exploration(file_path: str,
                                               visualization_type: Literal['graph', 'simple'] = 'graph'):
         """
         Visualize the data exploration results from a saved file.
@@ -232,8 +234,8 @@ class ExpDataFrame(pd.DataFrame):
         """
         import dill
         with open(file_path, 'rb') as file:
-            self.data_explorer = dill.load(file)
-        return self.data_explorer.do_follow_up_action(visualization_type=visualization_type)
+            data_explorer = dill.load(file)
+        return data_explorer.do_follow_up_action(visualization_type=visualization_type)
 
     def follow_up_with_automated_data_exploration(self, explanation_index: int = None,
                                                   num_iterations: int = 10,
@@ -1078,7 +1080,7 @@ class ExpDataFrame(pd.DataFrame):
                 allow_multiple_aggregations: bool = False, allow_multiple_groupbys: bool = False,
                 use_all_groupby_combinations: bool = False,
                 do_not_visualize: bool = False,
-                log_query: bool = True,
+                log_query: bool = False,
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.

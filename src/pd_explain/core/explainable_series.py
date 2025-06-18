@@ -301,7 +301,8 @@ class ExpSeries(pd.Series):
                 label_name: str = 'label', explain_errors=True,
                 error_explanation_threshold: float = 0.05,
                 debug_mode: bool = False,
-                add_llm_explanation_reasoning=False
+                add_llm_explanation_reasoning=False,
+                visualization_type: Literal['grid', 'carousel'] = 'grid'
                 ):
         """
         Generate an explanation for the dataframe.
@@ -360,6 +361,8 @@ class ExpSeries(pd.Series):
         the explanations found occur. Defaults to False. Requires setting an API key. See the documentation for more information.
         Note that setting this to True will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
         Also note that the output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
+        :param visualization_type: Fedex explainer. Chooses how to display multiple explanations. Can be either 'grid' or 'carousel'.
+        'grid' will display all explanations together in a grid layout, while 'carousel' will display them one by one, with navigation buttons.
 
         :return: explanation figures
         """
@@ -385,7 +388,8 @@ class ExpSeries(pd.Series):
             sample_size=sample_size,
             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold,
             debug_mode=debug_mode,
-            add_llm_context_explanations=add_llm_explanation_reasoning
+            add_llm_context_explanations=add_llm_explanation_reasoning,
+            visualization_type=visualization_type,
         )
         self.last_used_explainer = explainer
 

@@ -2,6 +2,7 @@ from collections import defaultdict
 import numpy as np
 from scipy import stats
 import itertools
+import warnings
 
 import pandas as pd
 from matplotlib import pyplot as plt, gridspec
@@ -42,7 +43,7 @@ class MetaInsightExplainer(ExplainerInterface):
                  allow_multiple_groupbys: bool = False, num_bins: int = 10,
                  use_all_groupby_combinations: bool = False,
                  do_not_visualize: bool = False,
-                 visualization_type: Literal['carousel', 'regular_plot'] = 'regular_plot',
+                 visualization_type: Literal['carousel', 'grid'] = 'regular_plot',
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -96,6 +97,9 @@ class MetaInsightExplainer(ExplainerInterface):
         self.use_all_groupby_combinations = use_all_groupby_combinations
         self._do_not_visualize = do_not_visualize
         self._source_name = get_calling_params_name(source_df)
+        if visualization_type not in ['carousel', 'grid']:
+            warnings.warn(f"Visualization type {visualization_type} is not supported. Defaulting to 'grid'.")
+            visualization_type = 'grid'
         self._visualization_type = visualization_type
 
         if self.source_df is None:
@@ -341,7 +345,7 @@ class MetaInsightExplainer(ExplainerInterface):
                     Groupby columns: {self.groupby_columns}
                     Aggregations: {self.aggregations}""")
         else:
-            if self._visualization_type == 'full_plot':
+            if self._visualization_type == 'grid':
                 num_rows = min(self.top_k, len(metainsights))
                 fig = plt.figure(figsize=(30, 30 * len(metainsights)))
                 dynamic_hspace = min(1., (0.3 * num_rows))
@@ -379,30 +383,13 @@ class MetaInsightExplainer(ExplainerInterface):
                 with CarouselAdapter() as adapter:
                     for i, mi in enumerate(metainsights[:self.top_k]):
                         fig = plt.figure(figsize=(30, 20))
-                        outer_grid = gridspec.GridSpec(2, 1, hspace=0.05 if len(metainsights) > 2 else 0.3,
-                                                       figure=fig,
-                                                       height_ratios=[0.5, 99.5])
-                        main_grid = gridspec.GridSpecFromSubplotSpec(
-                            nrows=1, ncols=1, subplot_spec=outer_grid[1, 0],
-                            hspace=0.3, wspace=0.2
-                        )
-                        n_cols = 2 if len(mi.exceptions) > 0 else 1
-                        title_grid = gridspec.GridSpecFromSubplotSpec(
-                            nrows=1, ncols=n_cols, subplot_spec=outer_grid[0, 0]
-                        )
-                        ax_left = fig.add_subplot(title_grid[0, 0])
-                        ax_left.set_title("Common patterns detected", fontsize=30)
-                        ax_left.axis('off')
-                        if n_cols == 2:
-                            # Right title : "Exceptions to (matching) common pattern (left) detected"
-                            ax_right = fig.add_subplot(title_grid[0, 1])
-                            ax_right.set_title("Exceptions to (matching) common pattern (left) detected", fontsize=30)
-                            ax_right.axis('off')
-                        mi.visualize(fig=fig, subplot_spec=main_grid[0, 0])
+                        outer_grid = gridspec.GridSpec(1, 1, hspace=0.05 if len(metainsights) > 2 else 0.3,
+                                                       figure=fig)
+                        mi.visualize(fig=fig, subplot_spec=outer_grid[0, 0])
+                        plt.close(fig)
                         adapter.capture_output(fig)
                 return None
-
-
+            return None
 
     def can_visualize(self) -> bool:
         return self.can_run_visualize and not self._do_not_visualize

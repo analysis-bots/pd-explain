@@ -1,13 +1,18 @@
+import pandas as pd
+from matplotlib import pyplot as plt
+
 from .explainer_interface import ExplainerInterface
-from typing import List
+from typing import List, Literal
 from pandas import DataFrame
 from copy import deepcopy
 import re
+import warnings
 
 from fedex_generator.Operations.Filter import Filter
 from pd_explain.llm_integrations import ExplanationReasoning
 from pd_explain.experimental.query_recommenders import QueryLogger
 from pd_explain.experimental.query_recommenders.query_score_functions import score_queries
+from pd_explain.visualizer_adaptations.carousel_adapter import CarouselAdapter
 
 
 class FedexExplainer(ExplainerInterface):
@@ -25,6 +30,7 @@ class FedexExplainer(ExplainerInterface):
                  add_llm_context_explanations: bool = False,
                  do_not_visualize: bool = False,
                  log_query: bool = True,
+                 visualization_type: Literal['carousel', 'grid'] = 'grid',
                  *args, **kwargs):
         """
         Initialize the FedexExplainer object.
@@ -102,6 +108,10 @@ class FedexExplainer(ExplainerInterface):
         self._added_explanations = None
         self._query = None
         self._query_type = None
+        if visualization_type not in ['carousel', 'grid']:
+            warnings.warn(f"Visualization type {visualization_type} is not supported. Defaulting to 'grid'.")
+            visualization_type = 'grid'
+        self._visualization_type = visualization_type
 
     def generate_explanation(self):
 
@@ -214,18 +224,42 @@ class FedexExplainer(ExplainerInterface):
                     }
 
             # Draw the figures using the operation's draw_figures method.
-            self._operation.draw_figures(
-                title=title,
-                scores=scores,
-                K=K,
-                figs_in_row=figs_in_row,
-                explanations=explanations,
-                bins=bins,
-                influence_vals=influence_vals,
-                source_name=source_name,
-                show_scores=show_scores,
-                added_text=self._added_explanations
-            )
+            if self._visualization_type == 'grid':
+                self._operation.draw_figures(
+                    title=title,
+                    scores=scores,
+                    K=K,
+                    figs_in_row=figs_in_row,
+                    explanations=explanations,
+                    bins=bins,
+                    influence_vals=influence_vals,
+                    source_name=source_name,
+                    show_scores=show_scores,
+                    added_text=self._added_explanations
+                )
+            elif self._visualization_type == 'carousel':
+                with CarouselAdapter() as adapter:
+                    for i in range(len(explanations)):
+                        # These all still need to be iterables, with explanation in particular being a Series.
+                        explanation = pd.Series(explanations.iloc[i])
+                        bin = [bins.iloc[i]]
+                        influence_val = [influence_vals.iloc[i]]
+                        score = [scores.iloc[i]]
+                        # If the added_explanations is not None, we will add the explanation to the carousel.
+                        _, fig = self._operation.draw_figures(
+                            title=title,
+                            scores=score,
+                            K=K,
+                            figs_in_row=figs_in_row,
+                            explanations=explanation,
+                            bins=bin,
+                            influence_vals=influence_val,
+                            source_name=source_name,
+                            show_scores=show_scores,
+                            added_text=self._added_explanations,
+                        )
+                        plt.close(fig)  # Close the figure to avoid displaying it immediately
+                        adapter.capture_output(fig)  # Capture the output for the carousel
             return None
         else:
             # If we got the output from an external source, we will visualize it here. This may happen if the explainer was

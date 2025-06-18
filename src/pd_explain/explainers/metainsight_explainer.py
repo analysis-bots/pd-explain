@@ -13,6 +13,7 @@ from fedex_generator.Operations.Filter import Filter
 from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from fedex_generator.commons.utils import get_calling_params_name
+from pd_explain.visualizer_adaptations.carousel_adapter import CarouselAdapter
 
 from typing import List, Tuple, Literal
 
@@ -41,6 +42,7 @@ class MetaInsightExplainer(ExplainerInterface):
                  allow_multiple_groupbys: bool = False, num_bins: int = 10,
                  use_all_groupby_combinations: bool = False,
                  do_not_visualize: bool = False,
+                 visualization_type: Literal['carousel', 'regular_plot'] = 'regular_plot',
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -94,6 +96,7 @@ class MetaInsightExplainer(ExplainerInterface):
         self.use_all_groupby_combinations = use_all_groupby_combinations
         self._do_not_visualize = do_not_visualize
         self._source_name = get_calling_params_name(source_df)
+        self._visualization_type = visualization_type
 
         if self.source_df is None:
             raise ValueError("Source dataframe cannot be None")
@@ -338,39 +341,68 @@ class MetaInsightExplainer(ExplainerInterface):
                     Groupby columns: {self.groupby_columns}
                     Aggregations: {self.aggregations}""")
         else:
-            num_rows = min(self.top_k, len(metainsights))
-            fig = plt.figure(figsize=(30, 30 * len(metainsights)))
-            dynamic_hspace = min(1., (0.3 * num_rows))
-            outer_grid = gridspec.GridSpec(2, 1, hspace=0.05 if len(metainsights) > 2 else 0.3,
-                                           figure=fig,
-                                           height_ratios=[0.5, 99.5])
-            main_grid = gridspec.GridSpecFromSubplotSpec(
-                nrows=num_rows, ncols=1, subplot_spec=outer_grid[1, 0],
-                hspace=dynamic_hspace, wspace=0.2
-            )
-            if any([True for mi in metainsights if len(mi.exceptions) > 0]):
-                need_second_column = True
-            else:
-                need_second_column = False
-            # Create a title grid as the first row, spanning two columns
-            n_cols = 2 if need_second_column else 1
-            title_grid = gridspec.GridSpecFromSubplotSpec(
-                nrows=1, ncols=n_cols, subplot_spec=outer_grid[0, 0]
-            )
-            # Left title : "Common patterns detected"
-            ax_left = fig.add_subplot(title_grid[0, 0])
-            ax_left.set_title("Common patterns detected", fontsize=30)
-            ax_left.axis('off')
-            if need_second_column:
-                # Right title : "Exceptions to (matching) common pattern (left) detected"
-                ax_right = fig.add_subplot(title_grid[0, 1])
-                ax_right.set_title("Exceptions to (matching) common pattern (left) detected", fontsize=30)
-                ax_right.axis('off')
+            if self._visualization_type == 'full_plot':
+                num_rows = min(self.top_k, len(metainsights))
+                fig = plt.figure(figsize=(30, 30 * len(metainsights)))
+                dynamic_hspace = min(1., (0.3 * num_rows))
+                outer_grid = gridspec.GridSpec(2, 1, hspace=0.05 if len(metainsights) > 2 else 0.3,
+                                               figure=fig,
+                                               height_ratios=[0.5, 99.5])
+                main_grid = gridspec.GridSpecFromSubplotSpec(
+                    nrows=num_rows, ncols=1, subplot_spec=outer_grid[1, 0],
+                    hspace=dynamic_hspace, wspace=0.2
+                )
+                if any([True for mi in metainsights if len(mi.exceptions) > 0]):
+                    need_second_column = True
+                else:
+                    need_second_column = False
+                # Create a title grid as the first row, spanning two columns
+                n_cols = 2 if need_second_column else 1
+                title_grid = gridspec.GridSpecFromSubplotSpec(
+                    nrows=1, ncols=n_cols, subplot_spec=outer_grid[0, 0]
+                )
+                # Left title : "Common patterns detected"
+                ax_left = fig.add_subplot(title_grid[0, 0])
+                ax_left.set_title("Common patterns detected", fontsize=30)
+                ax_left.axis('off')
+                if need_second_column:
+                    # Right title : "Exceptions to (matching) common pattern (left) detected"
+                    ax_right = fig.add_subplot(title_grid[0, 1])
+                    ax_right.set_title("Exceptions to (matching) common pattern (left) detected", fontsize=30)
+                    ax_right.axis('off')
 
-            for i, mi in enumerate(metainsights[:self.top_k]):
-                mi.visualize(fig=fig, subplot_spec=main_grid[i, 0])
+                for i, mi in enumerate(metainsights[:self.top_k]):
+                    mi.visualize(fig=fig, subplot_spec=main_grid[i, 0])
 
-            return None
+                return None
+            elif self._visualization_type == 'carousel':
+                with CarouselAdapter() as adapter:
+                    for i, mi in enumerate(metainsights[:self.top_k]):
+                        fig = plt.figure(figsize=(30, 20))
+                        outer_grid = gridspec.GridSpec(2, 1, hspace=0.05 if len(metainsights) > 2 else 0.3,
+                                                       figure=fig,
+                                                       height_ratios=[0.5, 99.5])
+                        main_grid = gridspec.GridSpecFromSubplotSpec(
+                            nrows=1, ncols=1, subplot_spec=outer_grid[1, 0],
+                            hspace=0.3, wspace=0.2
+                        )
+                        n_cols = 2 if len(mi.exceptions) > 0 else 1
+                        title_grid = gridspec.GridSpecFromSubplotSpec(
+                            nrows=1, ncols=n_cols, subplot_spec=outer_grid[0, 0]
+                        )
+                        ax_left = fig.add_subplot(title_grid[0, 0])
+                        ax_left.set_title("Common patterns detected", fontsize=30)
+                        ax_left.axis('off')
+                        if n_cols == 2:
+                            # Right title : "Exceptions to (matching) common pattern (left) detected"
+                            ax_right = fig.add_subplot(title_grid[0, 1])
+                            ax_right.set_title("Exceptions to (matching) common pattern (left) detected", fontsize=30)
+                            ax_right.axis('off')
+                        mi.visualize(fig=fig, subplot_spec=main_grid[0, 0])
+                        adapter.capture_output(fig)
+                return None
+
+
 
     def can_visualize(self) -> bool:
         return self.can_run_visualize and not self._do_not_visualize

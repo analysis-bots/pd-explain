@@ -14,11 +14,14 @@ class QueryLogger:
         Initialize the QueryLogger with the log file location, and logging flag.
         """
         self._log_file_location = os.getenv(consts.DOT_ENV_PD_EXPLAIN_LOG_FILE_LOCATION)
-        self._use_logging = bool(os.getenv(consts.DOT_ENV_PD_EXPLAIN_LOG_QUERIES))
-        if not os.path.exists(self.log_file_location):
+        self._use_logging = os.getenv(consts.DOT_ENV_PD_EXPLAIN_LOG_QUERIES) == 'True'
+        if not os.path.exists(self.log_file_location) and self._use_logging:
             with open(self.log_file_location, "w") as f:
                 f.write("dataframe_name,query,interestingness_score,timestamp\n")
-        self._log = pd.DataFrame(pd.read_csv(self.log_file_location, index_col=0))
+        if self._use_logging:
+            self._log = pd.DataFrame(pd.read_csv(self.log_file_location, index_col=0))
+        else:
+            self._log = None
         self._write_index_flag = False
         self._set_use_logging_func = lambda use_logging: None
 
@@ -70,6 +73,9 @@ class QueryLogger:
         We store the logs as a pandas dataframe, where the index is the dataframe name, and the columns are the query, score and timestamp.
         """
         if self._use_logging:
+            if not os.path.exists(self.log_file_location):
+                with open(self.log_file_location, "w") as f:
+                    f.write("dataframe_name,query,interestingness_score,timestamp\n")
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             log_entry = pd.DataFrame({
                 'query': [query],
@@ -107,7 +113,7 @@ class QueryLogger:
 
         :return: The log dataframe.
         """
-        if dataframe_name:
+        if dataframe_name and self._use_logging:
             log = self._log[self._log.index == dataframe_name]
             if k and k > 0:
                 # Sort the log by timestamp in descending order

@@ -37,7 +37,7 @@ sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.core.explainable_series import ExpSeries
-from pd_explain.experimental.query_recommenders import LLMBasedQueryRecommender
+from pd_explain.experimental.query_recommenders.llm_based_query_recommender import LLMBasedQueryRecommender
 from pd_explain.llm_integrations.automated_data_exploration import AutomatedDataExploration
 from pd_explain.explainers.outlier_explainer import OutlierExplainer
 from pd_explain.explainers.explainer_interface import ExplainerInterface
@@ -1081,6 +1081,7 @@ class ExpDataFrame(pd.DataFrame):
                 use_all_groupby_combinations: bool = False,
                 do_not_visualize: bool = False,
                 log_query: bool = False,
+                visualization_type: Literal['regular_plot', 'carousel'] = 'regular_plot',
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
@@ -1211,7 +1212,8 @@ class ExpDataFrame(pd.DataFrame):
                                              allow_multiple_groupbys=allow_multiple_groupbys,
                                              use_all_groupby_combinations=use_all_groupby_combinations,
                                              do_not_visualize=do_not_visualize,
-                                             log_query=log_query
+                                             log_query=log_query,
+                                             visualization_type=visualization_type
                                              )
         self.last_used_explainer = explainer
         explanation = explainer.generate_explanation()

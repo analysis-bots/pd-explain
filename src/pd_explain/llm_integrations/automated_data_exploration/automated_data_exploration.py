@@ -139,8 +139,9 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 f"that you want to apply the query to. Use index 0 for the original DataFrame. "
                 "Example for a query on index i -  i: [x > 5], i: .groupby('column_name').mean(), etc. Never use a groupby within or as a filter query."
                 "Make sure you use the correct index for the query you want to apply, and never select an index above the current max index in the history. "
-                "The query must be a valid Pandas query applicable using eval() with the syntax [df]{query}, where [df] "
-                "is a placeholder for the name of the actual DataFrame (which is not provided to you). "
+                "The query must be a valid Pandas query applicable using eval(f'df_to_query{query}'), where df_to_query is an the name of some "
+                "arbitrary dataframe (not given to you), and query is your own output. You should be aware of this syntax, and not add, for example,"
+                "round brackets to the beginning, or [df] to the beginning of the query, as that will result in an error. "
                 "If you need to use the DataFrame's name (for example to filter it), use the placeholder [df] in your query, and the system will replace it with the actual DataFrame name. "
                 "For example, if you want to filter by a column, write [[df]['column_name'] > 5]. The usage of square brackets must "
                 "never be done outside of a filter query or column selection, and the inside of a filter query must never be any operation but simple comparisons. "
@@ -150,7 +151,14 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 f"Avoid repeating queries that have already been applied in the history. "
                 f"If you use the std function, make sure to also specify the ddof parameters, otherwise std throws an error."
                 f"If you use the agg function, make sure to provide the aggregations as a dictionary, i.e. {{column_name: 'agg_func'}}, "
-                f"and not as a list of any kind, i.e. ['agg_func_1', 'agg_func_2'] as the list format will throw a NoneType error. ")
+                f"and not as a list of any kind, i.e. ['agg_func_1', 'agg_func_2'] as the list format will throw a NoneType error. \n"
+                f"Make sure you always apply brackets correctly - every bracket of any kind must have an opening and closing bracket. "
+                f"The program will not be fix your bracket mistakes, and will throw an error if you do not apply brackets correctly. "
+                f"If you get unmatched bracket errors in the history, take a great amount of care to not repeat those mistakes.\n"
+                f"Also make doubly sure to use valid pandas syntax, as the program will not fix your mistakes. "
+                f"For example, if you use filter queries with equivalence conditions, make sure to use = and not ==. "
+                f"For example, [[df]['column_name'] = x] is a valid query, but [[df]['column_name'] == x] is not, since the term evaluates to a boolean, and will cause an error. "
+                f"If you see any errors due to boolean values, it is likely that this is the cause, so make sure to use = and not == in your queries.\n")
 
     def _format_history(self, history, truncate_early_by: int = 0, part: int = None,
                         total_parts: int = None,
@@ -201,12 +209,21 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             if not isinstance(query, str) or ':' not in query:
                 continue
             index, query_string = query.split(':', 1)
-            index = int(index.strip())
+            try:
+                index = int(index.strip())
+            except ValueError:
+                # If the index is not an integer, we just default to 0
+                index = 0
             query_string = query_string.strip()
             # Sometimes, the LLM puts decides that writing [[df].groupby...] is a good idea. It is not.
             if query_string.startswith("[[df].groupby("):
                 query_string = query_string[len("[[df]"):]
                 query_string = query_string[:-1]  # Remove the last character, which is the closing bracket
+            # Likewise, the LLM can sometimes just decide to put [df] at the start of the query, which is not valid.
+            # What is valid is [[df]... which is a filter query. [df] at the start just makes it end up getting replaced
+            # with df_to_query, resulting in an error.
+            if query_string.startswith("[df]"):
+                query_string = query_string[len("[df]"):]
             # Replace [df] placeholder with df_to_query
             query_string_fixed = query_string.replace("[df]", "df_to_query")
             # Apply the query to the DataFrame

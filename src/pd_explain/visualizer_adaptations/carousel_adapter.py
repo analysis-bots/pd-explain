@@ -5,6 +5,9 @@ from typing import List, Any
 from pd_explain.visualizer_adaptations.adapter_interface import AdapterInterface
 
 class CarouselAdapter(AdapterInterface):
+    """
+    CarouselAdapter is an adapter for visualizing multiple outputs in a carousel format.
+    """
     def __init__(self):
         self._captured_outputs: List[widgets.Output] = []
         self._carousel_ui: widgets.VBox | None = None
@@ -20,8 +23,6 @@ class CarouselAdapter(AdapterInterface):
         # This will be the context manager for clear_output/display
         self._current_output_widget = widgets.Output()
         self._captured_outputs = []
-        # You can optionally display a placeholder here if you want immediate feedback
-        # display(widgets.HTML("Preparing carousel..."))
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:

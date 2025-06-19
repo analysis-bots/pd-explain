@@ -12,9 +12,10 @@ env_path = os.path.join(package_dir, ".env")
 if not os.path.exists(env_path):
     with open(env_path, "w") as f:
         f.write(f"{consts.DOT_ENV_PD_EXPLAIN_LLM_KEY}=YOUR_API_KEY\n")
-        f.write(f"{consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER}=together\n")
-        f.write(f"{consts.DOT_ENV_PD_EXPLAIN_LLM_MODEL}=deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free\n")
-        f.write(f"{consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER_URL}=https://api.together.xyz/v1\n")
+        f.write(f"{consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER}=google\n")
+        f.write(f"{consts.DOT_ENV_PD_EXPLAIN_LLM_MODEL}=gemini-2.5-flash\n")
+        f.write(f"{consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER_URL}=https://generativelanguage.googleapis.com/v1beta/openai/\n")
+        f.write(f"{consts.DOT_ENV_PD_EXPLAIN_LLM_VISION_MODEL}=gemini-2.5-flash\n")
 
 # Load the .env file
 dotenv.load_dotenv(dotenv_path=env_path, override=False)
@@ -71,15 +72,30 @@ class LlmSetupMethods:
         client._provider_url = provider_url
 
 
+    @staticmethod
+    def write_vision_model(vision_model: str):
+        """
+        Write the LLM vision model to the .env file and the environment variables.
+        The vision model is the name of the LLM model to use for generating explanations from images.
+        Default is 'gemini-2.5-flash'.
+        """
+        os.environ[consts.DOT_ENV_PD_EXPLAIN_LLM_VISION_MODEL] = vision_model
+        dotenv.set_key(env_path, consts.DOT_ENV_PD_EXPLAIN_LLM_VISION_MODEL, vision_model)
+        client.vision_model = vision_model
+
+
 # If any of the variables are not set, set them to default values.
 if consts.DOT_ENV_PD_EXPLAIN_LLM_KEY not in os.environ:
     LlmSetupMethods.write_llm_api_key("YOUR_API_KEY")
 if consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER not in os.environ:
-    LlmSetupMethods.write_llm_provider("together")
+    LlmSetupMethods.write_llm_provider("google")
 if consts.DOT_ENV_PD_EXPLAIN_LLM_MODEL not in os.environ:
-    LlmSetupMethods.write_llm_model("deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free")
+    LlmSetupMethods.write_llm_model("gemini-2.5-flash")
 if consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER_URL not in os.environ:
-    LlmSetupMethods.write_provider_url("https://api.together.xyz/v1")
+    LlmSetupMethods.write_provider_url("https://generativelanguage.googleapis.com/v1beta/openai/")
+if consts.DOT_ENV_PD_EXPLAIN_LLM_VISION_MODEL not in os.environ:
+    LlmSetupMethods.write_vision_model("gemini-2.5-flash")
 
 
 from pd_explain.llm_integrations.explanation_reasoning import ExplanationReasoning
+from pd_explain.llm_integrations.automated_data_exploration import AutomatedDataExploration

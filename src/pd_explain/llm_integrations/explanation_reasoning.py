@@ -1,9 +1,11 @@
 import pandas as pd
 import re
 import textwrap
+import os
 
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
+from pd_explain.llm_integrations import consts
 
 
 class ExplanationReasoning(LLMIntegrationInterface):
@@ -167,7 +169,12 @@ class ExplanationReasoning(LLMIntegrationInterface):
         return output_format_explanation
 
     def do_llm_action(self) -> pd.Series | None:
-        client = Client()
+        client = Client(
+            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONiNG_LLM_KEY, "google"),
+            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_MODEL, "gemini-2.5-flash"),
+            api_key=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONiNG_LLM_KEY, None),
+            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER_URL, "https://generativelanguage.googleapis.com/v1beta/openai/")
+        )
         # Create the system and user messages
         system_messages = [
             f"Our system automatically analyzes a user's query over their data and finds some interesting statistical insights. "

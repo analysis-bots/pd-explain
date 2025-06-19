@@ -55,6 +55,7 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
         """
         # Check if there are any findings to visualize and if there is an error
         node_row = self.history.iloc[node_index]
+        query_description = node_row['query_description'] if 'query_description' in node_row else None
         is_error = node_row['error'] is not None
         fedex_findings_count = len(node_row['fedex_explainer_findings']) if isinstance(
             node_row['fedex_explainer_findings'], list) else 0
@@ -62,15 +63,27 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
             node_row['metainsight_explainer_findings'], list) else 0
         has_findings = (fedex_findings_count > 0 or metainsight_findings_count > 0)
 
-        # Create the detailed label for the node
-        node_label = f"Query {node_index}\n\n" if node_index != 0 else "Original DataFrame\n\n"
-        node_label += textwrap.fill(query_tree_str.get(node_index, "Unknown Query"), width=35)
-        if fedex_findings_count > 0:
-            node_label += f"\n\nFEDEx: {fedex_findings_count}"
-        if metainsight_findings_count > 0:
-            node_label += f"\nMetaInsight: {metainsight_findings_count}"
+        if query_description is not None:
+            node_label = f"Query {node_index}:\n\n {query_description}"
+            if is_error:
+                node_label += f"\n\n {query_tree_str.get(node_index, 'Unknown Query')}"
+        else:
+            # Create the detailed label for the node
+            node_label = f"Query {node_index}\n\n" if node_index != 0 else "Original DataFrame\n\n"
+            node_label += query_tree_str.get(node_index, "Unknown Query")
+
         if is_error:
-            node_label += "\n\n Query execution failed with an error."
+            node_label += "\n\n\n Query execution failed with an error."
+
+        if not is_error:
+            if fedex_findings_count > 0:
+                node_label += f"\n\n\nFEDEx: {fedex_findings_count}"
+            if metainsight_findings_count > 0:
+                node_label += f"\n\n\nMetaInsight: {metainsight_findings_count}"
+
+
+        # Wrap the label text to fit within the node
+        node_label = textwrap.fill(node_label, width=50)  # Adjust width as needed
 
         node_data = {
             'data': {

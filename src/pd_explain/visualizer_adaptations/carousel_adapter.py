@@ -71,8 +71,12 @@ class CarouselAdapter(AdapterInterface):
         self._update_plot_display()
 
         # Assemble the UI
-        navigation_buttons = widgets.HBox([prev_button, next_button])
-        self._carousel_ui = widgets.VBox([navigation_buttons, self._plot_index, self._plot_display_output])
+        if self._num_plots > 1:
+            navigation_buttons = widgets.HBox([prev_button, next_button])
+            self._carousel_ui = widgets.VBox([navigation_buttons, self._plot_index, self._plot_display_output])
+        else:
+            # If there's only one plot, no need for navigation buttons
+            self._carousel_ui = widgets.VBox([self._plot_display_output])
 
         display(self._carousel_ui)
 
@@ -108,10 +112,16 @@ class CarouselAdapter(AdapterInterface):
     def _on_prev_button_clicked(self, b):
         if self._plot_index and self._plot_index.value > 0:
             self._plot_index.value -= 1
+        # If we are at the first plot and click previous, wrap around to the last plot
+        elif self._plot_index and self._plot_index.value == 0:
+            self._plot_index.value = self._num_plots - 1
 
     def _on_next_button_clicked(self, b):
         if self._plot_index and self._plot_index.value < self._num_plots - 1:
             self._plot_index.value += 1
+        # If we are at the last plot and click next, wrap around to the first plot
+        elif self._plot_index and self._plot_index.value == self._num_plots - 1:
+            self._plot_index.value = 0
 
 
 

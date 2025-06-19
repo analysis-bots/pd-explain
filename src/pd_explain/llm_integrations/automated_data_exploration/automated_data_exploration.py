@@ -3,12 +3,14 @@ import math
 from typing import List, Any, Literal
 from collections import defaultdict
 import re
+import os
 
 import pandas as pd
 from pandas import DataFrame
 from together.error import InvalidRequestError
 
 from pd_explain.llm_integrations import Client
+from pd_explain.llm_integrations import consts
 from pd_explain.llm_integrations.automated_data_exploration.simple_visualizer import \
     SimpleAutomatedExplorationVisualizer
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
@@ -142,6 +144,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "The query must be a valid Pandas query applicable using eval(f'df_to_query{query}'), where df_to_query is an the name of some "
                 "arbitrary dataframe (not given to you), and query is your own output. You should be aware of this syntax, and not add, for example,"
                 "round brackets to the beginning, or [df] to the beginning of the query, as that will result in an error. "
+                "Do not add round brackets anywhere unless you intend to call a function. Using round brackets for groupby(...), mean(), etc. is fine,"
+                "using round brackets for filtering is not fine, as it will result in an error. "
                 "If you need to use the DataFrame's name (for example to filter it), use the placeholder [df] in your query, and the system will replace it with the actual DataFrame name. "
                 "For example, if you want to filter by a column, write [[df]['column_name'] > 5]. The usage of square brackets must "
                 "never be done outside of a filter query or column selection, and the inside of a filter query must never be any operation but simple comparisons. "
@@ -151,14 +155,24 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 f"Avoid repeating queries that have already been applied in the history. "
                 f"If you use the std function, make sure to also specify the ddof parameters, otherwise std throws an error."
                 f"If you use the agg function, make sure to provide the aggregations as a dictionary, i.e. {{column_name: 'agg_func'}}, "
-                f"and not as a list of any kind, i.e. ['agg_func_1', 'agg_func_2'] as the list format will throw a NoneType error. \n"
+                f"and not as any other type of format. Any other format except a valid Python dictionary will cause an error.\n"
                 f"Make sure you always apply brackets correctly - every bracket of any kind must have an opening and closing bracket. "
                 f"The program will not be fix your bracket mistakes, and will throw an error if you do not apply brackets correctly. "
                 f"If you get unmatched bracket errors in the history, take a great amount of care to not repeat those mistakes.\n"
                 f"Also make doubly sure to use valid pandas syntax, as the program will not fix your mistakes. "
                 f"For example, if you use filter queries with equivalence conditions, make sure to use = and not ==. "
                 f"For example, [[df]['column_name'] = x] is a valid query, but [[df]['column_name'] == x] is not, since the term evaluates to a boolean, and will cause an error. "
-                f"If you see any errors due to boolean values, it is likely that this is the cause, so make sure to use = and not == in your queries.\n")
+                f"If you see any errors due to boolean values, it is likely that this is the cause, so make sure to use = and not == in your queries.\n"
+                f"It is of paramount importance that you do not repeat errors in the history.\n")
+
+    def _describe_additional_output_format(self):
+        return ("The output should also include two more lists.\n"
+                "The first, is a list giving a textual description of the queries you produced, surrounded by <desc> and </desc> tags. "
+                "These descriptions should be concise, and should explain what the query does, and what it is expected to find.\n"
+                "The second, is a list explaining the findings of queries from the previous iteration, surrounded by <findings> and </findings> tags. "
+                "These explanations should be concise, explaining in simple words what the query found and what it means.\n"
+                "Look at the 'need_explanation' column in the history DataFrame to see which queries are those from the previous iteration that need explanations.\n"
+                "These two lists should not include query numbers, as those are not relevant and are already present in the history DataFrame.\n")
 
     def _format_history(self, history, truncate_early_by: int = 0, part: int = None,
                         total_parts: int = None,
@@ -175,6 +189,12 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         """
         if history.empty:
             return "The history is empty."
+        # Do not take the 'query_description' and 'query_findings' columns into account when formatting the history,
+        # since they contain information meant for the user, not the LLM.
+        if 'query_description' in history.columns:
+            history = history.drop(columns=['query_description'])
+        if 'query_findings' in history.columns:
+            history = history.drop(columns=['query_findings'])
         if remove_errors:
             # Remove rows with errors from the history
             history = history[history['error'].isnull()]
@@ -331,8 +351,9 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         """
         if user_query is None or len(user_query) == 0:
             raise ValueError("User query must be provided for deep dive analysis.")
-        history = pd.DataFrame(data=[["Original DataFrame", None, None, None]],
-                               columns=["query", "fedex_explainer_findings", "metainsight_explainer_findings", "error"])
+        history = pd.DataFrame(data=[["Original DataFrame", None, None, None, False, None, None]],
+                               columns=["query", "fedex_explainer_findings", "metainsight_explainer_findings",
+                                        "error", "need_explanation", "query_description", "query_findings"])
         result_history_mapping = {
             0: self.dataframe  # Start with the original DataFrame
         }
@@ -346,11 +367,17 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         pd.set_option('display.max_columns', None)  # Show all columns
         pd.set_option('display.width', 0)  # No limit on the width of the display
         pd.set_option('display.max_colwidth', None)  # No limit on column width
-        client = Client()
+        client = Client(
+            api_key=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_LLM_KEY, None),
+            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER, "together"),
+            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER_URL, "https://api.together.xyz"),
+            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_LLM_MODEL, "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free")
+        )
         system_message = self._define_task()
         data_description = self._describe_data(user_query)
         format_description = self._describe_input_format() + self._describe_output_format(queries_per_iteration,
                                                                                           history)
+        format_description += self._describe_additional_output_format()
         query_and_results = defaultdict(QueryResultObject)
         query_tree = QueryTree(source_name=self.source_name)
         print_error = False
@@ -420,6 +447,29 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                            query.strip() and query.startswith('*')]
                 # Split the queries into a Series
                 queries_series = pd.Series(queries)
+                descriptions = self._extract_response(response, "<desc>", "</desc>")
+                if descriptions is not None and len(descriptions) > 0:
+                    descriptions = descriptions.split("\n")
+                    descriptions = [desc.replace("*", "").strip() for desc in descriptions if
+                                    desc.strip() and desc.startswith('*')]
+                findings = self._extract_response(response, "<findings>", "</findings>")
+                if findings is not None and len(findings) > 0:
+                    findings = findings.split("\n")
+                    findings = [finding.replace("*", "").strip() for finding in findings if
+                                finding.strip() and finding.startswith('*')]
+                    # Add the findings to the history DataFrame, by adding them in order to the queries in the
+                    # history where need_explanation is True.
+                    history_index = 0
+                    if len(findings) > 0:
+                        for i, finding in enumerate(findings):
+                            # Find the first row in the history where need_explanation is True
+                            while history_index < history.shape[0] and not history.iloc[history_index]['need_explanation']:
+                                history_index += 1
+                            if history_index >= history.shape[0]:
+                                break
+                            # Add the finding to the history DataFrame
+                            history.at[history_index, 'query_findings'] = finding
+                            history.at[history_index, 'need_explanation'] = False
                 if verbose:
                     print(f"\t - Generated {len(queries_series)} queries for iteration {iteration_num + 1}")
                 # Apply the queries to the DataFrame and update the history
@@ -428,7 +478,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     iteration_num += 1
                     continue
                 # Update the history DataFrame with new results
-                for result in new_results:
+                for idx, result in enumerate(new_results):
                     # print(f"\t - Checking query: {result.generating_query} (index: {result.index})")
                     curr_index = len(history)
                     if result.error_occurred:
@@ -439,7 +489,10 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             "query": f"{result.index}: {result.generating_query}",
                             "fedex_explainer_findings": None,
                             "metainsight_explainer_findings": None,
-                            "error": str(result.result)
+                            "error": str(result.result),
+                            "need_explanation": False,
+                            "query_description": None,
+                            "query_findings": None
                         }, ignore_index=True)
                         # Store the error in the query and results mapping, so it can be used later
                         query_and_results[curr_index] = QueryResultObject(
@@ -456,7 +509,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 explainer="fedex",
                                 top_k=fedex_top_k,
                                 do_not_visualize=True,
-                                log_query=False
+                                log_query=False,
+                                visualization_type='carousel'
                             )
                             # Store the raw FedEx findings in the query and results mapping
                             query_and_results[curr_index].fedex = result_df.last_used_explainer
@@ -483,6 +537,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 do_not_visualize=True,
                                 max_filter_columns=metainsight_max_filter_cols,
                                 max_aggregation_columns=metainsight_max_agg_cols,
+                                visualization_type='carousel'
                             )
                             metainsight_findings = [finding.__str__() for finding in metainsight_findings]
                             # Store the MetaInsight objects in the query and results mapping
@@ -503,7 +558,10 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             "query": f"{result.index}: {result.generating_query}",
                             "fedex_explainer_findings": fedex_findings,
                             "metainsight_explainer_findings": metainsight_findings,
-                            "error": None
+                            "error": None,
+                            "need_explanation": True,  # We need explanations for the new queries
+                            "query_description": descriptions[idx] if descriptions is not None and idx < len(descriptions) else None,
+                            "query_findings": None
                         }, ignore_index=True)
                     # Update the query tree with the new query
                     query_tree.add_node(result.index, result.generating_query, curr_index)

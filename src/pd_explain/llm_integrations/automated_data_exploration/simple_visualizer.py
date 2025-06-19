@@ -1,7 +1,6 @@
 from collections import defaultdict
 import re
 import textwrap
-from typing import Callable
 
 import ipywidgets as widgets
 import matplotlib.pyplot as plt
@@ -75,40 +74,66 @@ class SimpleAutomatedExplorationVisualizer:
         if query_info is None:
             return widgets.VBox([widgets.HTML(value=f"<p>No results found for query {query_idx}.</p>")])
 
+        query_row = self.history.iloc[query_idx] if query_idx < len(self.history) else None
+        if query_row is not None:
+            query_description = query_row['query_description'] if 'query_description' in query_row else None
+            findings_description = query_row['query_findings'] if 'query_findings' in query_row else None
+        else:
+            query_description = None
+            findings_description = None
         query_string = query_tree_str.get(query_idx, f"Unknown Query {query_idx}")
-        query_title = widgets.HTML(value=f"<h2 style='margin-top: 20px; margin-bottom: 10px; align: center;'>"
-                                         f"Query {query_idx}: {query_string}</h2>")
+        title_string = ""
+        if query_description is not None:
+            title_string += (f"<h2 style='margin-top: 20px; margin-bottom: 10px; align: center;'>"
+                                             f"Query {query_idx}: {query_description}</h2>")
+            if findings_description is not None:
+                title_string += f"<h3 style='margin-bottom: 10px;'>Findings: {findings_description}</h3>"
+            title_string += f"<p style='margin-bottom: 10px;'>Executed query: {query_string}</p>"
+        else:
+            title_string += (f"<h2 style='margin-top: 20px; margin-bottom: 10px; align: center;'>"
+                                             f"Query {query_idx}: {query_string}</h2>")
+            if findings_description is not None:
+                title_string += f"<h3 style='margin-bottom: 10px;'>Findings: {findings_description}</h3>"
+
+        query_title = widgets.HTML(value=title_string)
 
         items_for_this_query = [query_title]
         something_visualized = False
+        accordion = widgets.Accordion()
+        accordion_children = []
+        accordion_titles = []
 
         # Visualize the FedEx and MetaInsight findings if they exist
         if query_info.fedex is not None and len(query_info.fedex) > 0:
-            fedex_title = widgets.HTML(value="<h3>Statistical Changes Analysis (FEDEx Explainer)</h3>")
             fedex_output = widgets.Output(layout=widgets.Layout(width='100%'))
             with fedex_output:
                 plt.close('all')  # Close previous plots to prevent overlap
                 query_info.fedex.visualize(query_info.fedex._results)
                 plt.show()
-            items_for_this_query.append(fedex_title)
-            items_for_this_query.append(fedex_output)
+            accordion_children.append(fedex_output)
+            accordion_titles.append("FEDEx Visualizations")
             something_visualized = True
 
         if query_info.metainsight is not None and len(query_info.metainsight) > 0:
-            meta_title = widgets.HTML(value="<h3>Pattern Detection (MetaInsight Explainer)</h3>")
             meta_output = widgets.Output(layout=widgets.Layout(width='100%'))
             with meta_output:
                 plt.close('all')  # Close previous plots
                 query_info.metainsight.visualize()
                 plt.show()
-            items_for_this_query.append(meta_title)
-            items_for_this_query.append(meta_output)
+            accordion_children.append(meta_output)
+            accordion_titles.append("MetaInsight Visualizations")
             something_visualized = True
 
         if not something_visualized:
             items_for_this_query.append(
                 widgets.HTML(value=f"<p>No visualizations available for this query.</p>")
             )
+        else:
+            # Create the accordion with the visualizations
+            accordion.children = accordion_children
+            for i, title in enumerate(accordion_titles):
+                accordion.set_title(i, title)
+            items_for_this_query.append(accordion)
 
         query_vbox = widgets.VBox(
             children=items_for_this_query,
@@ -285,6 +310,25 @@ class SimpleAutomatedExplorationVisualizer:
         error = node_row['error']
 
         # Create the text that will go into the visualization for this node.
+        query_description = node_row['query_description'] if 'query_description' in node_row else None
+        findings_description = node_row['query_findings'] if 'query_findings' in node_row else None
+        if query_description is not None:
+            button_title = f"Query {node_index}: {query_description}"
+        else:
+            button_title = f"Query {node_index}"
+        if findings_description is not None:
+            button_findings = f"Findings: {findings_description}"
+        else:
+            button_findings = None
+        title_html = widgets.HTML(
+            value=f"<h3 style='margin-top: 10px; margin-bottom: 5px;'>{button_title}</h3>",
+        )
+        if button_findings is not None:
+            findings_desc_html = widgets.HTML(
+                value=f"<h4 style='margin-bottom: 10px;'>{button_findings}</h4>",
+            )
+        else:
+            findings_desc_html = widgets.HTML()
         fedex_finding_lines = node_row['fedex_explainer_findings']
         metainsight_finding_lines = node_row['metainsight_explainer_findings']
         finding_lines = ""
@@ -360,7 +404,7 @@ class SimpleAutomatedExplorationVisualizer:
 
         # Create a VBox to hold the button and the findings
         tree_node_vbox = widgets.VBox(
-            children=[button, findings_html],
+            children=[button, title_html, findings_desc_html, findings_html],
             layout=widgets.Layout(
                 border='1px solid #ddd',
                 padding='10px',

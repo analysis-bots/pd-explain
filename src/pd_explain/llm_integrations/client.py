@@ -3,32 +3,21 @@ import openai
 import together
 import warnings
 from typing import List
-from singleton_decorator import singleton
 from pd_explain.llm_integrations import consts
 
 
-@singleton
 class Client:
     """
     A general client for interfacing with LLM services.
     Handles the API key, provider, model, and provider URL.
     """
 
-    def __init__(self, api_key: str = None, provider: str = None, model: str = None,
-                 provider_url: str = None, vision_model: str = None):
-        if api_key is None:
-            api_key = os.getenv(consts.DOT_ENV_PD_EXPLAIN_LLM_KEY)
-        if provider is None:
-            provider = os.getenv(consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER)
-        if model is None:
-            model = os.getenv(consts.DOT_ENV_PD_EXPLAIN_LLM_MODEL)
-        if vision_model is None:
-            vision_model = os.getenv(consts.DOT_ENV_PD_EXPLAIN_LLM_VISION_MODEL)
+    def __init__(self, api_key: str, provider: str, model: str,
+                 provider_url: str):
 
         self.api_key = api_key
         self._provider = provider
         self.model = model
-        self.vision_model = vision_model
         self._provider_url = provider_url
         if provider_url is None:
             match provider:
@@ -39,7 +28,7 @@ class Client:
                 case "google" | "gemini":
                     self._provider_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
                 case _:
-                    self._provider_url = os.getenv(consts.DOT_ENV_PD_EXPLAIN_LLM_PROVIDER_URL)
+                    self._provider_url = os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER_URL)
         if (self._provider == "openai" or "openai.com" in self._provider_url)\
                 or (self._provider in ["google", "gemini"] or "generativelanguage.googleapis.com" in self._provider_url):
             self.client = openai.OpenAI(
@@ -90,7 +79,8 @@ class Client:
         :param user_messages: List of user messages to send to the API. If override_user_messages_formatting is True,
             the user messages can be in any format, otherwise they should be strings.
         :param assistant_messages: List of assistant messages to interleave with user messages if the user is continuing a conversation.
-        :param override_user_messages_formatting: If True, user messages can be in any format, otherwise they should be strings.
+        :param override_user_messages_formatting: If True, user messages can be in any format, otherwise they should be strings. Useful for
+        using vision models where the user messages can contain images or other non-text content.
         :return: The response from the API. If no API key is provided, return None.
         """
         if not self.api_key or self.api_key == 'YOUR_API_KEY':
@@ -115,31 +105,6 @@ class Client:
                 *messages,
             ],
         )
-        return response.choices[0].message.content if response.choices else None
-
-
-    def vision(self, system_messages: List[str], user_messages: List[dict]):
-        """
-        Call the API with the given messages for vision tasks.
-        :param system_messages: List of system messages to set the context for the conversation.
-        :param user_messages: List of user messages to send to the API, including images.
-        :return: The response from the API.
-        """
-        if not self.api_key or self.api_key == 'YOUR_API_KEY':
-            warnings.warn(
-                "You have not set your API key for a LLM API provider. If you wish to use the LLM functions, please set the API key using the write_llm_api_key function. "
-                "All usage of LLM functions will not work until the API key is set."
-            )
-            return None
-
-        response = self.client.chat.completions.create(
-            model=self.vision_model,
-            messages=[
-                *[{"role": "system", "content": message} for message in system_messages],
-                *user_messages,
-            ],
-        )
-
         return response.choices[0].message.content if response.choices else None
 
 

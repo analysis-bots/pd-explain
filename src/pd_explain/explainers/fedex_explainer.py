@@ -13,6 +13,7 @@ from pd_explain.llm_integrations import ExplanationReasoning
 from pd_explain.experimental.query_recommenders import QueryLogger
 from pd_explain.experimental.query_recommenders.query_score_functions import score_queries
 from pd_explain.visualizer_adaptations.carousel_adapter import CarouselAdapter
+from pd_explain.llm_integrations.visualization_beautifier import VisualizationBeautifier
 
 
 class FedexExplainer(ExplainerInterface):
@@ -30,7 +31,8 @@ class FedexExplainer(ExplainerInterface):
                  add_llm_context_explanations: bool = False,
                  do_not_visualize: bool = False,
                  log_query: bool = True,
-                 visualization_type: Literal['carousel', 'grid'] = 'grid',
+                 display_mode: Literal['carousel', 'grid'] = 'grid',
+                 beautify: bool = False,
                  *args, **kwargs):
         """
         Initialize the FedexExplainer object.
@@ -54,6 +56,9 @@ class FedexExplainer(ExplainerInterface):
         :param do_not_visualize: If True, the visualizations will not be generated. This is useful for when the explainer
         is used in a context where visualizations are not needed, such as part of a pipeline.
         :param log_query: If True, the query will be logged to the query logger. Defaults to True.
+        :param display_mode: The type of visualization to use. Can be 'carousel' or 'grid'. Defaults to 'grid'.
+        :param beautify: If True, use a LLM to create new visualizations for the explanations, which should look better
+        and be easier to understand compared to the templates used. Defaults to False.
         """
 
         if operation is None:
@@ -108,10 +113,11 @@ class FedexExplainer(ExplainerInterface):
         self._added_explanations = None
         self._query = None
         self._query_type = None
-        if visualization_type not in ['carousel', 'grid']:
-            warnings.warn(f"Visualization type {visualization_type} is not supported. Defaulting to 'grid'.")
-            visualization_type = 'grid'
-        self._visualization_type = visualization_type
+        if display_mode not in ['carousel', 'grid']:
+            warnings.warn(f"Visualization type {display_mode} is not supported. Defaulting to 'grid'.")
+            display_mode = 'grid'
+        self._display_mode = display_mode
+        self._beautify = beautify
 
     def generate_explanation(self):
 
@@ -174,8 +180,8 @@ class FedexExplainer(ExplainerInterface):
         The added_explanations parameter is a dictionary with explanations as keys and additional text as values.
         """
         # Draw the figures using the operation's draw_figures method.
-        if self._visualization_type == 'grid':
-            self._operation.draw_figures(
+        if self._display_mode == 'grid':
+            _, fig = self._operation.draw_figures(
                 title=title,
                 scores=scores,
                 K=K,
@@ -187,7 +193,25 @@ class FedexExplainer(ExplainerInterface):
                 show_scores=show_scores,
                 added_text=added_explanations
             )
-        elif self._visualization_type == 'carousel':
+            if self._beautify:
+                beautifier = VisualizationBeautifier(
+                    visualization_object=fig,
+                    data=self._operation.source_df,
+                    visualization_params={
+                        'title': title,
+                        'scores': scores,
+                        'K': K,
+                        'figs_in_row': figs_in_row,
+                        'explanations': explanations,
+                        'bins': bins,
+                        'influence_vals': influence_vals,
+                        'source_name': source_name,
+                        'show_scores': show_scores
+                    },
+                    requester_name='fedex'
+                )
+                beautifier.do_llm_action()
+        elif self._display_mode == 'carousel':
             with CarouselAdapter() as adapter:
                 for i in range(len(explanations)):
                     # These all still need to be iterables, with explanation in particular being a Series.

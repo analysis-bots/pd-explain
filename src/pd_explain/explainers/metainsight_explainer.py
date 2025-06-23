@@ -43,7 +43,7 @@ class MetaInsightExplainer(ExplainerInterface):
                  allow_multiple_groupbys: bool = False, num_bins: int = 10,
                  use_all_groupby_combinations: bool = False,
                  do_not_visualize: bool = False,
-                 visualization_type: Literal['carousel', 'grid'] = 'regular_plot',
+                 display_mode: Literal['carousel', 'grid'] = 'grid',
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -97,10 +97,10 @@ class MetaInsightExplainer(ExplainerInterface):
         self.use_all_groupby_combinations = use_all_groupby_combinations
         self._do_not_visualize = do_not_visualize
         self._source_name = get_calling_params_name(source_df)
-        if visualization_type not in ['carousel', 'grid']:
-            warnings.warn(f"Visualization type {visualization_type} is not supported. Defaulting to 'grid'.")
-            visualization_type = 'grid'
-        self._visualization_type = visualization_type
+        if display_mode not in ['carousel', 'grid']:
+            warnings.warn(f"Display mode {display_mode} is not supported. Defaulting to 'grid'.")
+            display_mode = 'grid'
+        self._display_mode = display_mode
 
         if self.source_df is None:
             raise ValueError("Source dataframe cannot be None")
@@ -345,7 +345,7 @@ class MetaInsightExplainer(ExplainerInterface):
                     Groupby columns: {self.groupby_columns}
                     Aggregations: {self.aggregations}""")
         else:
-            if self._visualization_type == 'grid':
+            if self._display_mode == 'grid':
                 num_rows = min(self.top_k, len(metainsights))
                 fig = plt.figure(figsize=(30, 30 * len(metainsights)))
                 dynamic_hspace = min(1., (0.3 * num_rows))
@@ -379,10 +379,10 @@ class MetaInsightExplainer(ExplainerInterface):
                     mi.visualize(fig=fig, subplot_spec=main_grid[i, 0])
 
                 return None
-            elif self._visualization_type == 'carousel':
+            elif self._display_mode == 'carousel':
                 with CarouselAdapter() as adapter:
                     for i, mi in enumerate(metainsights[:self.top_k]):
-                        fig = plt.figure(figsize=(30, 20))
+                        fig = plt.figure(figsize=(30, 15))
                         outer_grid = gridspec.GridSpec(1, 1, hspace=0.05 if len(metainsights) > 2 else 0.3,
                                                        figure=fig)
                         mi.visualize(fig=fig, subplot_spec=outer_grid[0, 0])

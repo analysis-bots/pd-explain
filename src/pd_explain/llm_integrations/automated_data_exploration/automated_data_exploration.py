@@ -510,7 +510,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 top_k=fedex_top_k,
                                 do_not_visualize=True,
                                 log_query=False,
-                                visualization_type='carousel'
+                                display_mode='carousel'
                             )
                             # Store the raw FedEx findings in the query and results mapping
                             query_and_results[curr_index].fedex = result_df.last_used_explainer
@@ -537,7 +537,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 do_not_visualize=True,
                                 max_filter_columns=metainsight_max_filter_cols,
                                 max_aggregation_columns=metainsight_max_agg_cols,
-                                visualization_type='carousel'
+                                display_mode='carousel'
                             )
                             metainsight_findings = [finding.__str__() for finding in metainsight_findings]
                             # Store the MetaInsight objects in the query and results mapping

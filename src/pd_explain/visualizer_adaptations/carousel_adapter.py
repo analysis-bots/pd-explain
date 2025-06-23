@@ -53,7 +53,7 @@ class CarouselAdapter(AdapterInterface):
                 align_items='center',     # Center vertically
                 min_height='450px',       # Give it some minimum height to see centering
                 border='1px solid #ddd',  # Optional: visualize the output area
-                margin='10px 0'           # Optional: space it out
+                margin='10px 0',          # Optional: space it out,
             )
         )
 

@@ -1081,7 +1081,8 @@ class ExpDataFrame(pd.DataFrame):
                 use_all_groupby_combinations: bool = False,
                 do_not_visualize: bool = False,
                 log_query: bool = False,
-                visualization_type: Literal['grid', 'carousel'] = 'grid',
+                display_mode: Literal['grid', 'carousel'] = 'grid',
+                beautify: bool = True,
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
@@ -1170,7 +1171,7 @@ class ExpDataFrame(pd.DataFrame):
         use all combinations of the groupby columns or just the provided ones. For example, if set to True and the groupby columns are ['A', 'B'],
         the groupby columns will be [['A'], ['B'], ['A', 'B']]. If set to False, only the provided groupby columns will be used.
         :param do_not_visualize: If True, the explanation will not be visualized (if the explainer supports disabling visualization).
-        :param visualization_type: Fedex explainer and MetaInsight explainer. How to visualize the multiple figures returned by
+        :param display_mode: Fedex explainer and MetaInsight explainer. How to visualize the multiple figures returned by
         the explainer. Can be either 'grid' for a regular plot in a grid format displaying all plots at once,
          or 'carousel' for a carousel that shows one figure at a time with navigation buttons.
 
@@ -1216,7 +1217,7 @@ class ExpDataFrame(pd.DataFrame):
                                              use_all_groupby_combinations=use_all_groupby_combinations,
                                              do_not_visualize=do_not_visualize,
                                              log_query=log_query,
-                                             visualization_type=visualization_type
+                                             display_mode=display_mode, beautify=beautify
                                              )
         self.last_used_explainer = explainer
         explanation = explainer.generate_explanation()

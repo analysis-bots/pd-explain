@@ -160,10 +160,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 f"The program will not be fix your bracket mistakes, and will throw an error if you do not apply brackets correctly. "
                 f"If you get unmatched bracket errors in the history, take a great amount of care to not repeat those mistakes.\n"
                 f"Also make doubly sure to use valid pandas syntax, as the program will not fix your mistakes. "
-                f"For example, if you use filter queries with equivalence conditions, make sure to use = and not ==. "
-                f"For example, [[df]['column_name'] = x] is a valid query, but [[df]['column_name'] == x] is not, since the term evaluates to a boolean, and will cause an error. "
-                f"If you see any errors due to boolean values, it is likely that this is the cause, so make sure to use = and not == in your queries.\n"
-                f"It is of paramount importance that you do not repeat errors in the history.\n")
+                f"It is of paramount importance that you do not repeat errors in the history. If you see an error, "
+                f"think carefully about why it happened to make sure you do not repeat it.\n")
 
     def _describe_additional_output_format(self):
         return ("The output should also include two more lists.\n"

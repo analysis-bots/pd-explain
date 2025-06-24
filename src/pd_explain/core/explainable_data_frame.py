@@ -1082,7 +1082,7 @@ class ExpDataFrame(pd.DataFrame):
                 do_not_visualize: bool = False,
                 log_query: bool = False,
                 display_mode: Literal['grid', 'carousel'] = 'grid',
-                beautify: bool = True,
+                beautify: bool = False, beautify_max_fix_attempts: int = 3
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
@@ -1174,6 +1174,12 @@ class ExpDataFrame(pd.DataFrame):
         :param display_mode: Fedex explainer and MetaInsight explainer. How to visualize the multiple figures returned by
         the explainer. Can be either 'grid' for a regular plot in a grid format displaying all plots at once,
          or 'carousel' for a carousel that shows one figure at a time with navigation buttons.
+        :param beautify: MetaInsight and Fedex explainers. If True, we will attempt to beautify the explanation by having a LLM generate code for producing
+        a more visually appealing explanation for this specific case. Defaults to False. Please note that:
+        1. This will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
+        2. The output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
+        :param beautify_max_fix_attempts: MetaInsight and Fedex explainers. The maximum number of attempts to fix the
+        returned code from the LLM to make it work, if the beautify parameter is set to True. Defaults to 5.
 
         :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.
         """
@@ -1217,7 +1223,8 @@ class ExpDataFrame(pd.DataFrame):
                                              use_all_groupby_combinations=use_all_groupby_combinations,
                                              do_not_visualize=do_not_visualize,
                                              log_query=log_query,
-                                             display_mode=display_mode, beautify=beautify
+                                             display_mode=display_mode, beautify=beautify,
+                                             beautify_max_fix_attempts=beautify_max_fix_attempts
                                              )
         self.last_used_explainer = explainer
         explanation = explainer.generate_explanation()

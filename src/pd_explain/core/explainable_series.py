@@ -39,7 +39,6 @@ class ExpSeries(pd.Series):
             dtype: Dtype | None = None,
             name=None,
             copy: bool = False,
-            fastpath: bool = False
     ):
         """
         Initialize new explain series
@@ -52,9 +51,8 @@ class ExpSeries(pd.Series):
         :param dtype: Data type for the output Series. If not specified, this will be inferred from data.
         :param name: The name to give to the Series.
         :param copy: Copy input data. Only affects Series or 1d ndarray input. See examples.
-        :param fastpath:
         """
-        super().__init__(data, index, dtype, name, copy, fastpath)
+        super().__init__(data, index, dtype, name, copy)
         self.explanation = None
         self.operation = None
         self.filter_items = []

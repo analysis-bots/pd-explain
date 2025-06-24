@@ -3,6 +3,8 @@ import re
 import textwrap
 import os
 
+from numba.scripts.generate_lower_listing import description
+
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
 from pd_explain.llm_integrations import consts
@@ -71,6 +73,9 @@ class ExplanationReasoning(LLMIntegrationInterface):
         elif self._query_type == "outlier":
             out = re.sub(r"[${}]|(\\bf)", "", self._explanations_found)
             return out.replace("\n", ' AND ')
+        elif self._query_type == "metainsight":
+            # MetaInsight explanations are already in a list format, so we just join them.
+            return "\n\n".join(self._explanations_found)
 
 
     def _create_explanation_format_explanation(self) -> str:
@@ -112,6 +117,16 @@ class ExplanationReasoning(LLMIntegrationInterface):
                 f"If the separation error is high, you should also try to explain that, using the columns in the 'Separation Error Origins' column (if it exists). "
                 f"Your explanation must always revolve around why the predicate in the 'Explanation' column gives a good explanation for the group or cluster, and not the other way around. "
                 f"Your explanations should not be statistical, but should be based on domain knowledge and reasoning. ")
+        elif self._query_type == "metainsight":
+            explanation_format_explanation = (
+                "The MetaInsight explainer finds interesting patterns in the data, as well as exceptions to these patterns.\n"
+                "The explanations are of the form 'Common pattern {x} detected for over {y}% of values of {z}, when grouping by "
+                "{a} and aggregating by {b}. Exceptions in category {c}: {d} with values {e} = {f}, {g} = {h}'\n"
+                "There are three types of exceptions: 1) Highlight change - this means that the pattern is common, but the value is different from the expected value. "
+                "2) Type change - the value is part of a different pattern than the common pattern. 3) No pattern - no pattern was found for this value.\n"
+                "Your explanation should reason about why the common pattern {x} is detected for over {y}% of values of {z}, "
+                "and why the various exceptions of each category occur. "
+            )
         else:
             raise ValueError(
                 "Unrecognized query type. This may have happened if you added a new operation to Fedex, or a new explainer to pd_explain, without updating this method.")
@@ -143,6 +158,18 @@ class ExplanationReasoning(LLMIntegrationInterface):
                            f"{self._after_op_data}:\n"
                            f"Using pd.describe() on the source dataset, we find the following statistics:\n"
                            f"They requested analysis of the outlier value {self._target}, suspecting it to be an outlier in the direction {self._dir}. ")
+        elif self._query_type == 'metainsight':
+            description = (f"The user has requested a MetaInsight explanation on dataset {self._source_name}. "
+                           f"This explainers finds interesting patterns in the data, as well as exceptions to to these patterns. \n"
+                           f"The dataset is a {self._data_type} with the following columns: {', '.join(self._data_columns)}. "
+                           )
+            if self._query is not None:
+                description += (f"The user has requested the MetaInsight explainer after performing the query {self._query} on the dataset. "
+                                f"If the query is a groupby operation, the explainer will find patterns that emerge in the original dataset specifically from the groupby operation. "
+                                f"If it is a filter or a join operation, the explainer will find patterns in the dataset after the operation. ")
+            description += (f"Using pd.describe() on the dataset, we find the following statistics:\n"
+                            f"{self._data.describe()}\n"
+                            )
         else:
             raise ValueError(
                 "Unrecognized query type. This may have happened if you added a new operation to Fedex, or a new explainer to pd_explain, without updating this method.")
@@ -150,7 +177,7 @@ class ExplanationReasoning(LLMIntegrationInterface):
         return description
 
     def _create_output_format_explanation(self):
-        if self._query_type in ["join", "filter", "groupby"]:
+        if self._query_type in ["join", "filter", "groupby", "metainsight"]:
             output_format_explanation = (
                 f"The explanations should be in a numbered list format, with each explanation corresponding to the insight number. "
                 f"Surround the list with <reasoning> and </reasoning> at the start and end respectively to separate it from the rest of the message, and so it can be easily identified by the program. "
@@ -219,12 +246,17 @@ class ExplanationReasoning(LLMIntegrationInterface):
         if self._query_type != "many_to_one":
             explanations = ["\n".join(textwrap.wrap(explanation, width=50)) for explanation in explanations]
 
-        if isinstance(self._explanations_found, pd.Series) or isinstance(self._explanations_found, pd.DataFrame):
+        if (isinstance(self._explanations_found, pd.Series)
+                or isinstance(self._explanations_found, pd.DataFrame)
+                or isinstance(self._explanations_found, list)):
             if len(explanations) < len(self._explanations_found):
                 # If we got less explanations than we should, add empty strings to match the expected number of explanations.
                 explanations += [""] * (len(self._explanations_found) - len(explanations))
-
-            explanations = pd.Series(explanations, index=self._explanations_found.index)
+            if isinstance(self._explanations_found, pd.Series) or isinstance(self._explanations_found, pd.DataFrame):
+                index = self._explanations_found.index
+            else:
+                index = range(len(self._explanations_found))
+            explanations = pd.Series(explanations, index=index)
 
         else:
             explanations = explanations[0]

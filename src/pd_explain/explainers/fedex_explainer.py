@@ -35,6 +35,7 @@ class FedexExplainer(ExplainerInterface):
                  log_query: bool = True,
                  display_mode: Literal['carousel', 'grid'] = 'grid',
                  beautify: bool = False,
+                 beautify_max_fix_attempts: int = 3,
                  *args, **kwargs):
         """
         Initialize the FedexExplainer object.
@@ -59,8 +60,9 @@ class FedexExplainer(ExplainerInterface):
         is used in a context where visualizations are not needed, such as part of a pipeline.
         :param log_query: If True, the query will be logged to the query logger. Defaults to True.
         :param display_mode: The type of visualization to use. Can be 'carousel' or 'grid'. Defaults to 'grid'.
-        :param beautify: If True, use a LLM to create new visualizations for the explanations, which should look better
+        :param beautify: If True, use a LLM to create new visualizations for the explanations, which should look (maybe) better
         and be easier to understand compared to the templates used. Defaults to False.
+        :param beautify_max_fix_attempts: The maximum number of attempts to fix the code returned by the LLM beautifier.
         """
 
         if operation is None:
@@ -120,6 +122,7 @@ class FedexExplainer(ExplainerInterface):
             display_mode = 'grid'
         self._display_mode = display_mode
         self._beautify = beautify
+        self._beautify_max_fix_attempts = beautify_max_fix_attempts
 
     def generate_explanation(self):
 
@@ -196,23 +199,28 @@ class FedexExplainer(ExplainerInterface):
             )
             if self._beautify:
                 plt.close(fig)  # Close the figure to avoid displaying it immediately
-                beautifier = VisualizationBeautifier(
-                    visualization_object=fig,
-                    data=self._operation.source_df,
-                    visualization_params={
-                        'title': title,
-                        'scores': scores,
-                        'K': K,
-                        'figs_in_row': figs_in_row,
-                        'explanations': explanations,
-                        'bins': bins,
-                        'influence_vals': influence_vals,
-                        'source_name': source_name,
-                        'show_scores': show_scores
-                    },
-                    requester_name='fedex' if not isinstance(self._operation, GroupBy) else 'fedex-gb'
-                )
-                tab, _ = beautifier.do_llm_action()
+                try:
+                    beautifier = VisualizationBeautifier(
+                        visualization_object=fig,
+                        data=self._operation.source_df,
+                        visualization_params={
+                            'title': title,
+                            'scores': scores,
+                            'K': K,
+                            'figs_in_row': figs_in_row,
+                            'explanations': explanations,
+                            'bins': bins,
+                            'influence_vals': influence_vals,
+                            'source_name': source_name,
+                            'show_scores': show_scores
+                        },
+                        requester_name='fedex' if not isinstance(self._operation, GroupBy) else 'fedex-gb',
+                        max_fix_attempts=self._beautify_max_fix_attempts
+                    )
+                    tab, _ = beautifier.do_llm_action()
+                except Exception as e:
+                    print(f"Beautification failed with error: {e}. Displaying the original figure.")
+                    tab = None
                 if tab is not None:
                     # If the beautifier returns a tab, we will display it.
                     display(tab)
@@ -221,6 +229,8 @@ class FedexExplainer(ExplainerInterface):
                     print("Beautifier failed to generate a new visualization. Displaying the original figure.")
                     plt.show(fig)
         elif self._display_mode == 'carousel':
+            if self._beautify:
+                print("Beautification is not supported in carousel display mode.")
             with CarouselAdapter() as adapter:
                 for i in range(len(explanations)):
                     # These all still need to be iterables, with explanation in particular being a Series.

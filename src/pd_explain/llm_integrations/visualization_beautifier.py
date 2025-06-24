@@ -8,13 +8,45 @@ import traceback
 import ipywidgets as widgets
 import pandas as pd
 from IPython.display import display, Image
+from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
+import warnings
 
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
 from pd_explain.llm_integrations import consts
 from pd_explain.utils.visualization_code_extractor import VisualizationCodeExtractor
 
+
+def is_figure_empty(fig: Figure) -> bool:
+    """
+    Checks if a matplotlib Figure is empty (i.e., contains no plotted data).
+
+    A figure is considered empty if all of its axes have no lines, patches,
+    collections, or images.
+
+    :param fig: The matplotlib Figure object to check.
+    :return: True if the figure is empty, False otherwise.
+    """
+    if not fig.axes:
+        # No axes on the figure at all
+        return True
+
+    for ax in fig.axes:
+        # Check for common plotted elements (artists)
+        has_lines = len(ax.get_lines()) > 0
+        has_collections = len(ax.collections) > 0
+        has_images = len(ax.images) > 0
+
+        # You could also check ax.texts, but titles and labels are also texts.
+        # The checks above are usually sufficient for data plots.
+
+        if has_lines or has_collections or has_images:
+            # Found an axis with data, so the figure is not empty
+            return False
+
+    # If we get here, no axis had any plotted data
+    return True
 
 class VisualizationBeautifier(LLMIntegrationInterface):
     """
@@ -24,7 +56,11 @@ class VisualizationBeautifier(LLMIntegrationInterface):
     """
 
     def __init__(self, visualization_object: Any, data: pd.DataFrame,
-                 visualization_params: Optional[Dict[str, Any]] = None, requester_name: Optional[str] = None, visualization_code: Optional[str] = None) -> None:
+                 visualization_params: Optional[Dict[str, Any]] = None,
+                 requester_name: Optional[str] = None,
+                 visualization_code: Optional[str] = None,
+                 max_fix_attempts: int = 5,
+                 must_generalize: bool = False) -> None:
         """
         Initializes the VisualizationBeautifier.
 
@@ -49,32 +85,52 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         self.llm_generated_code: Optional[str] = None
         self.visualization_params: Dict[str, Any] = visualization_params if visualization_params else {}
         # The maximum number of attempts to fix the code if it fails to execute.
-        self.max_fix_attempts: int = 3
+        self.max_fix_attempts: int = max_fix_attempts
+        self.must_generalize: bool = must_generalize
+
 
     def _define_task(self) -> str:
         """
         Defines the task for the LLM.
         """
-        return ("You are a data visualization expert. Your task is to take Python code that generates a visualization "
-                "and an image of that visualization, and produce new Python code for a more aesthetically pleasing and "
-                "effective visualization. The new visualization must preserve all the crucial information from the original. "
-                "It must also preserve all functionality of the original code, such as interactivity. "
-                "The new code should be general and not be tied to the specific data it sees, but rather accept the data as a parameter. "
-                "The goal is to address problems such as visual clutter, plots that get too big and long, and "
-                "sometimes too much details that may not be needed.")
+        task_str = (
+            "You are a data visualization expert using Python's matplotlib and seaborn libraries. "
+            "Your task is to take Python code that generates a visualization and an image of that visualization, and then "
+            "produce new Python code for a more aesthetically pleasing and effective visualization.\n\n"
+            "**Key Goals for Improvement:**\n"
+            "1.  **Consolidation & Clarity:** The original visualization might have multiple, cluttered subplots. If possible, consolidate them into a single, well-organized figure. Use shared axes where appropriate. The goal is to reduce visual clutter and make comparisons easier.\n"
+            "2.  **Aesthetics:** Use a professional color palette (e.g. from matplotlib). Ensure font sizes are legible and titles/labels are clear.\n"
+            "3.  **Information Preservation:** The new visualization must preserve all the crucial information from the original, such as which groups are outliers and the values they represent.\n"
+            "4.  **Limited Information**: If an object does not belong to a known library, and its code is not provided to you, you can only use its functions and properties that are already present in the original code. You cannot add new properties or functions to it.\n"
+        )
+        if not self.must_generalize:
+            task_str += (
+            "The code you create will be for one-time use and executed immediately. The user will only see the visualization, not the code. "
+            "Therefore, you can make the code completely specific to this one visualization, without needing to generalize it for future use, "
+            "and you can even hardcode specific values or data into the code.\n\n"
+            )
+        else:
+            task_str += (
+                "The code you create will not be for one-time use, but rather may be used to plot many different visualizations. "
+                "As such, you must ensure that the code is general, relying solely on input parameters to the function you create, "
+                "and not hardcoding any specific values or data. "
+            )
+        return task_str
 
     def _describe_output_format(self) -> str:
         """
         Describes the expected output format from the LLM.
         """
-        return ("The output must be a single Python code block, enclosed in <python> and </python> tags. "
-                "The code should define a single entry function `create_visualization(...)` that accepts the following parameters:\n"
-                f"{', '.join(self.visualization_params.keys()) if self.visualization_params else 'data: pd.DataFrame'}.\n"
-                "as input and generates and generates the visualization. Do not include any other text or explanation outside the code block. "
-                "Make sure to import all necessary libraries inside the function.\n"
-                "The function should return the visualization object, which can be a matplotlib Figure, an ipywidget, or any other visualization object.\n"
-                "You can not override existing classes or functions, and your code will be run in a context separate from the global context, so you must import all necessary libraries inside the function.\n"
-                )
+        return (
+            "The output must be a single Python code block, enclosed in `<python>` and `</python>` tags.\n"
+            "The code must define a single entry function `create_visualization(...)` that accepts the following parameters:\n"
+            f"`{', '.join(self.visualization_params.keys()) if self.visualization_params else 'data: pd.DataFrame'}`.\n\n"
+            "**CRITICAL INSTRUCTIONS:**\n"
+            "1.  **Return the Figure:** The function **must** return the matplotlib `Figure` object that contains the plot.\n"
+            "2.  **No Empty Plots:** The generated `Figure` **must not be empty**. It must have data plotted on its axes. Generating a blank canvas is a failure.\n"
+            "3.  **Self-Contained:** All necessary libraries (e.g., `matplotlib.pyplot`, `seaborn`, `pandas`) must be imported *inside* the `create_visualization` function.\n"
+            "4.  **No other text or explanation** should be included outside the code block."
+        )
 
 
     def _handle_response(self, response: str):
@@ -105,7 +161,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         client = Client(
             api_key=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_KEY, None),
             provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER, "google"),
-            model=os.getenv(consts.DEFAULT_BEAUTIFICATION_LLM_VISION_MODEL, "gemini-1.5-flash"),
+            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_VISION_MODEL, "gemini-2.0-flash"),
             provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER_URL,
                                    "https://generativelanguage.googleapis.com/v1beta/")
         )
@@ -130,10 +186,19 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             pass
 
         system_message: str = self._define_task()
+        # Create a data summary
+        data_summary = io.StringIO()
+        self.data.info(buf=data_summary)
+        data_summary_str = data_summary.getvalue()
+
         user_message: str = (
             f"Here is the original code that produced the visualization:\n\n"
-            f"```python{self.visualization_code}\n```\n\n"
-            f"Attached as well is the visualization itself. Please improve it.\n\n"
+            f"```python\n{self.visualization_code}\n```\n\n"
+            f"For context, here is a summary of the pandas DataFrame that will be passed to your function:\n"
+            f"```\n{data_summary_str}\n```\n"
+            f"And here is the head of the data:\n"
+            f"```\n{self.data.head().to_string()}\n```\n\n"
+            f"Attached as well is the visualization itself. Please improve it by making it clearer and more consolidated.\n\n"
             f"{self._describe_output_format()}\n"
             f"Remember again to place the code inside <python> and </python> tags, or the program will not be able to extract it.\n"
         )
@@ -163,10 +228,6 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         if not self.llm_generated_code:
             return None, ""
 
-        assistant_messages = [
-            self.llm_generated_code,
-        ]
-
         # Create the widget for the original visualization.
         original_vis_widget = widgets.Output()
         with original_vis_widget:
@@ -179,54 +240,91 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         beautified_vis_widget = widgets.Output()
         code_execution_passed = False
         num_fix_attempts_made = 0
+        # Suppress warnings, because the LLM code may raise warnings galore.
+        warnings.filterwarnings("ignore", category=UserWarning, module='matplotlib')
         if self.llm_generated_code:
             while not code_execution_passed and num_fix_attempts_made < self.max_fix_attempts:
-                with beautified_vis_widget:
-                    try:
-                        # Execute the generated code in a controlled environment.
-                        exec_globals: Dict[str, Any] = {'pd': pd, 'widgets': widgets}
-                        exec(self.llm_generated_code, exec_globals)
-                        create_visualization_func = exec_globals.get('create_visualization')
-                        if callable(create_visualization_func):
-                            # Call the generated function with the provided parameters.
-                            create_visualization_func(**self.visualization_params)
-                            code_execution_passed = True
+                plt.close('all')  # Close any previous plots
+                error_message = ""
+                printed_error = ""
+                try:
+                    # Execute the generated code in a controlled environment.
+                    exec_globals: Dict[str, Any] = {'pd': pd, 'widgets': widgets, 'plt': plt}
+                    exec(self.llm_generated_code, exec_globals)
+                    create_visualization_func = exec_globals.get('create_visualization')
+
+                    if callable(create_visualization_func):
+                        # Call the generated function to get the figure
+                        beautified_figure = create_visualization_func(**self.visualization_params)
+
+                        if not isinstance(beautified_figure, Figure):
+                            error_message = (
+                                "The `create_visualization` function did not return a matplotlib Figure object. "
+                                "Please ensure your function concludes with `return fig`.")
+                            printed_error = "Incorrect return type"
+                        elif is_figure_empty(beautified_figure):
+                            error_message = ("The generated code ran, but the resulting visualization was empty. "
+                                             "This is incorrect. The plot must contain data. "
+                                             "Please check your code to ensure you are correctly plotting the data from the dataframe onto the figure's axes.")
+                            printed_error = "Empty figure"
                         else:
-                            print("Could not find the 'create_visualization' function in the generated code.")
-                    except Exception as e:
-                        print(f"Error executing generated code: {e}")
-                        print(f"Attempting to fix the code... ({num_fix_attempts_made + 1}/{self.max_fix_attempts})")
-                        user_messages.append(
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": f"There was an error executing the generated code: {traceback.format_exc()}\n"
-                                                             f"Please fix the code and try again. "}
-                                ]
-                            }
-                        )
-                        response = client(
-                            system_messages=[system_message],
-                            user_messages=user_messages,
-                            assistant_messages=assistant_messages,
-                            override_user_messages_formatting=True
-                        )
-                        self._handle_response(response)
-                        if not self.llm_generated_code:
-                            print("Could not extract beautified code from the LLM response after fixing attempts.")
-                            return None, ""
-                        num_fix_attempts_made += 1
+                            with beautified_vis_widget:
+                                plt.close('all')  # Avoid immediate display of the figure
+                                beautified_vis_widget.clear_output(wait=True)
+                                display(beautified_figure)
+                            code_execution_passed = True
+
+                    else:
+                        error_message = "Could not find the 'create_visualization' function in the generated code."
+                        printed_error = "Missing entry function"
+
+                except Exception as e:
+                    error_message = f"There was an error executing the generated code: {traceback.format_exc()}"
+                    printed_error = "Execution error - " + str(e)
+
+                # If there was any error, try to fix it
+                if error_message:
+                    print(f"Error encountered in LLM generated code - {printed_error}")
+                    print(f"Attempting to fix the code... ({num_fix_attempts_made + 1}/{self.max_fix_attempts})")
+
+                    # Append the previous attempt and the error to the message history
+                    user_messages.append(
+                        {"role": "assistant", "content": f"<python>{self.llm_generated_code}</python>"})
+                    user_messages.append({"role": "user",
+                                          "content": f"{error_message}\nPlease fix the code and provide the full, corrected code block."})
+
+                    response = client(
+                        system_messages=[system_message],
+                        user_messages=user_messages,
+                        override_user_messages_formatting=True
+                    )
+                    self._handle_response(response)
+                    if not self.llm_generated_code:
+                        print("Could not extract beautified code from the LLM response after fixing attempts.")
+                        break  # Exit the loop if we can't get new code
+                    num_fix_attempts_made += 1
         else:
             with beautified_vis_widget:
                 print("Could not extract beautified code from the LLM response.")
                 print("\nRaw response:\n")
                 print(response)
 
+        if not code_execution_passed and num_fix_attempts_made >= self.max_fix_attempts:
+            with beautified_vis_widget:
+                print(f"Failed to execute the generated code after {self.max_fix_attempts} attempts to fix it. ")
+
         # Create and return the tab widget.
         tab = widgets.Tab()
         tab.children = [original_vis_widget, beautified_vis_widget]
         tab.set_title(0, 'Original Visualization')
         tab.set_title(1, 'Beautified Visualization')
+
+        # Restore warnings to default behavior
+        warnings.resetwarnings()
+
+        # If some figures are still open, close them to avoid displaying them outside the widget.
+        # This can happen if the LLM failed in all its attempts to generate a valid visualization.
+        plt.close('all')
 
         return tab, self.llm_generated_code
 

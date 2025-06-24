@@ -6,6 +6,7 @@ import warnings
 
 import pandas as pd
 from matplotlib import pyplot as plt, gridspec
+from IPython.display import display
 
 from pd_explain.explainers.explainer_interface import ExplainerInterface
 from external_explainers.metainsight_explainer.metainsight_mining import MetaInsightMiner, MetaInsight
@@ -15,6 +16,8 @@ from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from fedex_generator.commons.utils import get_calling_params_name
 from pd_explain.visualizer_adaptations.carousel_adapter import CarouselAdapter
+from pd_explain.llm_integrations.visualization_beautifier import VisualizationBeautifier
+from pd_explain.llm_integrations.explanation_reasoning import ExplanationReasoning
 
 from typing import List, Tuple, Literal
 
@@ -44,6 +47,9 @@ class MetaInsightExplainer(ExplainerInterface):
                  use_all_groupby_combinations: bool = False,
                  do_not_visualize: bool = False,
                  display_mode: Literal['carousel', 'grid'] = 'grid',
+                 beautify: bool = False,
+                 beautify_max_fix_attempts: int = 3,
+                 add_llm_context_explanations: bool = False,
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -75,6 +81,10 @@ class MetaInsightExplainer(ExplainerInterface):
         the groupby columns will be [['A'], ['B'], ['A', 'B']]. If set to False, only the provided groupby columns will be used.
         :param do_not_visualize: If True, the visualizations will not be generated. This is useful for when the explainer
         is used in a pipeline and the visualizations are not needed.
+        :param beautify: If True, use a LLM to create new visualizations for the explanations, which should look (maybe) better
+        and be easier to understand compared to the templates used. Defaults to False.
+        :param beautify_max_fix_attempts: The maximum number of attempts to fix the code returned by the LLM beautifier.
+        :param add_llm_context_explanations: Whether to add LLM context explanations to the explanation. Defaults to False.
         """
         self.metainsights = None
         self.source_df = pd.DataFrame(source_df)
@@ -96,6 +106,9 @@ class MetaInsightExplainer(ExplainerInterface):
         self.n_bins = num_bins
         self.use_all_groupby_combinations = use_all_groupby_combinations
         self._do_not_visualize = do_not_visualize
+        self.beautify = beautify
+        self.beautify_max_fix_attempts = beautify_max_fix_attempts
+        self.add_llm_context_explanations = add_llm_context_explanations
         self._source_name = get_calling_params_name(source_df)
         if display_mode not in ['carousel', 'grid']:
             warnings.warn(f"Display mode {display_mode} is not supported. Defaulting to 'grid'.")
@@ -345,6 +358,20 @@ class MetaInsightExplainer(ExplainerInterface):
                     Groupby columns: {self.groupby_columns}
                     Aggregations: {self.aggregations}""")
         else:
+            explanations_str = [
+                metainsight.to_str_full() for metainsight in metainsights
+            ]
+            if self.add_llm_context_explanations:
+                reasoner = ExplanationReasoning(
+                    data=self.source_df,
+                    explanations_found=explanations_str,
+                    query_type='metainsight',
+                    source_name=self._source_name,
+                    query=self._query,
+                )
+                added_explanations = reasoner.do_llm_action()
+            else:
+                added_explanations = pd.Series([None] * self.top_k, index=range(self.top_k))
             if self._display_mode == 'grid':
                 num_rows = min(self.top_k, len(metainsights))
                 fig = plt.figure(figsize=(30, 30 * len(metainsights)))
@@ -376,16 +403,39 @@ class MetaInsightExplainer(ExplainerInterface):
                     ax_right.axis('off')
 
                 for i, mi in enumerate(metainsights[:self.top_k]):
-                    mi.visualize(fig=fig, subplot_spec=main_grid[i, 0])
+                    mi.visualize(fig=fig, subplot_spec=main_grid[i, 0], additional_text=added_explanations.iloc[i])
 
+                if self.beautify:
+                    try:
+                        beautifier = VisualizationBeautifier(
+                            visualization_object=fig,
+                            max_fix_attempts=self.beautify_max_fix_attempts,
+                            data=self.source_df,
+                            requester_name='MetaInsight',
+                            visualization_params={
+                                'top_k': self.top_k,
+                                'metainsights': metainsights,
+                            }
+                        )
+                        fig_tab, _ = beautifier.do_llm_action()
+                    except Exception as e:
+                        warnings.warn(f"Beautification failed: {e}. Returning the original figure.")
+                        fig_tab = None
+                    if fig_tab is not None:
+                        display(fig_tab)
+                    else:
+                        warnings.warn("Beautification failed. Returning the original figure.")
+                        display(fig)
                 return None
             elif self._display_mode == 'carousel':
+                if self.beautify:
+                    print("Beautification is not supported in carousel mode. ")
                 with CarouselAdapter() as adapter:
                     for i, mi in enumerate(metainsights[:self.top_k]):
                         fig = plt.figure(figsize=(30, 15))
                         outer_grid = gridspec.GridSpec(1, 1, hspace=0.05 if len(metainsights) > 2 else 0.3,
                                                        figure=fig)
-                        mi.visualize(fig=fig, subplot_spec=outer_grid[0, 0])
+                        mi.visualize(fig=fig, subplot_spec=outer_grid[0, 0], additional_text=added_explanations.iloc[i])
                         plt.close(fig)
                         adapter.capture_output(fig)
                 return None

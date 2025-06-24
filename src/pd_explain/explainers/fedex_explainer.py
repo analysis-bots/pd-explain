@@ -1,10 +1,12 @@
 import pandas as pd
 from matplotlib import pyplot as plt
 
+from fedex_generator.Operations.GroupBy import GroupBy
 from .explainer_interface import ExplainerInterface
 from typing import List, Literal
 from pandas import DataFrame
 from copy import deepcopy
+from IPython.display import display
 import re
 import warnings
 
@@ -170,7 +172,6 @@ class FedexExplainer(ExplainerInterface):
             return 0
         return len(self._results[4])
 
-
     def _visualize(self, title, scores, K, figs_in_row, explanations, bins,
                    influence_vals, source_name, show_scores, added_explanations):
         """
@@ -194,6 +195,7 @@ class FedexExplainer(ExplainerInterface):
                 added_text=added_explanations
             )
             if self._beautify:
+                plt.close(fig)  # Close the figure to avoid displaying it immediately
                 beautifier = VisualizationBeautifier(
                     visualization_object=fig,
                     data=self._operation.source_df,
@@ -208,9 +210,16 @@ class FedexExplainer(ExplainerInterface):
                         'source_name': source_name,
                         'show_scores': show_scores
                     },
-                    requester_name='fedex'
+                    requester_name='fedex' if not isinstance(self._operation, GroupBy) else 'fedex-gb'
                 )
-                beautifier.do_llm_action()
+                tab, _ = beautifier.do_llm_action()
+                if tab is not None:
+                    # If the beautifier returns a tab, we will display it.
+                    display(tab)
+                else:
+                    # If the beautifier returns None, we will display the original figure.
+                    print("Beautifier failed to generate a new visualization. Displaying the original figure.")
+                    plt.show(fig)
         elif self._display_mode == 'carousel':
             with CarouselAdapter() as adapter:
                 for i in range(len(explanations)):
@@ -319,7 +328,7 @@ class FedexExplainer(ExplainerInterface):
         )
         return None
 
-    def get_explanation_in_textual_description(self, index:int) -> str:
+    def get_explanation_in_textual_description(self, index: int) -> str:
         """
         Get explanations after they have already been generated.
         If the explanations have not been generated yet, this method will raise an error.
@@ -336,7 +345,9 @@ class FedexExplainer(ExplainerInterface):
         explanation_to_return = explanations.iloc[index]
         pattern = re.compile(r'\$\\+bf{(.*?)}\$')
         explanation_to_return_formatted = pattern.sub(r'\1', explanation_to_return)  # Remove LaTeX formatting
-        explanation_to_return_formatted = explanation_to_return_formatted.replace("(in green)", "").replace("\n", " ").replace("\\", "")
+        explanation_to_return_formatted = explanation_to_return_formatted.replace("(in green)", "").replace("\n",
+                                                                                                            " ").replace(
+            "\\", "")
         added_explanation = None
         if self._added_explanations is not None and explanation_to_return in self._added_explanations:
             added_explanation = self._added_explanations[explanation_to_return]['added_text']
@@ -345,6 +356,7 @@ class FedexExplainer(ExplainerInterface):
                               f"on dataframe {source_name}, we found (using automated analysis):\n"
                               f"{explanation_to_return_formatted}.\n")
         if added_explanation is not None:
-            explanation_string += (f"Additionally, a LLM with limited context and no ability to query the data suggested "
-                                   f"that the cause of this change may be: {added_explanation.replace('\n', ' ')}.\n")
+            explanation_string += (
+                f"Additionally, a LLM with limited context and no ability to query the data suggested "
+                f"that the cause of this change may be: {added_explanation.replace('\n', ' ')}.\n")
         return explanation_string

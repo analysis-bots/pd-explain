@@ -14,6 +14,48 @@ class VisualizationCodeExtractor:
                 'class': 'MetaInsightExplainer',
                 'function': 'visualize'
             },
+            {
+                'package': 'external_explainers',
+                'file': 'meta_insight.py',
+                'class': 'MetaInsight',
+                'function': 'visualize'
+            },
+            {
+                'package': 'external_explainers',
+                'file': 'patterns.py',
+                'class': 'UnimodalityPattern',
+                'function': 'visualize_many'
+            },
+            {
+                'package': 'external_explainers',
+                'file': 'patterns.py',
+                'class': 'TrendPattern',
+                'function': 'visualize_many'
+            },
+            {
+                'package': 'external_explainers',
+                'file': 'patterns.py',
+                'class': 'OutlierPattern',
+                'function': 'visualize_many'
+            },
+            {
+                'package': 'external_explainers',
+                'file': 'patterns.py',
+                'class': 'CyclePattern',
+                'function': 'visualize_many'
+            },
+            {
+                'package': 'external_explainers',
+                'file': 'meta_insight.py',
+                'class': 'MetaInsight',
+                'function': '_create_labels'
+            },
+            {
+                'package': 'external_explainers',
+                'file': 'meta_insight.py',
+                'class': 'MetaInsight',
+                'function': '_create_commonness_set_title'
+            },
         ],
         'fedex-gb': [
             {
@@ -77,7 +119,37 @@ class VisualizationCodeExtractor:
                 'file': 'fedex_explainer.py',
                 'class': 'FedexExplainer',
                 'function': '_visualize'
-            }
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'Filter.py',
+                'class': 'Filter',
+                'function': 'draw_figures'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'BaseMeasure.py',
+                'class': 'BaseMeasure',
+                'function': 'draw_figures'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'ExceptionalityMeasure.py',
+                'class': 'ExceptionalityMeasure',
+                'function': 'build_operation_expression'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'ExceptionalityMeasure.py',
+                'class': 'ExceptionalityMeasure',
+                'function': 'draw_bar'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'BaseMeasure.py',
+                'class': 'BaseMeasure',
+                'function': 'get_max_k'
+            },
         ],
         'graph_visualizer': [
             {
@@ -85,6 +157,12 @@ class VisualizationCodeExtractor:
                 'file': 'graph_visualizer.py',
                 'class': 'GraphAutomatedExplorationVisualizer',
                 'function': '_create_query_tree_tab'
+            },
+            {
+                'package': 'pd_explain',
+                'file': 'graph_visualizer.py',
+                'class': 'GraphAutomatedExplorationVisualizer',
+                'function': '_create_tree_node_data_and_click_handler'
             }
         ],
     }

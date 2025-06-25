@@ -50,6 +50,7 @@ class MetaInsightExplainer(ExplainerInterface):
                  beautify: bool = False,
                  beautify_max_fix_attempts: int = 3,
                  add_llm_context_explanations: bool = False,
+                 silent_beautify: bool = False,
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -108,6 +109,7 @@ class MetaInsightExplainer(ExplainerInterface):
         self._do_not_visualize = do_not_visualize
         self.beautify = beautify
         self.beautify_max_fix_attempts = beautify_max_fix_attempts
+        self.silent_beautify = silent_beautify
         self.add_llm_context_explanations = add_llm_context_explanations
         self._source_name = get_calling_params_name(source_df)
         if display_mode not in ['carousel', 'grid']:
@@ -415,7 +417,8 @@ class MetaInsightExplainer(ExplainerInterface):
                             visualization_params={
                                 'top_k': self.top_k,
                                 'metainsights': metainsights,
-                            }
+                            },
+                            silent=self.silent_beautify,
                         )
                         fig_tab, _ = beautifier.do_llm_action()
                     except Exception as e:

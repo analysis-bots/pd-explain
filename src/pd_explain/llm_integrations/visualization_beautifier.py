@@ -2,7 +2,7 @@ import base64
 import io
 import json
 import os
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, Tuple
 import traceback
 
 import ipywidgets as widgets
@@ -60,7 +60,8 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                  requester_name: Optional[str] = None,
                  visualization_code: Optional[str] = None,
                  max_fix_attempts: int = 5,
-                 must_generalize: bool = False) -> None:
+                 must_generalize: bool = False,
+                 silent: bool = True) -> None:
         """
         Initializes the VisualizationBeautifier.
 
@@ -87,6 +88,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         # The maximum number of attempts to fix the code if it fails to execute.
         self.max_fix_attempts: int = max_fix_attempts
         self.must_generalize: bool = must_generalize
+        self.silent: bool = silent
 
 
     def _define_task(self) -> str:
@@ -129,22 +131,100 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             "1.  **Return the Figure:** The function **must** return the matplotlib `Figure` object that contains the plot.\n"
             "2.  **No Empty Plots:** The generated `Figure` **must not be empty**. It must have data plotted on its axes. Generating a blank canvas is a failure.\n"
             "3.  **Self-Contained:** All necessary libraries (e.g., `matplotlib.pyplot`, `seaborn`, `pandas`) must be imported *inside* the `create_visualization` function.\n"
-            "4.  **No other text or explanation** should be included outside the code block."
+            "4.  **No other text or explanation** should be included outside the code block.\n"
+            "5.  **No comments** should be included in the code. No one will see the code, so comments are unnecessary and only waste tokens.\n"
+            "6.  **Keep things simple**: Do not override the entire codebase, only write what is strictly necessary to create the improved visualization.\n"
         )
 
 
     def _handle_response(self, response: str):
         self.llm_generated_code = self._extract_response(response, "<python>", "</python>")
-        if not self.llm_generated_code:
+        if isinstance(self.llm_generated_code, str):
+            self.llm_generated_code = self.llm_generated_code.strip()
+        else:
+            self.llm_generated_code = ""
+        # If the length is less than 10 characters, something went very wrong, because that doesn't even cover the length of the expected
+        # entry function.
+        if not len(self.llm_generated_code) > 10:
             # Fallback for the case where the LLM does not use the expected tags, because sometimes it just chooses to use
             # the ```python and ``` tags instead. Because LLM.
             self.llm_generated_code = self._extract_response(response, "```python", "```")
-            if not self.llm_generated_code:
-                print("Could not extract beautified code from the LLM response.")
-                print("\nRaw response:\n")
-                print(response)
-                return None
+            if isinstance(self.llm_generated_code, str):
+                self.llm_generated_code = self.llm_generated_code.strip()
+            else:
+                self.llm_generated_code = ""
+            # Final fallback - just take everything, remove whatever tags we find, and pray. Because LLMs are fun and it's not like
+            # the LLM gets told the expected format or something twice.
+            if not len(self.llm_generated_code) > 10:
+                self.llm_generated_code = response
+                # Remove any tags that might be present in the code.
+                self.llm_generated_code = self.llm_generated_code.replace("<python>", "").replace("</python>", "")
+                self.llm_generated_code = self.llm_generated_code.replace("```python", "").replace("```", "")
+                self.llm_generated_code = self.llm_generated_code.strip()
+                # If the length is still less than 10 characters, we have a problem, that problem probably being the LLM dying on us.
+                if not len(self.llm_generated_code) > 10:
+                    print("Could not extract code from the LLM response.")
+                    return None
         return None
+
+
+    def _encode_visualization(self, visualization_object) -> Optional[str]:
+        """
+        Encodes the visualization object to a base64 string if it is an image or a matplotlib Figure.
+        Returns None if the visualization object is an ipywidget.
+        """
+        # Case 1: The visualization object is a path to an image file.
+        if isinstance(visualization_object, str) and os.path.exists(visualization_object):
+            with open(visualization_object, "rb") as image_file:
+                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+        # Case 2: The visualization object is a matplotlib Figure.
+        elif isinstance(visualization_object, Figure):
+            buf = io.BytesIO()
+            visualization_object.savefig(buf, format='png')
+            buf.seek(0)
+            encoded_image = base64.b64encode(buf.read()).decode('utf-8')
+        # Case 3: The visualization object is an ipywidget.
+        elif isinstance(visualization_object, widgets.Widget):
+            # For widgets, we can't easily create a screenshot.
+            # We will not send an image to the LLM in this case.
+            # The LLM will have to rely on the code alone.
+            encoded_image = None
+
+        return encoded_image
+
+
+    def execute(self, code) -> Tuple[Optional[Figure], Optional[str], Optional[str]]:
+        """
+        Executes the generated code in a controlled environment and checks the output.
+        """
+        beautified_figure = None
+        error_message = None
+        printed_error = None
+        try:
+            # Execute the generated code in a controlled environment.
+            exec_globals: Dict[str, Any] = {'pd': pd, 'widgets': widgets, 'plt': plt}
+            exec(code, exec_globals)
+            create_visualization_func = exec_globals.get('create_visualization')
+
+            if callable(create_visualization_func):
+                # Call the generated function to get the figure
+                beautified_figure = create_visualization_func(**self.visualization_params)
+
+                if not isinstance(beautified_figure, Figure):
+                    error_message = (
+                        "The `create_visualization` function did not return a matplotlib Figure object. "
+                        "Please ensure your function concludes with `return fig`.")
+                    printed_error = "Incorrect return type"
+
+            else:
+                error_message = "Could not find the 'create_visualization' function in the generated code. Code can not be executed without this entry point."
+                printed_error = "Missing entry function"
+
+        except Exception as e:
+            error_message = f"There was an error executing the generated code: {traceback.format_exc()}"
+            printed_error = "Execution error - " + str(e)
+
+        return beautified_figure, error_message, printed_error
 
     def do_llm_action(self) -> tuple[widgets.Tab | None, str]:
         """
@@ -166,24 +246,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                                    "https://generativelanguage.googleapis.com/v1beta/")
         )
 
-        encoded_image: Optional[str] = None
-        # Convert the visualization object to a base64 encoded image.
-        # Case 1: The visualization object is a path to an image file.
-        if isinstance(self.visualization_object, str) and os.path.exists(self.visualization_object):
-            with open(self.visualization_object, "rb") as image_file:
-                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
-        # Case 2: The visualization object is a matplotlib Figure.
-        elif isinstance(self.visualization_object, Figure):
-            buf = io.BytesIO()
-            self.visualization_object.savefig(buf, format='png')
-            buf.seek(0)
-            encoded_image = base64.b64encode(buf.read()).decode('utf-8')
-        # Case 3: The visualization object is an ipywidget.
-        elif isinstance(self.visualization_object, widgets.Widget):
-            # For widgets, we can't easily create a screenshot.
-            # We will not send an image to the LLM in this case.
-            # The LLM will have to rely on the code alone.
-            pass
+        encoded_image: Optional[str] = self._encode_visualization(self.visualization_object)
 
         system_message: str = self._define_task()
         # Create a data summary
@@ -193,7 +256,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
 
         user_message: str = (
             f"Here is the original code that produced the visualization:\n\n"
-            f"```python\n{self.visualization_code}\n```\n\n"
+            f"<python>\n{self.visualization_code}\n</python>\n\n"
             f"For context, here is a summary of the pandas DataFrame that will be passed to your function:\n"
             f"```\n{data_summary_str}\n```\n"
             f"And here is the head of the data:\n"
@@ -236,56 +299,25 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             else:
                 display(self.visualization_object)
 
+
         # Create the widget for the beautified visualization.
         beautified_vis_widget = widgets.Output()
-        code_execution_passed = False
-        num_fix_attempts_made = 0
+
+        last_working_code = None
+        last_loop_provided_code = False
+        beautified_figure = None
         # Suppress warnings, because the LLM code may raise warnings galore.
         warnings.filterwarnings("ignore", category=UserWarning, module='matplotlib')
         if self.llm_generated_code:
-            while not code_execution_passed and num_fix_attempts_made < self.max_fix_attempts:
+            for i in range(self.max_fix_attempts):
                 plt.close('all')  # Close any previous plots
-                error_message = ""
-                printed_error = ""
-                try:
-                    # Execute the generated code in a controlled environment.
-                    exec_globals: Dict[str, Any] = {'pd': pd, 'widgets': widgets, 'plt': plt}
-                    exec(self.llm_generated_code, exec_globals)
-                    create_visualization_func = exec_globals.get('create_visualization')
-
-                    if callable(create_visualization_func):
-                        # Call the generated function to get the figure
-                        beautified_figure = create_visualization_func(**self.visualization_params)
-
-                        if not isinstance(beautified_figure, Figure):
-                            error_message = (
-                                "The `create_visualization` function did not return a matplotlib Figure object. "
-                                "Please ensure your function concludes with `return fig`.")
-                            printed_error = "Incorrect return type"
-                        elif is_figure_empty(beautified_figure):
-                            error_message = ("The generated code ran, but the resulting visualization was empty. "
-                                             "This is incorrect. The plot must contain data. "
-                                             "Please check your code to ensure you are correctly plotting the data from the dataframe onto the figure's axes.")
-                            printed_error = "Empty figure"
-                        else:
-                            with beautified_vis_widget:
-                                plt.close('all')  # Avoid immediate display of the figure
-                                beautified_vis_widget.clear_output(wait=True)
-                                display(beautified_figure)
-                            code_execution_passed = True
-
-                    else:
-                        error_message = "Could not find the 'create_visualization' function in the generated code."
-                        printed_error = "Missing entry function"
-
-                except Exception as e:
-                    error_message = f"There was an error executing the generated code: {traceback.format_exc()}"
-                    printed_error = "Execution error - " + str(e)
+                beautified_figure, error_message, printed_error = self.execute(self.llm_generated_code)
 
                 # If there was any error, try to fix it
                 if error_message:
-                    print(f"Error encountered in LLM generated code - {printed_error}")
-                    print(f"Attempting to fix the code... ({num_fix_attempts_made + 1}/{self.max_fix_attempts})")
+                    if not self.silent:
+                        print(f"Error encountered in LLM generated code - {printed_error}")
+                        print(f"Attempting to fix the code... ({i + 1}/{self.max_fix_attempts})")
 
                     # Append the previous attempt and the error to the message history
                     user_messages.append(
@@ -300,18 +332,86 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                     )
                     self._handle_response(response)
                     if not self.llm_generated_code:
-                        print("Could not extract beautified code from the LLM response after fixing attempts.")
                         break  # Exit the loop if we can't get new code
-                    num_fix_attempts_made += 1
+                # If there was no error, we instead prompt the LLM for two things:
+                # 1. To approve or disapprove the generated visualization.
+                # 2. If it disapproves, to provide a new code that fixes the issues.
+                else:
+                    last_working_code = self.llm_generated_code
+                    if not self.silent:
+                        print("The generated code executed successfully.")
+                        print(f"Approving or improving the generated visualization... {i + 1}/{self.max_fix_attempts}")
+                    user_messages.append(
+                        {"role": "assistant", "content": f"<python>{self.llm_generated_code}</python>"}
+                    )
+                    encoded_image = self._encode_visualization(beautified_figure)
+                    user_message_text = (
+                        "Please review the generated visualization and either approve it, in which case it will be immediately displayed, "
+                        "or disapprove it and provide new code that improves the visualization.\n"
+                        "Approve the visualization if you think it is clear, consolidated, and aesthetically pleasing, while also "
+                        "relaying all of the important information from the original visualization.\n"
+                        "Provide your approval status between <approve and </approve> and as a single boolean value of 'True' or 'False'.\n"
+                        "Provide the new code inside <python> and </python> tags, or the program will not be able to extract it.\n"
+                    )
+                    user_messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": user_message_text},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f'data:image/jpeg;base64,{encoded_image}',
+                                    },
+                                },
+                            ],
+                        }
+                    )
+                    response = client(
+                        system_messages=[system_message],
+                        user_messages=user_messages,
+                        override_user_messages_formatting=True
+                    )
+                    approval_status = self._extract_response(response, "<approve>", "</approve>").strip().lower()
+                    approval_status = True if approval_status == 'true' else False
+                    # If the LLM approves the generated visualization, we can stop here.
+                    if approval_status:
+                        if not self.silent:
+                            print("The LLM approved the generated visualization.")
+                        break
+                    # If the LLM disapproves, we will try to fix the code.
+                    else:
+                        print("The LLM disapproved the generated visualization. It will attempt to improve it.")
+                        self._handle_response(response)
+                        if not self.llm_generated_code:
+                            if not self.silent:
+                                print("Could not extract beautified code from the LLM response after approval attempt.")
+                            break
+                        if i == self.max_fix_attempts - 1:
+                            last_loop_provided_code = True
+
         else:
             with beautified_vis_widget:
                 print("Could not extract beautified code from the LLM response.")
                 print("\nRaw response:\n")
                 print(response)
 
-        if not code_execution_passed and num_fix_attempts_made >= self.max_fix_attempts:
-            with beautified_vis_widget:
-                print(f"Failed to execute the generated code after {self.max_fix_attempts} attempts to fix it. ")
+        # Special case: the LLM generated code in the last loop that was provided, but it was not executed
+        # In theory, if this code runs, it should be the best code, so we will use it.
+        # If it does not run, we will fall back to last_working_code.
+        if last_loop_provided_code:
+            beautified_figure, error_message, _ = self.execute(self.llm_generated_code)
+            if error_message:
+                beautified_figure, error_message, _ = self.execute(last_working_code)
+
+        with beautified_vis_widget:
+            if beautified_figure:
+                # Display the beautified figure
+                display(beautified_figure)
+            else:
+                print(f"No valid beautified figure was generated within the allowed {self.max_fix_attempts} attempts.")
+
+        plt.close('all')  # Close all figures to avoid displaying them outside the widget.
 
         # Create and return the tab widget.
         tab = widgets.Tab()
@@ -326,7 +426,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         # This can happen if the LLM failed in all its attempts to generate a valid visualization.
         plt.close('all')
 
-        return tab, self.llm_generated_code
+        return tab, last_working_code
 
     def save_generated_code(self, file_path: str, key: str) -> None:
         """

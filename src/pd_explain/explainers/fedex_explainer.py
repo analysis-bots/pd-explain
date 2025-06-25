@@ -35,7 +35,8 @@ class FedexExplainer(ExplainerInterface):
                  log_query: bool = True,
                  display_mode: Literal['carousel', 'grid'] = 'grid',
                  beautify: bool = False,
-                 beautify_max_fix_attempts: int = 3,
+                 beautify_max_fix_attempts: int = 10,
+                 silent_beautify: bool = False,
                  *args, **kwargs):
         """
         Initialize the FedexExplainer object.
@@ -123,6 +124,7 @@ class FedexExplainer(ExplainerInterface):
         self._display_mode = display_mode
         self._beautify = beautify
         self._beautify_max_fix_attempts = beautify_max_fix_attempts
+        self._silent_beautify = silent_beautify
 
     def generate_explanation(self):
 
@@ -215,7 +217,8 @@ class FedexExplainer(ExplainerInterface):
                             'show_scores': show_scores
                         },
                         requester_name='fedex' if not isinstance(self._operation, GroupBy) else 'fedex-gb',
-                        max_fix_attempts=self._beautify_max_fix_attempts
+                        max_fix_attempts=self._beautify_max_fix_attempts,
+                        silent=self._silent_beautify,
                     )
                     tab, _ = beautifier.do_llm_action()
                 except Exception as e:

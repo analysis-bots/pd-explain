@@ -8,6 +8,7 @@ from IPython.display import display, HTML
 import pandas as pd
 
 from pd_explain.llm_integrations.automated_data_exploration.data_structures import QueryResultObject, QueryTree, tree_node
+from pd_explain.llm_integrations.visualization_beautifier import VisualizationBeautifier
 
 class SimpleAutomatedExplorationVisualizer:
     """
@@ -15,7 +16,9 @@ class SimpleAutomatedExplorationVisualizer:
     This class provides a tabbed interface to display the summary report, important queries, and the query tree.
     """
     def __init__(self, history: pd.DataFrame, final_report, query_and_results: dict[int, QueryResultObject],
-                            visualization_queries: list[int | str], query_tree: QueryTree, source_name: str = "Original DataFrame"):
+                            visualization_queries: list[int | str], query_tree: QueryTree,
+                 source_name: str = "Original DataFrame", beautify: bool = False,
+                 *args, **kwargs):
         """
         Initialize the SimpleAutomatedExplorationVisualizer with the necessary data.
 
@@ -33,6 +36,9 @@ class SimpleAutomatedExplorationVisualizer:
         self.query_tree = query_tree
         self.source_name = source_name
         self.main_tabs = None  # This will hold the main tabs widget
+        self.beautify = beautify
+        self.fedex_beautify_code = None
+        self.metainsight_beautify_code = None
 
 
     def _create_query_string(self, query_idx: int) -> str:
@@ -105,20 +111,28 @@ class SimpleAutomatedExplorationVisualizer:
 
         # Visualize the FedEx and MetaInsight findings if they exist
         if query_info.fedex is not None and len(query_info.fedex) > 0:
+            if self.beautify:
+                query_info.fedex._beautify = True
+            else:
+                query_info.fedex._beautify = False
             fedex_output = widgets.Output(layout=widgets.Layout(width='100%'))
             with fedex_output:
                 plt.close('all')  # Close previous plots to prevent overlap
-                query_info.fedex.visualize(query_info.fedex._results)
+                query_info.fedex.visualize(query_info.fedex._results, beautify_code=self.fedex_beautify_code)
                 plt.show()
             accordion_children.append(fedex_output)
             accordion_titles.append("FEDEx Visualizations")
             something_visualized = True
 
         if query_info.metainsight is not None and len(query_info.metainsight) > 0:
+            if self.beautify:
+                query_info.metainsight.beautify = True
+            else:
+                query_info.metainsight.beautify = False
             meta_output = widgets.Output(layout=widgets.Layout(width='100%'))
             with meta_output:
                 plt.close('all')  # Close previous plots
-                query_info.metainsight.visualize()
+                query_info.metainsight.visualize(beautify_code=self.metainsight_beautify_code)
                 plt.show()
             accordion_children.append(meta_output)
             accordion_titles.append("MetaInsight Visualizations")
@@ -512,6 +526,52 @@ class SimpleAutomatedExplorationVisualizer:
 
         # Use the query tree to create a string representation of each query
         query_tree_str = {idx: self._create_query_string(idx) for idx in self.query_tree.tree.keys()}
+
+        # If the beautify flag is set, we will create beautification code for both FedEx and MetaInsight
+        # explainers.
+        if self.beautify:
+            print("Creating beautification code for FEDEx explainer...")
+            # Select a result from the history with the most fedex findings.
+            result = self.history.loc[
+                self.history['fedex_explainer_findings'].apply(
+                    lambda x: len(x) if isinstance(x, list) else 0
+                ).idxmax()
+            ]
+            # Create the beautification code for FedEx
+            result_idx = result.name
+            query_info = self.query_and_results.get(result_idx, None)
+            if query_info is not None and query_info.fedex is not None:
+                query_info.fedex._return_beautify_code = True
+                fedex_beautify_code = query_info.fedex.visualize()
+                query_info.fedex._return_beautify_code = False
+                if fedex_beautify_code is not None:
+                    self.fedex_beautify_code = fedex_beautify_code
+                else:
+                    self.fedex_beautify_code = "No beautification code available for FedEx."
+            else:
+                self.fedex_beautify_code = "No FedEx explainer results available for beautification."
+
+            # Select a result from the history with the most metainsight findings.
+            print("Creating beautification code for MetaInsight explainer...")
+            result = self.history.loc[
+                self.history['metainsight_explainer_findings'].apply(
+                    lambda x: len(x) if isinstance(x, list) else 0
+                ).idxmax()
+            ]
+            # Create the beautification code for MetaInsight
+            result_idx = result.name
+            query_info = self.query_and_results.get(result_idx, None)
+            if query_info is not None and query_info.metainsight is not None:
+                query_info.metainsight.return_beautify_code = True
+                metainsight_beautify_code = query_info.metainsight.visualize()
+                query_info.metainsight.return_beautify_code = False
+                if metainsight_beautify_code is not None:
+                    self.metainsight_beautify_code = metainsight_beautify_code
+                else:
+                    self.metainsight_beautify_code = "No beautification code available for MetaInsight."
+            else:
+                self.metainsight_beautify_code = "No MetaInsight explainer results available for beautification."
+
 
         #  Create the main tabs: Summary | Important Queries | Query Tree
         main_tabs = widgets.Tab(

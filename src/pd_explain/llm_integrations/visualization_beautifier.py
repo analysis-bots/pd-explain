@@ -4,6 +4,9 @@ import json
 import os
 from typing import Optional, Any, Dict, Tuple
 import traceback
+import networkx as nx
+import matplotlib.patches as mpatches
+import ipycytoscape
 
 import ipywidgets as widgets
 import pandas as pd
@@ -17,37 +20,6 @@ from pd_explain.llm_integrations.client import Client
 from pd_explain.llm_integrations import consts
 from pd_explain.utils.visualization_code_extractor import VisualizationCodeExtractor
 
-
-def is_figure_empty(fig: Figure) -> bool:
-    """
-    Checks if a matplotlib Figure is empty (i.e., contains no plotted data).
-
-    A figure is considered empty if all of its axes have no lines, patches,
-    collections, or images.
-
-    :param fig: The matplotlib Figure object to check.
-    :return: True if the figure is empty, False otherwise.
-    """
-    if not fig.axes:
-        # No axes on the figure at all
-        return True
-
-    for ax in fig.axes:
-        # Check for common plotted elements (artists)
-        has_lines = len(ax.get_lines()) > 0
-        has_collections = len(ax.collections) > 0
-        has_images = len(ax.images) > 0
-
-        # You could also check ax.texts, but titles and labels are also texts.
-        # The checks above are usually sufficient for data plots.
-
-        if has_lines or has_collections or has_images:
-            # Found an axis with data, so the figure is not empty
-            return False
-
-    # If we get here, no axis had any plotted data
-    return True
-
 class VisualizationBeautifier(LLMIntegrationInterface):
     """
     A class to create case specific visualizations using LLMs.
@@ -59,7 +31,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                  visualization_params: Optional[Dict[str, Any]] = None,
                  requester_name: Optional[str] = None,
                  visualization_code: Optional[str] = None,
-                 max_fix_attempts: int = 5,
+                 max_fix_attempts: int = 10,
                  must_generalize: bool = False,
                  silent: bool = True) -> None:
         """
@@ -89,6 +61,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         self.max_fix_attempts: int = max_fix_attempts
         self.must_generalize: bool = must_generalize
         self.silent: bool = silent
+        self.requester_name: Optional[str] = requester_name
 
 
     def _define_task(self) -> str:
@@ -183,17 +156,146 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             visualization_object.savefig(buf, format='png')
             buf.seek(0)
             encoded_image = base64.b64encode(buf.read()).decode('utf-8')
-        # Case 3: The visualization object is an ipywidget.
-        elif isinstance(visualization_object, widgets.Widget):
-            # For widgets, we can't easily create a screenshot.
-            # We will not send an image to the LLM in this case.
-            # The LLM will have to rely on the code alone.
+        # Case 3: The visualization object is an ipycytoscape.CytoscapeWidget (graph visualization).
+        elif isinstance(visualization_object, ipycytoscape.CytoscapeWidget):
+            try:
+                # Extract the graph data
+                graph_nodes = visualization_object.graph.nodes
+                graph_edges = visualization_object.graph.edges
+                graph_data = {
+                    'nodes': graph_nodes,
+                    'edges': graph_edges
+                }
+
+                # Create a matplotlib representation of the graph
+                G = nx.DiGraph()
+
+                # Track node types for coloring
+                node_types = {}
+                node_labels = {}
+
+                # Add nodes with their attributes
+                for node in graph_data.get('nodes', []):
+                    node_id = node.data.get('id')
+                    if node_id:
+                        G.add_node(node_id)
+                        # Store attributes for visualization
+                        is_error = node.data.get('is_error') == 'True'
+                        has_findings = node.data.get('has_findings') == 'True'
+                        is_original = node_id == '0'
+
+                        if is_error:
+                            node_types[node_id] = 'error'
+                        elif is_original:
+                            node_types[node_id] = 'original'
+                        elif has_findings:
+                            node_types[node_id] = 'findings'
+                        else:
+                            node_types[node_id] = 'normal'
+
+                        # Store node label
+                        node_labels[node_id] = node.data.get('name', f"Node {node_id}")
+
+                # Add edges
+                for edge in graph_data.get('edges', []):
+                    source = edge.data.get('source')
+                    target = edge.data.get('target')
+                    if source and target:
+                        G.add_edge(source, target)
+
+                # Color mapping similar to the original styling
+                color_map = {
+                    'error': '#dc3545',  # red
+                    'original': '#007bff',  # blue
+                    'findings': '#17a2b8',  # teal
+                    'normal': '#6c757d'  # gray
+                }
+
+                # Create a Figure and draw the graph
+                fig = Figure(figsize=(12, 8))
+                ax = fig.add_subplot(111)
+
+                # Try to use hierarchical layout similar to the original
+                try:
+                    # Try to use pygraphviz for a hierarchical layout
+                    pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
+                except:
+                    try:
+                        # Fall back to pydot
+                        pos = nx.nx_pydot.pydot_layout(G, prog='dot')
+                    except:
+                        # Fall back to spring layout if neither is available
+                        pos = nx.spring_layout(G)
+
+                # Draw nodes with different colors based on type
+                for node_type, color in color_map.items():
+                    node_list = [node for node, ntype in node_types.items() if ntype == node_type]
+                    if node_list:
+                        nx.draw_networkx_nodes(G, pos, nodelist=node_list, node_color=color,
+                                               node_size=1500, ax=ax)
+
+                # Draw edges
+                nx.draw_networkx_edges(G, pos, arrows=True, arrowsize=20, edge_color='#ccc', ax=ax)
+
+                # Draw labels
+                nx.draw_networkx_labels(G, pos, labels=node_labels, font_color='white', ax=ax)
+
+                # Add a legend
+                legend_elements = [
+                    mpatches.Patch(color=color_map['original'], label='Original DataFrame'),
+                    mpatches.Patch(color=color_map['findings'], label='Has Findings'),
+                    mpatches.Patch(color=color_map['normal'], label='Normal Query'),
+                    mpatches.Patch(color=color_map['error'], label='Error')
+                ]
+                ax.legend(handles=legend_elements)
+
+                # Remove axis
+                ax.axis('off')
+                ax.set_title('Query Tree Visualization', fontsize=16)
+
+                # Save to buffer and encode
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', bbox_inches='tight')
+                buf.seek(0)
+                encoded_image = base64.b64encode(buf.read()).decode('utf-8')
+
+            except Exception as e:
+                print(f"Error creating graph visualization: {str(e)}")
+                encoded_image = None
+        # Case 4: The visualization object may be an ipywidget (e.g., a plotly widget or other interactive widget).
+        # or something else unexpected.
+        else:
             encoded_image = None
 
         return encoded_image
 
+    def beautify_from_code(self, code):
+        """
+        Uses the provided code, saved previously, to beautify the visualization.
+        """
+        beautified_figure, _, _ = self._execute(code)
+        beautified_output = widgets.Output()
+        with beautified_output:
+            if beautified_figure:
+                display(beautified_figure)
+            else:
+                print("No valid beautified figure was generated.")
+        original_output = widgets.Output()
+        with original_output:
+            if isinstance(self.visualization_object, str) and os.path.exists(self.visualization_object):
+                display(Image(filename=self.visualization_object))
+            else:
+                display(self.visualization_object)
 
-    def execute(self, code) -> Tuple[Optional[Figure], Optional[str], Optional[str]]:
+        # Create and return the tab widget.
+        tab = widgets.Tab()
+        tab.children = [original_output, beautified_output]
+        tab.set_title(0, 'Original Visualization')
+        tab.set_title(1, 'Beautified Visualization')
+        return tab
+
+
+    def _execute(self, code) -> Tuple[Optional[Figure], Optional[str], Optional[str]]:
         """
         Executes the generated code in a controlled environment and checks the output.
         """
@@ -265,6 +367,16 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             f"{self._describe_output_format()}\n"
             f"Remember again to place the code inside <python> and </python> tags, or the program will not be able to extract it.\n"
         )
+        if self.requester_name == 'graph_visualizer':
+            user_message += (
+                "Note: The visualization is a graph visualization created using the ipycytoscape library. "
+                "Meanwhile, the image you see is a static, matplotlib representation of the graph, extracted using the "
+                "_encode_visualization method. "
+                "This is a very rough approximation of the actual visualization, so while it may be helpful, you should put "
+                "the most emphasis on the code itself, which is what will be executed.\n"
+                "The base code mostly suffers from issues of the graph being too big and cluttered, difficult, interpret and interact with. "
+                "Your task is to solve all of these issues, while also preserving the important information and functionality from the original visualization.\n"
+            )
 
         user_messages = [
             {
@@ -311,7 +423,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         if self.llm_generated_code:
             for i in range(self.max_fix_attempts):
                 plt.close('all')  # Close any previous plots
-                beautified_figure, error_message, printed_error = self.execute(self.llm_generated_code)
+                beautified_figure, error_message, printed_error = self._execute(self.llm_generated_code)
 
                 # If there was any error, try to fix it
                 if error_message:
@@ -353,6 +465,14 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                         "Provide your approval status between <approve and </approve> and as a single boolean value of 'True' or 'False'.\n"
                         "Provide the new code inside <python> and </python> tags, or the program will not be able to extract it.\n"
                     )
+                    if self.requester_name == 'graph_visualizer':
+                        user_message += (
+                            "Note: The visualization is a graph visualization created using the ipycytoscape library. "
+                            "Meanwhile, the image you see is a static, matplotlib representation of the graph, extracted using the "
+                            "_encode_visualization method. "
+                            "This is a very rough approximation of the actual visualization, so while it may be helpful, you should put "
+                            "the most emphasis on the code itself, which is what will be executed.\n"
+                        )
                     user_messages.append(
                         {
                             "role": "user",
@@ -400,9 +520,9 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         # In theory, if this code runs, it should be the best code, so we will use it.
         # If it does not run, we will fall back to last_working_code.
         if last_loop_provided_code:
-            beautified_figure, error_message, _ = self.execute(self.llm_generated_code)
+            beautified_figure, error_message, _ = self._execute(self.llm_generated_code)
             if error_message:
-                beautified_figure, error_message, _ = self.execute(last_working_code)
+                beautified_figure, error_message, _ = self._execute(last_working_code)
 
         with beautified_vis_widget:
             if beautified_figure:

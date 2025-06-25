@@ -51,6 +51,8 @@ class MetaInsightExplainer(ExplainerInterface):
                  beautify_max_fix_attempts: int = 3,
                  add_llm_context_explanations: bool = False,
                  silent_beautify: bool = False,
+                 return_beautify_code: bool = False,
+                 generalize_beautify_code: bool = False,
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -110,6 +112,8 @@ class MetaInsightExplainer(ExplainerInterface):
         self.beautify = beautify
         self.beautify_max_fix_attempts = beautify_max_fix_attempts
         self.silent_beautify = silent_beautify
+        self.return_beautify_code = return_beautify_code
+        self.generalize_beautify_code = generalize_beautify_code
         self.add_llm_context_explanations = add_llm_context_explanations
         self._source_name = get_calling_params_name(source_df)
         if display_mode not in ['carousel', 'grid']:
@@ -351,7 +355,7 @@ class MetaInsightExplainer(ExplainerInterface):
                                                                                   best_numerical_cols]
 
 
-    def visualize(self, metainsights: List[MetaInsight] = None) -> None | str:
+    def visualize(self, metainsights: List[MetaInsight] = None, beautify_code: str = None) -> None | str:
         if metainsights is None:
             metainsights = self.metainsights
         if len(metainsights) == 0:
@@ -408,7 +412,24 @@ class MetaInsightExplainer(ExplainerInterface):
                     mi.visualize(fig=fig, subplot_spec=main_grid[i, 0], additional_text=added_explanations.iloc[i])
 
                 if self.beautify:
-                    try:
+                    if not beautify_code:
+                        try:
+                            beautifier = VisualizationBeautifier(
+                                visualization_object=fig,
+                                max_fix_attempts=self.beautify_max_fix_attempts,
+                                data=self.source_df,
+                                requester_name='MetaInsight',
+                                visualization_params={
+                                    'top_k': self.top_k,
+                                    'metainsights': metainsights,
+                                },
+                                silent=self.silent_beautify,
+                            )
+                            fig_tab, code = beautifier.do_llm_action()
+                        except Exception as e:
+                            warnings.warn(f"Beautification failed: {e}. Returning the original figure.")
+                            fig_tab = None
+                    else:
                         beautifier = VisualizationBeautifier(
                             visualization_object=fig,
                             max_fix_attempts=self.beautify_max_fix_attempts,
@@ -420,12 +441,12 @@ class MetaInsightExplainer(ExplainerInterface):
                             },
                             silent=self.silent_beautify,
                         )
-                        fig_tab, _ = beautifier.do_llm_action()
-                    except Exception as e:
-                        warnings.warn(f"Beautification failed: {e}. Returning the original figure.")
-                        fig_tab = None
+                        fig_tab = beautifier.beautify_from_code(beautify_code)
+                        code = None
                     if fig_tab is not None:
                         display(fig_tab)
+                        if self.return_beautify_code:
+                            return code
                     else:
                         warnings.warn("Beautification failed. Returning the original figure.")
                         display(fig)

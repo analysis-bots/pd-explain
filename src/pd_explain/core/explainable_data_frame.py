@@ -140,7 +140,8 @@ class ExpDataFrame(pd.DataFrame):
                                    visualization_type: Literal['graph', 'simple'] = 'graph',
                                    verbose: bool = False,
                                    input_df: 'ExpDataFrame' = None,
-                                   max_iterations_to_add: int = 3
+                                   max_iterations_to_add: int = 3,
+                                   beautify_visualizations: bool = False
                                    ):
         """
         Use LLMs to perform automated exploration and analysis on the DataFrame based on the user's request.
@@ -191,7 +192,8 @@ class ExpDataFrame(pd.DataFrame):
         # Create the AutomatedDataExploration object with the provided parameters.
         self.data_explorer = AutomatedDataExploration(
             dataframe=self if input_df is None else input_df,
-            source_name=get_calling_params_name(self)
+            source_name=get_calling_params_name(self),
+            beautify=beautify_visualizations
         )
         # Run the automated exploration with the user query and the parameters.
         self.data_explorer.do_llm_action(

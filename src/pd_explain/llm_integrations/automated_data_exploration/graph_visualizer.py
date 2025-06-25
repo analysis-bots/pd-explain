@@ -3,11 +3,11 @@ import textwrap
 import ipycytoscape
 import ipywidgets as widgets
 import pandas as pd
-from ipywidgets import VBox
+from ipywidgets import VBox, Tab
 
 from pd_explain.llm_integrations.automated_data_exploration.data_structures import QueryResultObject, QueryTree
 from pd_explain.llm_integrations.automated_data_exploration.simple_visualizer import SimpleAutomatedExplorationVisualizer
-
+from pd_explain.llm_integrations.visualization_beautifier import VisualizationBeautifier
 
 class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
     """
@@ -18,7 +18,7 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
 
     def __init__(self, history: pd.DataFrame, final_report, query_and_results: dict[int, QueryResultObject],
                  visualization_queries: list[int | str], query_tree: QueryTree,
-                 source_name: str = "Original DataFrame"):
+                 source_name: str = "Original DataFrame", beautify: bool = False):
         """
         Initialize the GraphAutomatedExplorationVisualizer with the necessary data.
 
@@ -29,7 +29,8 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
         :param query_tree: The query tree structure containing the ancestry of queries.
         :param source_name: The name of the original DataFrame or data source.
         """
-        super().__init__(history, final_report, query_and_results, visualization_queries, query_tree, source_name)
+        super().__init__(history, final_report, query_and_results,
+                         visualization_queries, query_tree, source_name)
         self.history = history
         self.final_report = final_report
         self.query_and_results = query_and_results
@@ -39,6 +40,8 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
         self.main_tabs = None  # This will hold the main tabs widget
         # Store click handlers for ipycytoscape nodes
         self._node_click_handlers = {}
+        self.beautify = beautify
+        self.visualization_code = None
 
 
     def _create_tree_node_data_and_click_handler(self, node_index: int, query_tree_str: dict[int, str],
@@ -99,7 +102,7 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
         return node_data, click_handler_func
 
 
-    def _create_query_tree_tab(self, query_tree_str: dict[int, str], ) -> VBox:
+    def _create_query_tree_tab(self, query_tree_str: dict[int, str], ) -> VBox | Tab:
         """
         Create a tab for the query tree visualization using ipycytoscape.
         :param query_tree_str: A dictionary mapping query indices to their string representations.
@@ -156,7 +159,6 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
                 })
 
         # Define ipycytoscape stylesheet for custom appearance
-        # NEW: Reordered selectors for correct precedence
         graph.set_style([
             {
                 'selector': 'node',
@@ -251,4 +253,28 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
 
         graph.on('node', 'click', on_cytoscape_node_click)
 
-        return container_vbox
+        if not self.beautify:
+            return container_vbox
+        else:
+            beautifier = VisualizationBeautifier(
+                visualization_object=graph,
+                data=self.history,
+                requester_name='graph_visualizer',
+                silent=False,
+                visualization_params={
+                    'history': self.history,
+                    'query_and_results': self.query_and_results,
+                    'query_tree': self.query_tree,
+                    'query_tree_str': query_tree_str,
+                }
+            )
+            if not self.visualization_code:
+                print("Generating beautification code for the query tree visualization...")
+                beautified_graph, visualization_code = beautifier.do_llm_action()
+                if visualization_code is None:
+                    visualization_code = "Could not beautify the graph visualization."
+                self.visualization_code = visualization_code
+                return beautified_graph
+            else:
+                beautified_graph = beautifier.beautify_from_code(self.visualization_code)
+                return beautified_graph

@@ -163,6 +163,18 @@ class VisualizationCodeExtractor:
                 'file': 'graph_visualizer.py',
                 'class': 'GraphAutomatedExplorationVisualizer',
                 'function': '_create_tree_node_data_and_click_handler'
+            },
+            {
+                'package': 'pd_explain',
+                'file': 'data_structures.py',
+                'class': None,
+                'function': None
+            },
+            {
+                'package': 'pd_explain',
+                'file': 'visualization_beautifier.py',
+                'class': 'VisualizationBeautifier',
+                'function': '_encode_visualization'
             }
         ],
     }
@@ -217,7 +229,7 @@ class VisualizationCodeExtractor:
             class_name = func_info.get('class')
             func_name = func_info.get('function')
 
-            if not all([pkg_name, file_name, func_name]):
+            if not all([pkg_name, file_name]):
                 continue
 
             pkg_path = self.package_paths.get(pkg_name)
@@ -271,9 +283,12 @@ class VisualizationCodeExtractor:
         if not func_node:
             return None
 
+        if isinstance(func_node, ast.Module):
+            # If the function node is a module, we return the entire file content.
+            return file_content
         return ast.get_source_segment(file_content, func_node)
 
-    def _find_function_node(self, file_ast: ast.Module, class_name: Optional[str], func_name: str) -> Optional[ast.FunctionDef]:
+    def _find_function_node(self, file_ast: ast.Module, class_name: Optional[str], func_name: str) -> Optional[ast.FunctionDef | ast.Module]:
         """
         Finds the AST node for a specific function within a file's AST.
 
@@ -290,6 +305,9 @@ class VisualizationCodeExtractor:
                         if isinstance(sub_node, ast.FunctionDef) and sub_node.name == func_name:
                             return sub_node
         else:
+            # If no class and func name is provided, we want to return the entire file AST.
+            if func_name is None:
+                return file_ast
             # Search for a top-level function.
             for node in file_ast.body:
                 if isinstance(node, ast.FunctionDef) and node.name == func_name:

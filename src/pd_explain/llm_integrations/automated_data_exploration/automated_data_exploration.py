@@ -28,7 +28,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
     At the end, the LLM will generate a final report summarizing the findings.
     """
 
-    def __init__(self, dataframe: pd.DataFrame, source_name: str = None):
+    def __init__(self, dataframe: pd.DataFrame, source_name: str = None, beautify: bool = False):
         self.dataframe = dataframe.copy()
         # Change all column names to lowercase, to avoid issues with case sensitivity
         self.dataframe.columns = [col.lower() for col in self.dataframe.columns]
@@ -38,6 +38,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         self.query_and_results = None
         self.visualization_queries = None
         self.query_tree = None
+        self.beautify = beautify
 
     def _define_task(self) -> str:
         """
@@ -508,7 +509,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 top_k=fedex_top_k,
                                 do_not_visualize=True,
                                 log_query=False,
-                                display_mode='carousel'
+                                display_mode='carousel' if not self.beautify else 'grid'
                             )
                             # Store the raw FedEx findings in the query and results mapping
                             query_and_results[curr_index].fedex = result_df.last_used_explainer
@@ -535,7 +536,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 do_not_visualize=True,
                                 max_filter_columns=metainsight_max_filter_cols,
                                 max_aggregation_columns=metainsight_max_agg_cols,
-                                display_mode='carousel'
+                                display_mode='carousel' if not self.beautify else 'grid'
                             )
                             metainsight_findings = [finding.__str__() for finding in metainsight_findings]
                             # Store the MetaInsight objects in the query and results mapping
@@ -627,7 +628,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
     def do_follow_up_action(self, history: pd.DataFrame = None, final_report=None,
                             query_and_results: dict[int, QueryResultObject] = None,
                             visualization_queries: list[int | str] = None, query_tree: QueryTree = None,
-                            source_name: str = None, visualization_type: Literal['graph', 'simple'] = "graph"
+                            source_name: str = None, visualization_type: Literal['graph', 'simple'] = "graph",
+                            beautify: bool = False
                             ):
         """
         Visualize the results of the deep dive analysis.
@@ -657,7 +659,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 visualization_queries=visualization_queries,
                 query_tree=query_tree,
                 final_report=final_report,
-                source_name=source_name if source_name else self.source_name
+                source_name=source_name if source_name else self.source_name,
+                beautify=beautify
             )
             return visualizer.visualize_data_exploration()
         all_self_params_exist = self.history is not None and self.final_report is not None \
@@ -671,6 +674,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             visualization_queries=self.visualization_queries,
             query_tree=self.query_tree,
             final_report=self.final_report,
-            source_name=source_name if source_name else self.source_name
+            source_name=source_name if source_name else self.source_name,
+            beautify=self.beautify
         )
         return visualizer.visualize_data_exploration()

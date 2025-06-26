@@ -260,17 +260,16 @@ class ExpDataFrame(pd.DataFrame):
             data_explorer_attributes = dill.load(file)
         # Don't actually need the dataframe here, as we are only visualizing the results.
         data_explorer = AutomatedDataExploration(pd.DataFrame())
-        # Set the attributes of the data_explorer object.
-        data_explorer.history = data_explorer_attributes['history']
-        data_explorer.query_and_results = data_explorer_attributes['query_and_results']
-        data_explorer.visualization_queries = data_explorer_attributes['visualization_queries']
-        data_explorer.query_tree = data_explorer_attributes['query_tree']
-        data_explorer.final_report = data_explorer_attributes['final_report']
-        data_explorer.source_name = data_explorer_attributes['source_name']
-        data_explorer.beautify_fedex = data_explorer_attributes['beautify_fedex']
-        data_explorer.beautify_metainsight = data_explorer_attributes['beautify_metainsight']
-        data_explorer.beautify_query_tree = data_explorer_attributes['beautify_query_tree']
         return data_explorer.do_follow_up_action(visualization_type=visualization_type,
+                                                 history=data_explorer_attributes['history'],
+                                                 query_and_results=data_explorer_attributes['query_and_results'],
+                                                 visualization_queries=data_explorer_attributes['visualization_queries'],
+                                                 query_tree=data_explorer_attributes['query_tree'],
+                                                 final_report=data_explorer_attributes['final_report'],
+                                                 source_name=data_explorer_attributes['source_name'],
+                                                 beautify_fedex=data_explorer_attributes['beautify_fedex'],
+                                                 beautify_metainsight=data_explorer_attributes['beautify_metainsight'],
+                                                 beautify_query_tree=data_explorer_attributes['beautify_query_tree'],
                                                  fedex_beautify_code=data_explorer_attributes['fedex_beautify_code'],
                                                  metainsight_beautify_code=data_explorer_attributes['metainsight_beautify_code'],
                                                  query_tree_beautify_code=data_explorer_attributes['query_tree_beautify_code'])

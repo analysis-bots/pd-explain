@@ -34,7 +34,9 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
                          visualization_queries, query_tree, source_name,
                          beautify_fedex=beautify_fedex,
                          beautify_metainsight=beautify_metainsight,
-                         beautify_query_tree=beautify_query_tree)
+                         beautify_query_tree=beautify_query_tree,
+                         verbose=verbose
+                         )
         # Store click handlers for ipycytoscape nodes
         self._node_click_handlers = {}
 
@@ -97,7 +99,7 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
         return node_data, click_handler_func
 
 
-    def _create_query_tree_tab(self, query_tree_str: dict[int, str], ) -> VBox | Tab:
+    def _create_query_tree_tab(self, query_tree_str: dict[int, str], ) -> VBox:
         """
         Create a tab for the query tree visualization using ipycytoscape.
         :param query_tree_str: A dictionary mapping query indices to their string representations.
@@ -244,11 +246,11 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
                   "The original DataFrame is shown in blue, queries with findings in teal, queries without findings in gray, "
                   "and queries with errors in red.</p>"
         )
-        container_vbox.children = [graph, disclaimer_html]
 
         graph.on('node', 'click', on_cytoscape_node_click)
 
         if not self.beautify_query_tree:
+            container_vbox.children = [graph, disclaimer_html]
             return container_vbox
         else:
             beautifier = VisualizationBeautifier(
@@ -268,8 +270,9 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
                 beautified_graph, visualization_code = beautifier.do_llm_action()
                 if visualization_code is None:
                     visualization_code = "Could not beautify the graph visualization."
-                self.visualization_code = visualization_code
-                return beautified_graph
+                self.query_tree_beautify_code = visualization_code
             else:
-                beautified_graph = beautifier.beautify_from_code(self.visualization_code)
-                return beautified_graph
+                beautified_graph = beautifier.beautify_from_code(self.query_tree_beautify_code)
+
+            container_vbox.children = [beautified_graph]
+            return container_vbox

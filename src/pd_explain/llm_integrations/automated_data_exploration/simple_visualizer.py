@@ -22,6 +22,7 @@ class SimpleAutomatedExplorationVisualizer:
                  visualization_queries: list[int | str], query_tree: QueryTree,
                  source_name: str = "Original DataFrame", beautify_fedex: bool = False,
                  beautify_metainsight: bool = False, beautify_query_tree: bool = False,
+                 verbose: bool = False,
                  *args, **kwargs):
         """
         Initialize the SimpleAutomatedExplorationVisualizer with the necessary data.
@@ -49,6 +50,7 @@ class SimpleAutomatedExplorationVisualizer:
         self.fedex_beautify_code = None
         self.metainsight_beautify_code = None
         self.query_tree_beautify_code = None
+        self.verbose = verbose
 
     def _create_query_string(self, query_idx: int) -> str:
         """
@@ -128,7 +130,10 @@ class SimpleAutomatedExplorationVisualizer:
             with fedex_output:
                 plt.close('all')  # Close previous plots to prevent overlap
                 query_info.fedex.visualize(query_info.fedex._results, beautify_code=self.fedex_beautify_code)
-                plt.show()
+                # If beautify_fedex is True, display will already be called in the visualize method.
+                if not self.beautify_fedex:
+                    plt.show()
+            plt.close('all')  # Close previous plots to prevent overlap
             accordion_children.append(fedex_output)
             accordion_titles.append("FEDEx Visualizations")
             something_visualized = True
@@ -142,7 +147,10 @@ class SimpleAutomatedExplorationVisualizer:
             with meta_output:
                 plt.close('all')  # Close previous plots
                 query_info.metainsight.visualize(beautify_code=self.metainsight_beautify_code)
-                plt.show()
+                # If beautify_metainsight is True, display will already be called in the visualize method.
+                if not self.beautify_metainsight:
+                    plt.show()
+            plt.close('all')  # Close previous plots to prevent overlap
             accordion_children.append(meta_output)
             accordion_titles.append("MetaInsight Visualizations")
             something_visualized = True
@@ -535,7 +543,7 @@ class SimpleAutomatedExplorationVisualizer:
 
         # Turn off warnings for the duration of the visualization, because if beautification is enabled,
         # that tends to raise a lot of warnings. Because LLMs are good at generating code that raises warnings, apparently.
-        warnings.filterwarnings("ignore", category=UserWarning)
+        warnings.filterwarnings("ignore")
 
         # Use the query tree to create a string representation of each query
         query_tree_str = {idx: self._create_query_string(idx) for idx in self.query_tree.tree.keys()}
@@ -553,15 +561,17 @@ class SimpleAutomatedExplorationVisualizer:
             # Create the beautification code for FedEx
             result_idx = result.name
             query_info = self.query_and_results.get(result_idx, None)
-            out = widgets.Output()
             if query_info is not None and query_info.fedex is not None:
+                # Set all the flags needed for beautification while getting the code and not visualizing it.
                 query_info.fedex._beautify = True
                 query_info.fedex._return_beautify_code = True
                 query_info.fedex._generalize_beautify_code = True
-                query_info.fedex._silent_beautify = True
-                # Use the widget to absorb the output, since we don't actually want to display it in the notebook.
-                with out:
-                    fedex_beautify_code = query_info.fedex.visualize()
+                query_info.fedex._silent_beautify = not self.verbose
+                query_info.fedex._do_not_visualize_beautify = True
+
+                fedex_beautify_code = query_info.fedex.visualize()
+
+                # Reset the flags after getting the beautification code
                 query_info.fedex._return_beautify_code = False
                 query_info.fedex._beautify = False
                 if fedex_beautify_code is not None:
@@ -582,17 +592,20 @@ class SimpleAutomatedExplorationVisualizer:
             # Create the beautification code for MetaInsight
             result_idx = result.name
             query_info = self.query_and_results.get(result_idx, None)
-            out = widgets.Output()
             if query_info is not None and query_info.metainsight is not None:
+                # Set all the flags needed for beautification while getting the code and not visualizing it.
                 query_info.metainsight.beautify = True
                 query_info.metainsight.return_beautify_code = True
                 query_info.metainsight.generalize_beautify_code = True
-                query_info.metainsight.silent_beautify = True
-                # Use the widget to absorb the output, since we don't actually want to display it in the notebook.
-                with out:
-                    metainsight_beautify_code = query_info.metainsight.visualize()
+                query_info.metainsight.silent_beautify = not self.verbose
+                query_info.metainsight._do_not_visualize_beautify = True
+
+                metainsight_beautify_code = query_info.metainsight.visualize()
+
+                # Reset the flags after getting the beautification code
                 query_info.metainsight.return_beautify_code = False
                 query_info.metainsight.beautify = False
+                query_info.metainsight._do_not_visualize_beautify = False
                 if metainsight_beautify_code is not None:
                     self.metainsight_beautify_code = metainsight_beautify_code
                 else:
@@ -683,6 +696,6 @@ class SimpleAutomatedExplorationVisualizer:
         )
 
         # Restore warnings to default behavior
-        warnings.filterwarnings("default", category=UserWarning)
+        warnings.filterwarnings("default")
 
         return main_tabs

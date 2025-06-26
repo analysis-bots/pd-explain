@@ -114,6 +114,7 @@ class MetaInsightExplainer(ExplainerInterface):
         self.silent_beautify = silent_beautify
         self.return_beautify_code = return_beautify_code
         self.generalize_beautify_code = generalize_beautify_code
+        self._do_not_visualize_beautify = False
         self.add_llm_context_explanations = add_llm_context_explanations
         self._source_name = get_calling_params_name(source_df)
         if display_mode not in ['carousel', 'grid']:
@@ -436,12 +437,14 @@ class MetaInsightExplainer(ExplainerInterface):
                         fig_tab = beautifier.beautify_from_code(beautify_code)
                         code = None
                     if fig_tab is not None:
-                        display(fig_tab)
+                        if not self._do_not_visualize_beautify:
+                            display(fig_tab)
                         if self.return_beautify_code:
                             return code
                     else:
                         warnings.warn("Beautification failed. Returning the original figure.")
-                        display(fig)
+                        if not self._do_not_visualize_beautify:
+                            display(fig)
                 return None
             elif self._display_mode == 'carousel':
                 if self.beautify:

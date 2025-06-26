@@ -58,6 +58,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             self.beautify_metainsight = True
             self.beautify_query_tree = True
         self.visualizer = None
+        self.verbose = False
 
     def _define_task(self) -> str:
         """
@@ -367,6 +368,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             - query_tree: A QueryTree object containing the structure of the queries and their ancestry.
         :raises ValueError: If the user_query is None or empty.
         """
+        self.verbose = verbose
         if user_query is None or len(user_query) == 0:
             raise ValueError("User query must be provided for deep dive analysis.")
         history = pd.DataFrame(data=[["Original DataFrame", None, None, None, False, None, None]],
@@ -708,7 +710,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 source_name=source_name if source_name else self.source_name,
                 beautify_fedex=self.beautify_fedex,
                 beautify_metainsight=self.beautify_metainsight,
-                beautify_query_tree=self.beautify_query_tree
+                beautify_query_tree=self.beautify_query_tree,
+                verbose=self.verbose,
             )
             self.visualizer = visualizer
         return self.visualizer.visualize_data_exploration()

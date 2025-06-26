@@ -206,51 +206,33 @@ class FedexExplainer(ExplainerInterface):
             )
             if self._beautify:
                 plt.close(fig)  # Close the figure to avoid displaying it immediately
+                beautifier = VisualizationBeautifier(
+                    visualization_object=fig,
+                    data=self._operation.source_df,
+                    visualization_params={
+                        'title': title,
+                        'scores': scores,
+                        'K': K,
+                        'figs_in_row': figs_in_row,
+                        'explanations': explanations,
+                        'bins': bins,
+                        'influence_vals': influence_vals,
+                        'source_name': source_name,
+                        'show_scores': show_scores
+                    },
+                    must_generalize=self._generalize_beautify_code,
+                    requester_name='fedex' if not isinstance(self._operation, GroupBy) else 'fedex-gb',
+                    max_fix_attempts=self._beautify_max_fix_attempts,
+                    silent=self._silent_beautify,
+                )
                 if not beautify_code:
                     try:
-                        beautifier = VisualizationBeautifier(
-                            visualization_object=fig,
-                            data=self._operation.source_df,
-                            visualization_params={
-                                'title': title,
-                                'scores': scores,
-                                'K': K,
-                                'figs_in_row': figs_in_row,
-                                'explanations': explanations,
-                                'bins': bins,
-                                'influence_vals': influence_vals,
-                                'source_name': source_name,
-                                'show_scores': show_scores
-                            },
-                            must_generalize=self._generalize_beautify_code,
-                            requester_name='fedex' if not isinstance(self._operation, GroupBy) else 'fedex-gb',
-                            max_fix_attempts=self._beautify_max_fix_attempts,
-                            silent=self._silent_beautify,
-                        )
                         tab, code = beautifier.do_llm_action()
                     except Exception as e:
                         print(f"Beautification failed with error: {e}. Displaying the original figure.")
                         tab = None
                 else:
                     # If the beautify_code is provided, we will use it to create the tab.
-                    beautifier = VisualizationBeautifier(
-                        visualization_object=fig,
-                        data=self._operation.source_df,
-                        visualization_params={
-                            'title': title,
-                            'scores': scores,
-                            'K': K,
-                            'figs_in_row': figs_in_row,
-                            'explanations': explanations,
-                            'bins': bins,
-                            'influence_vals': influence_vals,
-                            'source_name': source_name,
-                            'show_scores': show_scores
-                        },
-                        requester_name='fedex' if not isinstance(self._operation, GroupBy) else 'fedex-gb',
-                        max_fix_attempts=self._beautify_max_fix_attempts,
-                        silent=self._silent_beautify,
-                    )
                     tab = beautifier.beautify_from_code(beautify_code)
                     code = None
                 if tab is not None:

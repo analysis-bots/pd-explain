@@ -28,7 +28,19 @@ class AutomatedDataExploration(LLMIntegrationInterface):
     At the end, the LLM will generate a final report summarizing the findings.
     """
 
-    def __init__(self, dataframe: pd.DataFrame, source_name: str = None, beautify: bool = False):
+    def __init__(self, dataframe: pd.DataFrame, source_name: str = None,
+                 beautify_fedex: bool = False, beautify_metainsight: bool = False,
+                 beautify_query_tree: bool = False, beautify_all: bool = False):
+        """
+        Initialize the AutomatedDataExploration class with a DataFrame and optional parameters.
+
+        :param dataframe: The DataFrame to be explored.
+        :param source_name: An optional name for the source of the DataFrame, used for identification in reports.
+        :param beautify_fedex: If True, beautify the FedEx explainer findings.
+        :param beautify_metainsight: If True, beautify the MetaInsight explainer findings.
+        :param beautify_query_tree: If True, beautify the query tree visualization.
+        :param beautify_all: If True, beautify all explainers and the query tree. Overrides the other beautify parameters.
+        """
         self.dataframe = dataframe.copy()
         # Change all column names to lowercase, to avoid issues with case sensitivity
         self.dataframe.columns = [col.lower() for col in self.dataframe.columns]
@@ -38,7 +50,14 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         self.query_and_results = None
         self.visualization_queries = None
         self.query_tree = None
-        self.beautify = beautify
+        self.beautify_fedex = beautify_fedex
+        self.beautify_metainsight = beautify_metainsight
+        self.beautify_query_tree = beautify_query_tree
+        if beautify_all:
+            self.beautify_fedex = True
+            self.beautify_metainsight = True
+            self.beautify_query_tree = True
+        self.visualizer = None
 
     def _define_task(self) -> str:
         """
@@ -509,7 +528,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 top_k=fedex_top_k,
                                 do_not_visualize=True,
                                 log_query=False,
-                                display_mode='carousel' if not self.beautify else 'grid'
+                                display_mode='carousel' if not self.beautify_fedex else 'grid'
                             )
                             # Store the raw FedEx findings in the query and results mapping
                             query_and_results[curr_index].fedex = result_df.last_used_explainer
@@ -536,7 +555,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 do_not_visualize=True,
                                 max_filter_columns=metainsight_max_filter_cols,
                                 max_aggregation_columns=metainsight_max_agg_cols,
-                                display_mode='carousel' if not self.beautify else 'grid'
+                                display_mode='carousel' if not self.beautify_metainsight else 'grid'
                             )
                             metainsight_findings = [finding.__str__() for finding in metainsight_findings]
                             # Store the MetaInsight objects in the query and results mapping
@@ -629,7 +648,10 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             query_and_results: dict[int, QueryResultObject] = None,
                             visualization_queries: list[int | str] = None, query_tree: QueryTree = None,
                             source_name: str = None, visualization_type: Literal['graph', 'simple'] = "graph",
-                            beautify: bool = False
+                            beautify_fedex: bool = False, beautify_metainsight: bool = False,
+                            beautify_query_tree: bool = False,
+                            fedex_beautify_code: str = None, metainsight_beautify_code: str = None,
+                            query_tree_beautify_code: str = None
                             ):
         """
         Visualize the results of the deep dive analysis.
@@ -646,6 +668,9 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         If all optional parameters (except for source_name) are provided, the method will visualize the deep dive
         using the provided parameters, enabling visualization without running the LLM again.
         If the parameters are not provided, it will use the results from the last run of do_llm_action() to visualize the deep dive.
+        :param beautify_fedex: If True, use the LLM beautifier to format the FedEx findings for better readability. Default is False.
+        :param beautify_metainsight: If True, use the LLM beautifier to format the MetaInsight findings for better readability. Default is False.
+        :param beautify_query_tree: If True, use the LLM beautifier to format the query tree for better readability. Default is False.
 
         :return: The visualized deep dive results as a ipywidgets tab.
         """
@@ -660,21 +685,30 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 query_tree=query_tree,
                 final_report=final_report,
                 source_name=source_name if source_name else self.source_name,
-                beautify=beautify
+                beautify_fedex=beautify_fedex,
+                beautify_metainsight=beautify_metainsight,
+                beautify_query_tree=beautify_query_tree
             )
+            visualizer.fedex_beautify_code = fedex_beautify_code
+            visualizer.metainsight_beautify_code = metainsight_beautify_code
+            visualizer.query_tree_beautify_code = query_tree_beautify_code
             return visualizer.visualize_data_exploration()
         all_self_params_exist = self.history is not None and self.final_report is not None \
                                 and self.query_and_results is not None and self.visualization_queries is not None \
                                 and self.query_tree is not None
         if not all_self_params_exist:
             raise ValueError("No deep dive analysis has been performed yet. Please run do_llm_action() first.")
-        visualizer = visualizer_class(
-            history=self.history,
-            query_and_results=self.query_and_results,
-            visualization_queries=self.visualization_queries,
-            query_tree=self.query_tree,
-            final_report=self.final_report,
-            source_name=source_name if source_name else self.source_name,
-            beautify=self.beautify
-        )
-        return visualizer.visualize_data_exploration()
+        if self.visualizer is None:
+            visualizer = visualizer_class(
+                history=self.history,
+                query_and_results=self.query_and_results,
+                visualization_queries=self.visualization_queries,
+                query_tree=self.query_tree,
+                final_report=self.final_report,
+                source_name=source_name if source_name else self.source_name,
+                beautify_fedex=self.beautify_fedex,
+                beautify_metainsight=self.beautify_metainsight,
+                beautify_query_tree=self.beautify_query_tree
+            )
+            self.visualizer = visualizer
+        return self.visualizer.visualize_data_exploration()

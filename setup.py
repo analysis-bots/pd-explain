@@ -70,6 +70,7 @@ setup(
         'together>=1.4.6',
         'openai>=1.66.5'
         'dill>=0.3.8',
+        'networkx>=3.2',
     ],
     cmdclass = {
         'update_dependencies': UpdateDependenciesCommand,

@@ -8,6 +8,7 @@ import pandas as pd
 from matplotlib.axis import Axis
 from pandas import DataFrame
 from pandas._libs.lib import no_default
+import dill
 
 import sys
 
@@ -141,7 +142,10 @@ class ExpDataFrame(pd.DataFrame):
                                    verbose: bool = False,
                                    input_df: 'ExpDataFrame' = None,
                                    max_iterations_to_add: int = 3,
-                                   beautify_visualizations: bool = False
+                                   beautify_fedex_visualizations: bool = False,
+                                   beautify_metainsight_visualizations: bool = False,
+                                   beautify_query_tree_visualizations: bool = False,
+                                   beautify_all_visualizations: bool = False,
                                    ):
         """
         Use LLMs to perform automated exploration and analysis on the DataFrame based on the user's request.
@@ -193,7 +197,10 @@ class ExpDataFrame(pd.DataFrame):
         self.data_explorer = AutomatedDataExploration(
             dataframe=self if input_df is None else input_df,
             source_name=get_calling_params_name(self),
-            beautify=beautify_visualizations
+            beautify_fedex=beautify_fedex_visualizations,
+            beautify_metainsight=beautify_metainsight_visualizations,
+            beautify_query_tree=beautify_query_tree_visualizations,
+            beautify_all=beautify_all_visualizations,
         )
         # Run the automated exploration with the user query and the parameters.
         self.data_explorer.do_llm_action(
@@ -220,9 +227,24 @@ class ExpDataFrame(pd.DataFrame):
         if self.data_explorer is None:
             raise ValueError(
                 "No data exploration has been performed yet. Please run automated_data_exploration() first.")
-        import dill
+
+        attributes = {
+            'history': self.data_explorer.history,
+            'query_and_results': self.data_explorer.query_and_results,
+            'visualization_queries': self.data_explorer.visualization_queries,
+            'query_tree': self.data_explorer.query_tree,
+            'final_report': self.data_explorer.final_report,
+            'source_name': self.data_explorer.source_name,
+            'beautify_fedex': self.data_explorer.beautify_fedex,
+            'beautify_metainsight': self.data_explorer.beautify_metainsight,
+            'beautify_query_tree': self.data_explorer.beautify_query_tree,
+            'fedex_beautify_code': self.data_explorer.visualizer.fedex_beautify_code,
+            'metainsight_beautify_code': self.data_explorer.visualizer.metainsight_beautify_code,
+            'query_tree_beautify_code': self.data_explorer.visualizer.query_tree_beautify_code,
+        }
+
         with open(file_path, 'wb') as file:
-            dill.dump(self.data_explorer, file)
+            dill.dump(attributes, file)
 
     @staticmethod
     def visualize_from_saved_data_exploration(file_path: str,
@@ -234,10 +256,24 @@ class ExpDataFrame(pd.DataFrame):
         :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
         visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
         """
-        import dill
         with open(file_path, 'rb') as file:
-            data_explorer = dill.load(file)
-        return data_explorer.do_follow_up_action(visualization_type=visualization_type)
+            data_explorer_attributes = dill.load(file)
+        # Don't actually need the dataframe here, as we are only visualizing the results.
+        data_explorer = AutomatedDataExploration(pd.DataFrame())
+        # Set the attributes of the data_explorer object.
+        data_explorer.history = data_explorer_attributes['history']
+        data_explorer.query_and_results = data_explorer_attributes['query_and_results']
+        data_explorer.visualization_queries = data_explorer_attributes['visualization_queries']
+        data_explorer.query_tree = data_explorer_attributes['query_tree']
+        data_explorer.final_report = data_explorer_attributes['final_report']
+        data_explorer.source_name = data_explorer_attributes['source_name']
+        data_explorer.beautify_fedex = data_explorer_attributes['beautify_fedex']
+        data_explorer.beautify_metainsight = data_explorer_attributes['beautify_metainsight']
+        data_explorer.beautify_query_tree = data_explorer_attributes['beautify_query_tree']
+        return data_explorer.do_follow_up_action(visualization_type=visualization_type,
+                                                 fedex_beautify_code=data_explorer_attributes['fedex_beautify_code'],
+                                                 metainsight_beautify_code=data_explorer_attributes['metainsight_beautify_code'],
+                                                 query_tree_beautify_code=data_explorer_attributes['query_tree_beautify_code'])
 
     def follow_up_with_automated_data_exploration(self, explanation_index: int = None,
                                                   num_iterations: int = 10,

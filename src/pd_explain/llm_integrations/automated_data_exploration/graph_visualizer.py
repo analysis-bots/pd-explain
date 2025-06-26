@@ -18,7 +18,8 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
 
     def __init__(self, history: pd.DataFrame, final_report, query_and_results: dict[int, QueryResultObject],
                  visualization_queries: list[int | str], query_tree: QueryTree,
-                 source_name: str = "Original DataFrame", beautify: bool = False):
+                 source_name: str = "Original DataFrame", beautify_fedex: bool = False,
+                 beautify_metainsight: bool = False, beautify_query_tree: bool = False, verbose: bool = False):
         """
         Initialize the GraphAutomatedExplorationVisualizer with the necessary data.
 
@@ -30,18 +31,12 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
         :param source_name: The name of the original DataFrame or data source.
         """
         super().__init__(history, final_report, query_and_results,
-                         visualization_queries, query_tree, source_name)
-        self.history = history
-        self.final_report = final_report
-        self.query_and_results = query_and_results
-        self.visualization_queries = visualization_queries
-        self.query_tree = query_tree
-        self.source_name = source_name
-        self.main_tabs = None  # This will hold the main tabs widget
+                         visualization_queries, query_tree, source_name,
+                         beautify_fedex=beautify_fedex,
+                         beautify_metainsight=beautify_metainsight,
+                         beautify_query_tree=beautify_query_tree)
         # Store click handlers for ipycytoscape nodes
         self._node_click_handlers = {}
-        self.beautify = beautify
-        self.visualization_code = None
 
 
     def _create_tree_node_data_and_click_handler(self, node_index: int, query_tree_str: dict[int, str],
@@ -253,14 +248,14 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
 
         graph.on('node', 'click', on_cytoscape_node_click)
 
-        if not self.beautify:
+        if not self.beautify_query_tree:
             return container_vbox
         else:
             beautifier = VisualizationBeautifier(
                 visualization_object=graph,
                 data=self.history,
                 requester_name='graph_visualizer',
-                silent=False,
+                silent=True,
                 visualization_params={
                     'history': self.history,
                     'query_and_results': self.query_and_results,
@@ -268,7 +263,7 @@ class GraphAutomatedExplorationVisualizer(SimpleAutomatedExplorationVisualizer):
                     'query_tree_str': query_tree_str,
                 }
             )
-            if not self.visualization_code:
+            if not self.query_tree_beautify_code:
                 print("Generating beautification code for the query tree visualization...")
                 beautified_graph, visualization_code = beautifier.do_llm_action()
                 if visualization_code is None:

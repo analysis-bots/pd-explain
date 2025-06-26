@@ -412,35 +412,27 @@ class MetaInsightExplainer(ExplainerInterface):
                     mi.visualize(fig=fig, subplot_spec=main_grid[i, 0], additional_text=added_explanations.iloc[i])
 
                 if self.beautify:
+                    beautifier = VisualizationBeautifier(
+                        visualization_object=fig,
+                        max_fix_attempts=self.beautify_max_fix_attempts,
+                        data=self.source_df,
+                        requester_name='MetaInsight',
+                        visualization_params={
+                            'top_k': self.top_k,
+                            'metainsights': metainsights,
+                        },
+                        silent=self.silent_beautify,
+                        must_generalize=self.generalize_beautify_code
+                    )
                     if not beautify_code:
                         try:
-                            beautifier = VisualizationBeautifier(
-                                visualization_object=fig,
-                                max_fix_attempts=self.beautify_max_fix_attempts,
-                                data=self.source_df,
-                                requester_name='MetaInsight',
-                                visualization_params={
-                                    'top_k': self.top_k,
-                                    'metainsights': metainsights,
-                                },
-                                silent=self.silent_beautify,
-                            )
                             fig_tab, code = beautifier.do_llm_action()
                         except Exception as e:
                             warnings.warn(f"Beautification failed: {e}. Returning the original figure.")
                             fig_tab = None
+                    # If we do have code already (e.g. from a previous beautification attempt),
+                    # we will use it instead of generating new code.
                     else:
-                        beautifier = VisualizationBeautifier(
-                            visualization_object=fig,
-                            max_fix_attempts=self.beautify_max_fix_attempts,
-                            data=self.source_df,
-                            requester_name='MetaInsight',
-                            visualization_params={
-                                'top_k': self.top_k,
-                                'metainsights': metainsights,
-                            },
-                            silent=self.silent_beautify,
-                        )
                         fig_tab = beautifier.beautify_from_code(beautify_code)
                         code = None
                     if fig_tab is not None:

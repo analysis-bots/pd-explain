@@ -492,7 +492,11 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                         user_messages=user_messages,
                         override_user_messages_formatting=True
                     )
-                    approval_status = self._extract_response(response, "<approve>", "</approve>").strip().lower()
+                    approval_status = self._extract_response(response, "<approve>", "</approve>")
+                    if isinstance(approval_status, str):
+                        approval_status = approval_status.strip().lower()
+                    else:
+                        approval_status = ""
                     approval_status = True if approval_status == 'true' else False
                     # If the LLM approves the generated visualization, we can stop here.
                     if approval_status:
@@ -523,6 +527,8 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             beautified_figure, error_message, _ = self._execute(self.llm_generated_code)
             if error_message:
                 beautified_figure, error_message, _ = self._execute(last_working_code)
+            else:
+                last_working_code = self.llm_generated_code
 
         with beautified_vis_widget:
             if beautified_figure:

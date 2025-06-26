@@ -6,18 +6,22 @@ import ipywidgets as widgets
 import matplotlib.pyplot as plt
 from IPython.display import display, HTML
 import pandas as pd
+import warnings
 
-from pd_explain.llm_integrations.automated_data_exploration.data_structures import QueryResultObject, QueryTree, tree_node
-from pd_explain.llm_integrations.visualization_beautifier import VisualizationBeautifier
+from pd_explain.llm_integrations.automated_data_exploration.data_structures import QueryResultObject, QueryTree, \
+    tree_node
+
 
 class SimpleAutomatedExplorationVisualizer:
     """
     A class to visualize the results of an automated data exploration analysis performed by an LLM on a DataFrame.
     This class provides a tabbed interface to display the summary report, important queries, and the query tree.
     """
+
     def __init__(self, history: pd.DataFrame, final_report, query_and_results: dict[int, QueryResultObject],
-                            visualization_queries: list[int | str], query_tree: QueryTree,
-                 source_name: str = "Original DataFrame", beautify: bool = False,
+                 visualization_queries: list[int | str], query_tree: QueryTree,
+                 source_name: str = "Original DataFrame", beautify_fedex: bool = False,
+                 beautify_metainsight: bool = False, beautify_query_tree: bool = False,
                  *args, **kwargs):
         """
         Initialize the SimpleAutomatedExplorationVisualizer with the necessary data.
@@ -28,6 +32,9 @@ class SimpleAutomatedExplorationVisualizer:
         :param visualization_queries: A list of query indices that are important for visualization.
         :param query_tree: The query tree structure containing the ancestry of queries.
         :param source_name: The name of the original DataFrame or data source.
+        :param beautify_fedex: Whether to beautify the FedEx visualizations using the LLM beautifier.
+        :param beautify_metainsight: Whether to beautify the MetaInsight visualizations using the LLM beautifier.
+        :param beautify_query_tree: Whether to beautify the query tree visualizations using the LLM beautifier.
         """
         self.history = history
         self.final_report = final_report
@@ -36,10 +43,12 @@ class SimpleAutomatedExplorationVisualizer:
         self.query_tree = query_tree
         self.source_name = source_name
         self.main_tabs = None  # This will hold the main tabs widget
-        self.beautify = beautify
+        self.beautify_fedex = beautify_fedex
+        self.beautify_metainsight = beautify_metainsight
+        self.beautify_query_tree = beautify_query_tree
         self.fedex_beautify_code = None
         self.metainsight_beautify_code = None
-
+        self.query_tree_beautify_code = None
 
     def _create_query_string(self, query_idx: int) -> str:
         """
@@ -91,13 +100,13 @@ class SimpleAutomatedExplorationVisualizer:
         title_string = ""
         if query_description is not None:
             title_string += (f"<h2 style='margin-top: 20px; margin-bottom: 10px; align: center;'>"
-                                             f"Query {query_idx}: {query_description}</h2>")
+                             f"Query {query_idx}: {query_description}</h2>")
             if findings_description is not None:
                 title_string += f"<h3 style='margin-bottom: 10px;'>Findings: {findings_description}</h3>"
             title_string += f"<p style='margin-bottom: 10px;'>Executed query: {query_string}</p>"
         else:
             title_string += (f"<h2 style='margin-top: 20px; margin-bottom: 10px; align: center;'>"
-                                             f"Query {query_idx}: {query_string}</h2>")
+                             f"Query {query_idx}: {query_string}</h2>")
             if findings_description is not None:
                 title_string += f"<h3 style='margin-bottom: 10px;'>Findings: {findings_description}</h3>"
 
@@ -111,7 +120,7 @@ class SimpleAutomatedExplorationVisualizer:
 
         # Visualize the FedEx and MetaInsight findings if they exist
         if query_info.fedex is not None and len(query_info.fedex) > 0:
-            if self.beautify:
+            if self.beautify_fedex:
                 query_info.fedex._beautify = True
             else:
                 query_info.fedex._beautify = False
@@ -125,7 +134,7 @@ class SimpleAutomatedExplorationVisualizer:
             something_visualized = True
 
         if query_info.metainsight is not None and len(query_info.metainsight) > 0:
-            if self.beautify:
+            if self.beautify_metainsight:
                 query_info.metainsight.beautify = True
             else:
                 query_info.metainsight.beautify = False
@@ -442,7 +451,7 @@ class SimpleAutomatedExplorationVisualizer:
             return 0
         return 1 + self._measure_depth(parent_node)
 
-    def _create_query_tree_tab(self, query_tree_str: dict[int, str],) -> widgets.HBox:
+    def _create_query_tree_tab(self, query_tree_str: dict[int, str], ) -> widgets.HBox:
         """
         Create a tab for the query tree visualization.
         :param query_tree_str: A dictionary mapping query indices to their string representations.
@@ -524,13 +533,17 @@ class SimpleAutomatedExplorationVisualizer:
         :return: A Tab widget containing the visualizations.
         """
 
+        # Turn off warnings for the duration of the visualization, because if beautification is enabled,
+        # that tends to raise a lot of warnings. Because LLMs are good at generating code that raises warnings, apparently.
+        warnings.filterwarnings("ignore", category=UserWarning)
+
         # Use the query tree to create a string representation of each query
         query_tree_str = {idx: self._create_query_string(idx) for idx in self.query_tree.tree.keys()}
 
         # If the beautify flag is set, we will create beautification code for both FedEx and MetaInsight
         # explainers.
-        if self.beautify:
-            print("Creating beautification code for FEDEx explainer...")
+        if self.beautify_fedex and not self.fedex_beautify_code:
+            print("Creating beautification code for FEDEx explainer, this may take a while...")
             # Select a result from the history with the most fedex findings.
             result = self.history.loc[
                 self.history['fedex_explainer_findings'].apply(
@@ -540,10 +553,17 @@ class SimpleAutomatedExplorationVisualizer:
             # Create the beautification code for FedEx
             result_idx = result.name
             query_info = self.query_and_results.get(result_idx, None)
+            out = widgets.Output()
             if query_info is not None and query_info.fedex is not None:
+                query_info.fedex._beautify = True
                 query_info.fedex._return_beautify_code = True
-                fedex_beautify_code = query_info.fedex.visualize()
+                query_info.fedex._generalize_beautify_code = True
+                query_info.fedex._silent_beautify = True
+                # Use the widget to absorb the output, since we don't actually want to display it in the notebook.
+                with out:
+                    fedex_beautify_code = query_info.fedex.visualize()
                 query_info.fedex._return_beautify_code = False
+                query_info.fedex._beautify = False
                 if fedex_beautify_code is not None:
                     self.fedex_beautify_code = fedex_beautify_code
                 else:
@@ -551,8 +571,9 @@ class SimpleAutomatedExplorationVisualizer:
             else:
                 self.fedex_beautify_code = "No FedEx explainer results available for beautification."
 
+        if self.beautify_metainsight and not self.metainsight_beautify_code:
             # Select a result from the history with the most metainsight findings.
-            print("Creating beautification code for MetaInsight explainer...")
+            print("Creating beautification code for MetaInsight explainer, this may take a while...")
             result = self.history.loc[
                 self.history['metainsight_explainer_findings'].apply(
                     lambda x: len(x) if isinstance(x, list) else 0
@@ -561,17 +582,23 @@ class SimpleAutomatedExplorationVisualizer:
             # Create the beautification code for MetaInsight
             result_idx = result.name
             query_info = self.query_and_results.get(result_idx, None)
+            out = widgets.Output()
             if query_info is not None and query_info.metainsight is not None:
+                query_info.metainsight.beautify = True
                 query_info.metainsight.return_beautify_code = True
-                metainsight_beautify_code = query_info.metainsight.visualize()
+                query_info.metainsight.generalize_beautify_code = True
+                query_info.metainsight.silent_beautify = True
+                # Use the widget to absorb the output, since we don't actually want to display it in the notebook.
+                with out:
+                    metainsight_beautify_code = query_info.metainsight.visualize()
                 query_info.metainsight.return_beautify_code = False
+                query_info.metainsight.beautify = False
                 if metainsight_beautify_code is not None:
                     self.metainsight_beautify_code = metainsight_beautify_code
                 else:
                     self.metainsight_beautify_code = "No beautification code available for MetaInsight."
             else:
                 self.metainsight_beautify_code = "No MetaInsight explainer results available for beautification."
-
 
         #  Create the main tabs: Summary | Important Queries | Query Tree
         main_tabs = widgets.Tab(
@@ -654,5 +681,8 @@ class SimpleAutomatedExplorationVisualizer:
                 """
             )
         )
+
+        # Restore warnings to default behavior
+        warnings.filterwarnings("default", category=UserWarning)
 
         return main_tabs

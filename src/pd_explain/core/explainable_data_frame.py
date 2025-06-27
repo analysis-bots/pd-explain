@@ -173,6 +173,14 @@ class ExpDataFrame(pd.DataFrame):
         :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
         Default is 3. This can help mitigate cases where the LLM fails too many iterations and thus does not get enough
         information.
+        :param beautify_fedex_visualizations: If True, will use the LLM beautify feature to try and beautify the FEDEx visualizations.
+        Default is False.
+        :param beautify_metainsight_visualizations: If True, will use the LLM beautify feature to try and beautify the MetaInsight visualizations.
+        Default is False.
+        :param beautify_query_tree_visualizations: If True, will use the LLM beautify feature to try and beautify the query tree visualizations.
+        Default is False.
+        :param beautify_all_visualizations: If True, will use the LLM beautify feature to try and beautify all visualizations.
+        Default is False.
 
         :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
 
@@ -282,7 +290,11 @@ class ExpDataFrame(pd.DataFrame):
                                                   metainsight_max_agg_cols: int = 3,
                                                   visualization_type: Literal['graph', 'simple'] = 'graph',
                                                   verbose=False,
-                                                  max_iterations_to_add: int = 3
+                                                  max_iterations_to_add: int = 3,
+                                                  beautify_fedex_visualizations: bool = False,
+                                                  beautify_metainsight_visualizations: bool = False,
+                                                  beautify_query_tree_visualizations: bool = False,
+                                                  beautify_all_visualizations: bool = False,
                                                   ):
         """
         Use the automated data exploration feature to follow up on specific explanations received from the last called explain() method.
@@ -311,6 +323,15 @@ class ExpDataFrame(pd.DataFrame):
         :param verbose: If True, will print additional information about the process. Default is False.
         :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
         Default is 3.
+        :param beautify_fedex_visualizations: If True, will use the LLM beautify feature to try and beautify the FEDEx visualizations.
+        Default is False.
+        :param beautify_metainsight_visualizations: If True, will use the LLM beautify feature to try and beautify the MetaInsight visualizations.
+        Default is False.
+        :param beautify_query_tree_visualizations: If True, will use the LLM beautify feature to try and beautify the query tree visualizations.
+        Default is False.
+        :param beautify_all_visualizations: If True, will use the LLM beautify feature to try and beautify all visualizations.
+        Default is False.
+
         :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
         """
         if self.last_used_explainer is None:
@@ -345,7 +366,11 @@ class ExpDataFrame(pd.DataFrame):
             visualization_type=visualization_type,
             verbose=verbose,
             input_df=input_df,
-            max_iterations_to_add=max_iterations_to_add
+            max_iterations_to_add=max_iterations_to_add,
+            beautify_fedex_visualizations=beautify_fedex_visualizations,
+            beautify_metainsight_visualizations=beautify_metainsight_visualizations,
+            beautify_query_tree_visualizations=beautify_query_tree_visualizations,
+            beautify_all_visualizations=beautify_all_visualizations,
         )
 
     @property
@@ -1119,7 +1144,7 @@ class ExpDataFrame(pd.DataFrame):
                 do_not_visualize: bool = False,
                 log_query: bool = False,
                 display_mode: Literal['grid', 'carousel'] = 'grid',
-                beautify: bool = False, beautify_max_fix_attempts: int = 10, silent_beautify: bool = False,
+                beautify: bool = False, beautify_max_fix_attempts: int = 10, silent_beautify: bool = True,
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
@@ -1216,7 +1241,7 @@ class ExpDataFrame(pd.DataFrame):
         1. This will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
         2. The output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
         :param beautify_max_fix_attempts: MetaInsight and Fedex explainers. The maximum number of attempts to fix the
-        returned code from the LLM to make it work, if the beautify parameter is set to True. Defaults to 10.
+        returned code from the LLM to make it work or improve the visualization,, if the beautify parameter is set to True. Defaults to 10.
         :param silent_beautify: MetaInsight and Fedex explainers. If True, the beautify process will not print any information
         about its progress, and will only return the final result. Defaults to False.
 

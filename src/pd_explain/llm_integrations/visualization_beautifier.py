@@ -522,7 +522,8 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                         break
                     # If the LLM disapproves, we will try to fix the code.
                     else:
-                        print(f"The LLM disapproved the generated visualization and scored it {score} / 10. It will attempt to improve it.")
+                        if not self.silent:
+                            print(f"The LLM disapproved the generated visualization and scored it {score} / 10. It will attempt to improve it.")
                         self._handle_response(response)
                         if not self.llm_generated_code:
                             if not self.silent:

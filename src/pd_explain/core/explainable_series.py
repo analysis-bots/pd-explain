@@ -300,7 +300,10 @@ class ExpSeries(pd.Series):
                 error_explanation_threshold: float = 0.05,
                 debug_mode: bool = False,
                 add_llm_explanation_reasoning=False,
-                visualization_type: Literal['grid', 'carousel'] = 'grid'
+                display_mode: Literal['grid', 'carousel'] = 'grid',
+                beautify: bool = False,
+                beautify_max_fix_attempts: int = 10,
+                silent_beautify: bool = False,
                 ):
         """
         Generate an explanation for the dataframe.
@@ -359,8 +362,16 @@ class ExpSeries(pd.Series):
         the explanations found occur. Defaults to False. Requires setting an API key. See the documentation for more information.
         Note that setting this to True will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
         Also note that the output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
-        :param visualization_type: Fedex explainer. Chooses how to display multiple explanations. Can be either 'grid' or 'carousel'.
+        :param display_mode: Fedex explainer. Chooses how to display multiple explanations. Can be either 'grid' or 'carousel'.
         'grid' will display all explanations together in a grid layout, while 'carousel' will display them one by one, with navigation buttons.
+        :param beautify: MetaInsight and Fedex explainers. If True, we will attempt to beautify the explanation by having a LLM generate code for producing
+        a more visually appealing explanation for this specific case. Defaults to False. Please note that:
+        1. This will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
+        2. The output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
+        :param beautify_max_fix_attempts: MetaInsight and Fedex explainers. The maximum number of attempts to fix the
+        returned code from the LLM to make it work, if the beautify parameter is set to True. Defaults to 10.
+        :param silent_beautify: MetaInsight and Fedex explainers. If True, the beautify process will not print any information
+        about its progress, and will only return the final result. Defaults to False.
 
         :return: explanation figures
         """
@@ -387,7 +398,10 @@ class ExpSeries(pd.Series):
             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold,
             debug_mode=debug_mode,
             add_llm_context_explanations=add_llm_explanation_reasoning,
-            visualization_type=visualization_type,
+            display_mode=display_mode,
+            beautify=beautify,
+            beautify_max_fix_attempts=beautify_max_fix_attempts,
+            silent_beautify=silent_beautify,
         )
         self.last_used_explainer = explainer
 

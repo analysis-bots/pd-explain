@@ -151,6 +151,86 @@ class VisualizationCodeExtractor:
                 'function': 'get_max_k'
             },
         ],
+        'fedex-all': [
+            {
+                'package': 'pd_explain',
+                'file': 'fedex_explainer.py',
+                'class': 'FedexExplainer',
+                'function': '_visualize'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'Filter.py',
+                'class': 'Filter',
+                'function': 'draw_figures'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'BaseMeasure.py',
+                'class': 'BaseMeasure',
+                'function': 'draw_figures'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'ExceptionalityMeasure.py',
+                'class': 'ExceptionalityMeasure',
+                'function': 'build_operation_expression'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'ExceptionalityMeasure.py',
+                'class': 'ExceptionalityMeasure',
+                'function': 'draw_bar'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'BaseMeasure.py',
+                'class': 'BaseMeasure',
+                'function': 'get_max_k'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'GroupBy.py',
+                'class': 'GroupBy',
+                'function': 'draw_figures'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'DiversityMeasure.py',
+                'class': 'DiversityMeasure',
+                'function': 'build_operation_expression'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'DiversityMeasure.py',
+                'class': 'DiversityMeasure',
+                'function': 'draw_bar'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'DiversityMeasure.py',
+                'class': 'DiversityMeasure',
+                'function': '_find_max_group_value'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'DiversityMeasure.py',
+                'class': 'DiversityMeasure',
+                'function': '_select_top_columns'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'DiversityMeasure.py',
+                'class': 'DiversityMeasure',
+                'function': '_fix_explanation'
+            },
+            {
+                'package': 'fedex_generator',
+                'file': 'DiversityMeasure.py',
+                'class': None,  # No class, top-level function
+                'function': 'draw_bar'
+            }
+        ],
         'graph_visualizer': [
             {
                 'package': 'pd_explain',

@@ -4,6 +4,7 @@ from typing import List, Any, Literal
 from collections import defaultdict
 import re
 import os
+import warnings
 
 import pandas as pd
 from pandas import DataFrame
@@ -189,9 +190,14 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "The first, is a list giving a textual description of the queries you produced, surrounded by <desc> and </desc> tags. "
                 "These descriptions should be concise, and should explain what the query does, and what it is expected to find.\n"
                 "The second, is a list explaining the findings of queries from the previous iteration, surrounded by <findings> and </findings> tags. "
-                "These explanations should be concise, explaining in simple words what the query found and what it means.\n"
-                "Look at the 'need_explanation' column in the history DataFrame to see which queries are those from the previous iteration that need explanations.\n"
-                "These two lists should not include query numbers, as those are not relevant and are already present in the history DataFrame.\n")
+                "These explanations should be concise, explaining in simple words what the query found and what it means. "
+                "These explanations should be stand-alone, and should not reference the history or previous queries.\n"
+                "Look at the 'need_explanation' column in the history DataFrame to see which queries are those from the previous iteration that need explanations. "
+                "If there are none, leave this section empty.\n"
+                "These two lists should not include query numbers, as those are not relevant and are already present in the history DataFrame.\n"
+                "Both of these lists must likewise be un-numbered lists, starting with a * character and separated by new-line characters.\n"
+                "The description list should be in order of the generated queries.\n"
+                "The findings list should be in order of the previous queries that need an explanation to their findings.\n")
 
     def _format_history(self, history, truncate_early_by: int = 0, part: int = None,
                         total_parts: int = None,
@@ -405,6 +411,9 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         iteration_num = 0
         max_iterations = num_iterations
         iterations_added = 0
+        # Suppress warnings while we are running the automated data exploration, since LLMs are pros at
+        # generating queries that will result in warnings, and we don't want to clutter the output with them.
+        warnings.filterwarnings("ignore")
         try:
             while iteration_num < max_iterations:
                 if verbose:
@@ -623,6 +632,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
 
             # Extract the final report from the response
             final_report = self._extract_response(final_report_response, "<report>", "</report>")
+            if final_report is None or len(final_report) == 0:
+                final_report = "No final report generated."
             visualization_queries = self._extract_response(final_report_response, "<vis>", "</vis>")
             if visualization_queries is None or len(visualization_queries) == 0:
                 visualization_queries = []
@@ -630,6 +641,10 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 visualization_queries = visualization_queries.split("\n")
                 visualization_queries = [query.replace("*", "").strip() for query in visualization_queries if
                                          query.strip() and query.startswith('*')]
+                # Fallback for visualization queries, if the LLM provided them in comma separated format
+                if len(visualization_queries) == 1 and ',' in visualization_queries[0]:
+                    visualization_queries = visualization_queries[0].split(',')
+                    visualization_queries = [query.strip() for query in visualization_queries if query.strip()]
             self.history = history
             self.final_report = final_report
             self.query_and_results = query_and_results
@@ -643,6 +658,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             pd.set_option('display.max_columns', display_max_columns)
             pd.set_option('display.width', display_width)
             pd.set_option('display.max_colwidth', display_max_colwidth)
+            # Restore the warnings filter to its default state
+            warnings.filterwarnings("default")
             if print_error:
                 print("LLM failed to generate any queries. ")
 

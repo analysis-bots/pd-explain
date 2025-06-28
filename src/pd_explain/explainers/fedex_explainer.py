@@ -208,6 +208,14 @@ class FedexExplainer(ExplainerInterface):
             )
             if self._beautify:
                 plt.close(fig)  # Close the figure to avoid displaying it immediately
+                requester_name = ""
+                if self._generalize_beautify_code:
+                    requester_name = "fedex-all"
+                else:
+                    if isinstance(self._operation, GroupBy):
+                        requester_name = "fedex-gb"
+                    else:
+                        requester_name = "fedex"
                 beautifier = VisualizationBeautifier(
                     visualization_object=fig,
                     data=self._operation.source_df,
@@ -223,7 +231,7 @@ class FedexExplainer(ExplainerInterface):
                         'show_scores': show_scores
                     },
                     must_generalize=self._generalize_beautify_code,
-                    requester_name='fedex' if not isinstance(self._operation, GroupBy) else 'fedex-gb',
+                    requester_name=requester_name,
                     max_fix_attempts=self._beautify_max_fix_attempts,
                     silent=self._silent_beautify,
                 )

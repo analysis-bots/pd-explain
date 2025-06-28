@@ -76,8 +76,9 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             "1.  **Consolidation & Clarity:** The original visualization might have multiple, cluttered subplots. If possible, consolidate them into a single, well-organized figure. Use shared axes where appropriate. The goal is to reduce visual clutter and make comparisons easier.\n"
             "2.  **Aesthetics:** Use a professional color palette (e.g. from matplotlib). Ensure font sizes are legible and titles/labels are clear.\n"
             "3.  **Information Preservation:** The new visualization must preserve all the crucial information from the original, such as which groups are outliers and the values they represent.\n"
-            "4.  **Limited Implementation Information**: We can not provide you with the full implementation code of the visualization. For all objects in the code, unless they are from a known library,"
+            "4.  **Limited Implementation Information:** We can not provide you with the full implementation code of the visualization. For all objects in the code, unless they are from a known library,"
             " you must assume that they are defined in the code, and you can only use functions and properties of those objects that you explicitly see in the code.\n"
+            "5.  **No Visual Overload:**: Make sure the visualization is not overloaded with information. If there are too many data points or categories, consider aggregating or pruning them to focus on the most important aspects.\n"
         )
         if not self.must_generalize:
             task_str += (
@@ -90,6 +91,8 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                 "The code you create will not be for one-time use, but rather may be used many times with different data. "
                 "As such, you must ensure that the code is general, relying solely on input parameters to the function you create, "
                 "and not hardcoding any specific values or data. "
+                "You may also be provided visualization code that is more general and for more cases than just this one visualization "
+                "you see, so you must ensure that the code you create is compatible with that code.\n\n"
             )
         return task_str
 
@@ -448,7 +451,8 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                     user_messages.append(
                         {"role": "assistant", "content": f"<python>{self.llm_generated_code}</python>"})
                     user_messages.append({"role": "user",
-                                          "content": f"{error_message}\nPlease fix the code and provide the full, corrected code block."})
+                                          "content": f"This is iteration {i + 1} / {self.max_fix_attempts} of the iterative improvement process after you first generated code..\n"
+                                                     f"{error_message}\nPlease fix the code and provide the full, corrected code block."})
 
                     response = client(
                         system_messages=[system_message],
@@ -471,12 +475,14 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                     )
                     encoded_image = self._encode_visualization(beautified_figure)
                     user_message_text = (
+                        f"This is iteration {i + 1} / {self.max_fix_attempts} of the iterative improvement process after you first generated code.\n"
                         "Please review the generated visualization and score it between 1 to 10. If you give it a score of 10,"
                         "this iterative improvement process will stop and the user will be shown the visualization.\n"
                         "Give a score of 10 if you think the visualization is clear, consolidated, and aesthetically pleasing, while also "
                         "relaying all of the important information from the original visualization.\n"
                         "Provide your score status between <score and </score> and as a single boolean float.\n"
                         "Provide the new code (if the score if below 10) inside <python> and </python> tags, or the program will not be able to extract it.\n"
+                        "The user will be shown the highest scoring visualization at the end of the process.\n"
                     )
                     if self.requester_name == 'graph_visualizer':
                         user_message += (

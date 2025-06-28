@@ -304,6 +304,8 @@ class ExpSeries(pd.Series):
                 beautify: bool = False,
                 beautify_max_fix_attempts: int = 10,
                 silent_beautify: bool = False,
+                do_not_visualize: bool = False,
+                log_query: bool = False,
                 ):
         """
         Generate an explanation for the dataframe.
@@ -372,6 +374,8 @@ class ExpSeries(pd.Series):
         returned code from the LLM to make it work, if the beautify parameter is set to True. Defaults to 10.
         :param silent_beautify: MetaInsight and Fedex explainers. If True, the beautify process will not print any information
         about its progress, and will only return the final result. Defaults to False.
+        :param do_not_visualize: Prevents the explainer from visualizing the explanation, even if it is possible to do so.
+        :param log_query: Fedex explainer. If True, the query used to generate the explanation as well as its score will be logged.
 
         :return: explanation figures
         """
@@ -402,6 +406,8 @@ class ExpSeries(pd.Series):
             beautify=beautify,
             beautify_max_fix_attempts=beautify_max_fix_attempts,
             silent_beautify=silent_beautify,
+            do_not_visualize=do_not_visualize,
+            log_query=log_query
         )
         self.last_used_explainer = explainer
 

@@ -1,3 +1,4 @@
+import os
 from typing import Dict
 
 import pandas as pd
@@ -6,6 +7,7 @@ from pandas import DataFrame
 
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
+import pd_explain.llm_integrations.consts as consts
 
 class LLMQueryRecommender(LLMIntegrationInterface):
     """
@@ -95,7 +97,12 @@ class LLMQueryRecommender(LLMIntegrationInterface):
 
         :return: A Series of generated queries or None if no queries are generated.
         """
-        client = Client()
+        client = Client(
+            api_key=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONiNG_LLM_KEY),
+            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_MODEL, consts.DEFAULT_REASONING_LLM_MODEL),
+            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER, consts.DEFAULT_REASONING_LLM_PROVIDER),
+            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER_URL, consts.DEFAULT_REASONING_LLM_PROVIDER_URL)
+        )
         if system_messages is None:
             system_messages = [self._create_task_explanation()]
         if user_messages is None:

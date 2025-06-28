@@ -356,10 +356,9 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         """
         client = Client(
             api_key=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_KEY, None),
-            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER, "google"),
-            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_VISION_MODEL, "gemini-2.0-flash"),
-            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER_URL,
-                                   "https://generativelanguage.googleapis.com/v1beta/")
+            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER, consts.DEFAULT_BEAUTIFICATION_LLM_PROVIDER),
+            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_VISION_MODEL, consts.DEFAULT_BEAUTIFICATION_LLM_VISION_MODEL),
+            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER_URL, consts.DEFAULT_BEAUTIFICATION_LLM_PROVIDER_URL)
         )
 
         encoded_image: Optional[str] = self._encode_visualization(self.visualization_object)

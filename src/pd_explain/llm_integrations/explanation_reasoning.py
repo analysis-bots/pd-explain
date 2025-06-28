@@ -197,10 +197,10 @@ class ExplanationReasoning(LLMIntegrationInterface):
 
     def do_llm_action(self) -> pd.Series | None:
         client = Client(
-            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONiNG_LLM_KEY, "google"),
-            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_MODEL, "gemini-2.5-flash"),
+            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER, consts.DEFAULT_REASONING_LLM_PROVIDER),
+            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_MODEL, consts.DEFAULT_REASONING_LLM_MODEL),
             api_key=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONiNG_LLM_KEY, None),
-            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER_URL, "https://generativelanguage.googleapis.com/v1beta/openai/")
+            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER_URL, consts.DEFAULT_REASONING_LLM_PROVIDER_URL),
         )
         # Create the system and user messages
         system_messages = [

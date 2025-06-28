@@ -395,9 +395,9 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         pd.set_option('display.max_colwidth', None)  # No limit on column width
         client = Client(
             api_key=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_LLM_KEY, None),
-            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER, "together"),
-            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER_URL, "https://api.together.xyz"),
-            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_LLM_MODEL, "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free")
+            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER, consts.DEFAULT_AUTOMATED_EXPLORATION_LLM_PROVIDER),
+            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER_URL, consts.DEFAULT_AUTOMATED_EXPLORATION_LLM_PROVIDER_URL),
+            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_LLM_MODEL, consts.DEFAULT_AUTOMATED_EXPLORATION_LLM_MODEL)
         )
         system_message = self._define_task()
         data_description = self._describe_data(user_query)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List, Literal, Callable
 
 import pandas as pd
+from pandas import Series
 from pandas._typing import Dtype, DropKeep
 import matplotlib.pyplot as plt
 from fedex_generator.Operations.BJoin import BJoin
@@ -13,6 +14,17 @@ from pd_explain.utils.global_values import get_use_sampling_value
 import numpy as np
 
 df_loc = 'C:/Users/itaye/Desktop/pdexplain/pd-explain/Examples/Datasets/spotify_all.csv'
+
+op_table = {
+    "eq": "==",
+    "ne": "!=",
+    "le": "<=",
+    "lt": "<",
+    "ge": ">=",
+    "gt": ">",
+    "and": "&",
+    "or": "|",
+}
 
 
 class ExpSeries(pd.Series):
@@ -27,7 +39,6 @@ class ExpSeries(pd.Series):
             dtype: Dtype | None = None,
             name=None,
             copy: bool = False,
-            fastpath: bool = False
     ):
         """
         Initialize new explain series
@@ -40,12 +51,13 @@ class ExpSeries(pd.Series):
         :param dtype: Data type for the output Series. If not specified, this will be inferred from data.
         :param name: The name to give to the Series.
         :param copy: Copy input data. Only affects Series or 1d ndarray input. See examples.
-        :param fastpath:
         """
-        super().__init__(data, index, dtype, name, copy, fastpath)
+        super().__init__(data, index, dtype, name, copy)
         self.explanation = None
         self.operation = None
         self.filter_items = []
+        self.filter_query = None
+        self.last_used_explainer = None
 
 
     # We overwrite the constructor to ensure that an ExpSeries is returned when a new Series is created.
@@ -59,9 +71,33 @@ class ExpSeries(pd.Series):
             s.operation = self.operation
             s.explanation = self.explanation
             s.filter_items = self.filter_items
+            s.filter_query = self.filter_query
             return s
 
         return _c
+
+
+    def value_counts(
+        self,
+        normalize: bool = False,
+        sort: bool = True,
+        ascending: bool = False,
+        bins=None,
+        dropna: bool = True,
+    ) -> Series:
+        result = super().value_counts(
+            normalize=normalize,
+            sort=sort,
+            ascending=ascending,
+            bins=bins,
+            dropna=dropna,
+        )
+        ret_val = ExpSeries(result)
+        ret_val.operation = self.operation
+        ret_val.explanation = self.explanation
+        ret_val.filter_items = self.filter_items
+        ret_val.filter_query = self.filter_query
+        return ret_val
 
 
     def std_int(self, df, target):
@@ -192,6 +228,64 @@ class ExpSeries(pd.Series):
     ):
         return super().drop_duplicates(keep=keep, inplace=inplace, ignore_index=ignore_index)
 
+    # We override the comparison methods to store the comparison operation in the filter_query attribute.
+    # There are no other changes to the behavior of the comparison methods.
+    def _cmp_method(self, other, op):
+        self.filter_query = {
+            'op': op_table[op.__name__],
+            'other': other
+        }
+        result = super()._cmp_method(other, op)
+        return result
+
+    def __and__(self, other):
+        if self.filter_query is not None:
+            current_filter_query = self.filter_query
+        else:
+            current_filter_query = {
+                'op': '',
+                'other': None
+            }
+        if isinstance(other, ExpSeries) and other.filter_query is not None:
+            self.filter_query = {
+                'op': f'{current_filter_query["op"]} {current_filter_query["other"]} & {other.filter_query["op"]}',
+                'other': other.filter_query['other']
+            }
+        else:
+            # We have no way to interpret the other since it's a boolean array, therefore we can only rely
+            # on the filter query of the current object.
+            self.filter_query = {
+                'op': f'{current_filter_query["op"]} {current_filter_query["other"]} &',
+                'other': None
+            }
+        result = super().__and__(other)
+        return result
+
+
+    def __or__(self, other):
+        if self.filter_query is not None:
+            current_filter_query = self.filter_query
+        else:
+            current_filter_query = {
+                'op': '',
+                'other': None
+            }
+        if isinstance(other, ExpSeries) and other.filter_query is not None:
+            self.filter_query = {
+                'op': f'{current_filter_query["op"]} {current_filter_query["other"]} | {other.filter_query["op"]}',
+                'other': other.filter_query['other']
+            }
+        else:
+            # We have no way to interpret the other since it's a boolean array, therefore we can only rely
+            # on the filter query of the current object.
+            self.filter_query = {
+                'op': f'{current_filter_query["op"]} {current_filter_query["other"]} |',
+                'other': None
+            }
+        result = super().__or__(other)
+        return result
+
+
     def explain(self, schema: dict = None, attributes: List = None, use_sampling: None | bool = None,
                 sample_size: int | float = 5000, top_k: int = 1, figs_in_row: int = 2,
                 explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley']='fedex',
@@ -204,7 +298,14 @@ class ExpSeries(pd.Series):
                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
                 label_name: str = 'label', explain_errors=True,
                 error_explanation_threshold: float = 0.05,
-                debug_mode: bool = False
+                debug_mode: bool = False,
+                add_llm_explanation_reasoning=False,
+                display_mode: Literal['grid', 'carousel'] = 'grid',
+                beautify: bool = False,
+                beautify_max_fix_attempts: int = 10,
+                silent_beautify: bool = False,
+                do_not_visualize: bool = False,
+                log_query: bool = False,
                 ):
         """
         Generate an explanation for the dataframe.
@@ -259,9 +360,28 @@ class ExpSeries(pd.Series):
         to the separation error to be included in the explanation. Groups that contribute less than this threshold will
         be aggregated into a single group. Defaults to 0.05.
         :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
+        :param add_llm_explanation_reasoning: All explainers. Enables using a LLM to generate additional context explanations, explaining why
+        the explanations found occur. Defaults to False. Requires setting an API key. See the documentation for more information.
+        Note that setting this to True will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
+        Also note that the output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
+        :param display_mode: Fedex explainer. Chooses how to display multiple explanations. Can be either 'grid' or 'carousel'.
+        'grid' will display all explanations together in a grid layout, while 'carousel' will display them one by one, with navigation buttons.
+        :param beautify: MetaInsight and Fedex explainers. If True, we will attempt to beautify the explanation by having a LLM generate code for producing
+        a more visually appealing explanation for this specific case. Defaults to False. Please note that:
+        1. This will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
+        2. The output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
+        :param beautify_max_fix_attempts: MetaInsight and Fedex explainers. The maximum number of attempts to fix the
+        returned code from the LLM to make it work, if the beautify parameter is set to True. Defaults to 10.
+        :param silent_beautify: MetaInsight and Fedex explainers. If True, the beautify process will not print any information
+        about its progress, and will only return the final result. Defaults to False.
+        :param do_not_visualize: Prevents the explainer from visualizing the explanation, even if it is possible to do so.
+        :param log_query: Fedex explainer. If True, the query used to generate the explanation as well as its score will be logged.
 
         :return: explanation figures
         """
+
+        if explainer.lower().startswith('metainsight'):
+            raise ValueError("MetaInsight explainer is not supported for Series.")
 
         use_sampling = use_sampling if use_sampling is not None else get_use_sampling_value()
 
@@ -280,8 +400,16 @@ class ExpSeries(pd.Series):
             explanation_form=explanation_form, use_sampling=use_sampling,
             sample_size=sample_size,
             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold,
-            debug_mode=debug_mode
+            debug_mode=debug_mode,
+            add_llm_context_explanations=add_llm_explanation_reasoning,
+            display_mode=display_mode,
+            beautify=beautify,
+            beautify_max_fix_attempts=beautify_max_fix_attempts,
+            silent_beautify=silent_beautify,
+            do_not_visualize=do_not_visualize,
+            log_query=log_query
         )
+        self.last_used_explainer = explainer
 
         explanation = explainer.generate_explanation()
 

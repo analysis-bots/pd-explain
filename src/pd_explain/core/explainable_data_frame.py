@@ -8,6 +8,7 @@ import pandas as pd
 from matplotlib.axis import Axis
 from pandas import DataFrame
 from pandas._libs.lib import no_default
+import dill
 
 import sys
 
@@ -23,12 +24,12 @@ from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from fedex_generator.Operations.BJoin import BJoin
 from fedex_generator.commons import utils
+from fedex_generator.commons.utils import get_calling_params_name
 from typing import (
     Hashable,
     Sequence,
     Union,
-    List, Callable, Literal, )
-from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype
+    List, Callable, Literal, Tuple, )
 from pd_explain.explainers import ExplainerFactory
 from pd_explain.utils.global_values import get_use_sampling_value
 from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype, DropKeep
@@ -37,6 +38,10 @@ sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")
 # sys.path.insert(0, 'C:/Users/User/Desktop/pd_explain_test/pd-explain/src')
 from pd_explain.core.explainable_series import ExpSeries
+from pd_explain.experimental.query_recommenders.llm_based_query_recommender import LLMBasedQueryRecommender
+from pd_explain.llm_integrations.automated_data_exploration import AutomatedDataExploration
+from pd_explain.explainers.outlier_explainer import OutlierExplainer
+from pd_explain.explainers.explainer_interface import ExplainerInterface
 
 
 class ExpDataFrame(pd.DataFrame):
@@ -76,6 +81,8 @@ class ExpDataFrame(pd.DataFrame):
         self.operation = None
         self.explanation = None
         self.filter_items = None
+        self.last_used_explainer: ExplainerInterface | None = None
+        self.data_explorer = None
 
     # We overwrite the constructor to ensure that an ExpDataFrame is returned when a new DataFrame is created.
     # This is necessary so that methods not overridden in this class, like iloc, return an ExpDataFrame.
@@ -92,6 +99,279 @@ class ExpDataFrame(pd.DataFrame):
 
         return _c
 
+    def llm_recommend_experimental(self, custom_requests=None, num_recommendations=5, num_iterations=3,
+                                   return_all_options: bool = True):
+        """
+        Generate queries for the DataFrame using the LLM.
+        Please note that this feature is experimental and may not work as expected or produce meaningful results.
+
+        :param custom_requests: Custom requests to be sent to the LLM. Optional.
+        :param num_recommendations: Number of recommendations to generate. Default is 4.
+        :param num_iterations: Number of iterations to run the query refinement process. Default is 2. Note that every
+        iteration will call the LLM twice, so this will result in 2 * num_iterations calls to the LLM.
+        :param return_all_options: If True, returns all options generated throughout the iterations, instead of just the
+        top k options. Default is False.
+
+        :return: A Series of generated queries or None if no queries are generated.
+        """
+        source_name = ""
+        # If we can get the source name from the operation, we will use it, since it is more likely to be the name of the
+        # original dataframe.
+        if self.operation is not None:
+            if hasattr("self.operation", "source_name"):
+                source_name = self.operation.source_name
+            else:
+                source_name = self.operation.left_name
+        # Otherwise, if we had no operation, we will use the name of the dataframe.
+        else:
+            source_name = get_calling_params_name(self)
+        recommender = LLMBasedQueryRecommender(
+            df=self,
+            df_name=source_name,
+            user_requests=custom_requests,
+            k=num_recommendations,
+            n=num_iterations,
+            return_all_options=return_all_options,
+        )
+        return recommender.recommend()
+
+    def automated_data_exploration(self, user_query: str, num_iterations: int = 10,
+                                   queries_per_iteration: int = 5, fedex_top_k: int = 3, metainsight_top_k: int = 2,
+                                   metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
+                                   visualization_type: Literal['graph', 'simple'] = 'graph',
+                                   verbose: bool = False,
+                                   input_df: 'ExpDataFrame' = None,
+                                   max_iterations_to_add: int = 3,
+                                   beautify_fedex_visualizations: bool = False,
+                                   beautify_metainsight_visualizations: bool = False,
+                                   beautify_query_tree_visualizations: bool = False,
+                                   beautify_all_visualizations: bool = False,
+                                   ):
+        """
+        Use LLMs to perform automated exploration and analysis on the DataFrame based on the user's request.
+        Automated exploration iteratively generates a query tree on the DataFrame, where at each iteration the
+        queries are ran, analyzed, and the next queries are generated based on the results of the previous queries.
+        The end result includes a report summarizing the analysis, as well as visualizations of the most important
+        queries and of the query tree in a widget.
+        This may take a while to run, depending on the number of iterations and queries per iteration.
+
+        :param user_query: What the user wants to analyze in the DataFrame. Example: "Explore the relationship between
+        column A and column B".
+        :param num_iterations: Number of iterations to run the automated exploration for. Default is 10. Note that each iteration
+        will call the LLM once.
+        :param queries_per_iteration: Number of queries to generate per iteration. Default is 5. This number is not set in
+        stone, and may go up during the process if the LLM's queries fail too often.
+        :param fedex_top_k: Number of top findings to return from the FEDEx explainer. Default is 3.
+        :param metainsight_top_k: Number of top findings to return from the MetaInsight explainer. Default is 2.
+        :param metainsight_max_filter_cols: Maximum number of columns to analyze distribution of in the MetaInsight
+        explainer. Default is 3.
+        :param metainsight_max_agg_cols: Maximum number of columns to aggregate by in the MetaInsight explainer. Default is 3.
+        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
+        visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
+        :param verbose: If True, will print additional information about the process. Default is False.
+        :param input_df: Optional parameter to pass an input DataFrame to replace the self DataFrame.
+        :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
+        Default is 3. This can help mitigate cases where the LLM fails too many iterations and thus does not get enough
+        information.
+        :param beautify_fedex_visualizations: If True, will use the LLM beautify feature to try and beautify the FEDEx visualizations.
+        Default is False.
+        :param beautify_metainsight_visualizations: If True, will use the LLM beautify feature to try and beautify the MetaInsight visualizations.
+        Default is False.
+        :param beautify_query_tree_visualizations: If True, will use the LLM beautify feature to try and beautify the query tree visualizations.
+        Default is False.
+        :param beautify_all_visualizations: If True, will use the LLM beautify feature to try and beautify all visualizations.
+        Default is False.
+
+        :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
+
+        :raises ValueError: If the user_query is not a string, or if any of the parameters are not positive integers.
+        """
+        if not isinstance(user_query, str):
+            raise ValueError("user_query must be a string describing what you want to analyze in the DataFrame.")
+        if not isinstance(num_iterations, int) or num_iterations <= 0:
+            raise ValueError("num_iterations must be a positive integer.")
+        if not isinstance(queries_per_iteration, int) or queries_per_iteration <= 0:
+            raise ValueError("queries_per_iteration must be a positive integer.")
+        if not isinstance(fedex_top_k, int) or fedex_top_k <= 0:
+            raise ValueError("fedex_top_k must be a positive integer.")
+        if not isinstance(metainsight_top_k, int) or metainsight_top_k <= 0:
+            raise ValueError("metainsight_top_k must be a positive integer.")
+        if not isinstance(metainsight_max_filter_cols, int) or metainsight_max_filter_cols <= 0:
+            raise ValueError("metainsight_max_filter_cols must be a positive integer.")
+        if not isinstance(metainsight_max_agg_cols, int) or metainsight_max_agg_cols <= 0:
+            raise ValueError("metainsight_max_agg_cols must be a positive integer.")
+
+        # Create the AutomatedDataExploration object with the provided parameters.
+        self.data_explorer = AutomatedDataExploration(
+            dataframe=self if input_df is None else input_df,
+            source_name=get_calling_params_name(self),
+            beautify_fedex=beautify_fedex_visualizations,
+            beautify_metainsight=beautify_metainsight_visualizations,
+            beautify_query_tree=beautify_query_tree_visualizations,
+            beautify_all=beautify_all_visualizations,
+        )
+        # Run the automated exploration with the user query and the parameters.
+        self.data_explorer.do_llm_action(
+            user_query=user_query,
+            num_iterations=num_iterations,
+            queries_per_iteration=queries_per_iteration,
+            fedex_top_k=fedex_top_k,
+            metainsight_top_k=metainsight_top_k,
+            metainsight_max_filter_cols=metainsight_max_filter_cols,
+            metainsight_max_agg_cols=metainsight_max_agg_cols,
+            verbose=verbose,
+            max_iterations_to_add=max_iterations_to_add
+        )
+        # Visualize and save the results in the exploration_visualization property.
+        exploration_visualization = self.data_explorer.do_follow_up_action(visualization_type=visualization_type)
+        return exploration_visualization
+
+    def save_data_exploration(self, file_path: str):
+        """
+        Save the data exploration results to a file.
+        Uses dill to serialize the data_explorer object.
+        :param file_path: The path to save the data exploration results to.
+        """
+        if self.data_explorer is None:
+            raise ValueError(
+                "No data exploration has been performed yet. Please run automated_data_exploration() first.")
+
+        attributes = {
+            'history': self.data_explorer.history,
+            'query_and_results': self.data_explorer.query_and_results,
+            'visualization_queries': self.data_explorer.visualization_queries,
+            'query_tree': self.data_explorer.query_tree,
+            'final_report': self.data_explorer.final_report,
+            'source_name': self.data_explorer.source_name,
+            'beautify_fedex': self.data_explorer.beautify_fedex,
+            'beautify_metainsight': self.data_explorer.beautify_metainsight,
+            'beautify_query_tree': self.data_explorer.beautify_query_tree,
+            'fedex_beautify_code': self.data_explorer.visualizer.fedex_beautify_code,
+            'metainsight_beautify_code': self.data_explorer.visualizer.metainsight_beautify_code,
+            'query_tree_beautify_code': self.data_explorer.visualizer.query_tree_beautify_code,
+        }
+
+        with open(file_path, 'wb') as file:
+            dill.dump(attributes, file)
+
+    @staticmethod
+    def visualize_from_saved_data_exploration(file_path: str,
+                                              visualization_type: Literal['graph', 'simple'] = 'graph'):
+        """
+        Visualize the data exploration results from a saved file.
+        Uses dill to deserialize the data_explorer object.
+        :param file_path: The path to load the data exploration results from.
+        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
+        visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
+        """
+        with open(file_path, 'rb') as file:
+            data_explorer_attributes = dill.load(file)
+        # Don't actually need the dataframe here, as we are only visualizing the results.
+        data_explorer = AutomatedDataExploration(pd.DataFrame())
+        return data_explorer.do_follow_up_action(visualization_type=visualization_type,
+                                                 history=data_explorer_attributes['history'],
+                                                 query_and_results=data_explorer_attributes['query_and_results'],
+                                                 visualization_queries=data_explorer_attributes['visualization_queries'],
+                                                 query_tree=data_explorer_attributes['query_tree'],
+                                                 final_report=data_explorer_attributes['final_report'],
+                                                 source_name=data_explorer_attributes['source_name'],
+                                                 beautify_fedex=data_explorer_attributes['beautify_fedex'],
+                                                 beautify_metainsight=data_explorer_attributes['beautify_metainsight'],
+                                                 beautify_query_tree=data_explorer_attributes['beautify_query_tree'],
+                                                 fedex_beautify_code=data_explorer_attributes['fedex_beautify_code'],
+                                                 metainsight_beautify_code=data_explorer_attributes['metainsight_beautify_code'],
+                                                 query_tree_beautify_code=data_explorer_attributes['query_tree_beautify_code'])
+
+    def follow_up_with_automated_data_exploration(self, explanation_index: int = None,
+                                                  num_iterations: int = 10,
+                                                  queries_per_iteration: int = 5, fedex_top_k: int = 3,
+                                                  metainsight_top_k: int = 2,
+                                                  metainsight_max_filter_cols: int = 3,
+                                                  metainsight_max_agg_cols: int = 3,
+                                                  visualization_type: Literal['graph', 'simple'] = 'graph',
+                                                  verbose=False,
+                                                  max_iterations_to_add: int = 3,
+                                                  beautify_fedex_visualizations: bool = False,
+                                                  beautify_metainsight_visualizations: bool = False,
+                                                  beautify_query_tree_visualizations: bool = False,
+                                                  beautify_all_visualizations: bool = False,
+                                                  ):
+        """
+        Use the automated data exploration feature to follow up on specific explanations received from the last called explain() method.
+        This method will automatically try to follow up on explanations, to try and contextualize them in the data, and
+        if a previous explanation was generated by a LLM using the reasoning feature, it will see if it can corroborate
+        or reject that explanaton based on the data.
+        Refer to the documentation of the automated_data_exploration() method for more details on the parameters aside from
+        the explanation_index parameter.
+
+        :param explanation_index: The index of the explanation to follow up on. The indexes for each explainer go as follows:
+                                    - FEDEx: Top left to bottom right, row by row. Top left plot is index 0, to the right on the
+                                    same row is index 1 (and so on the same row), then the next row starts with index 2, and so on.
+                                    - MetaInsight: Top to bottom. Index 0 is the top plot, index 1 is the plot below it, and so on.
+                                    - Many to One explainer: by row order. First row is index 0, second row is index 1, and so on.
+                                    - Outlier explainer: Irrelevant, as it only has one explanation.
+                                    All explainers but the Outlier explainer require at least one explanation index to be provided.
+        :param num_iterations: Number of iterations to run the automated exploration for. Default is 10.
+        :param queries_per_iteration: Number of queries to generate per iteration. Default is 5.
+        :param fedex_top_k: Number of top findings to return from the FEDEx explainer. Default is 3.
+        :param metainsight_top_k: Number of top findings to return from the MetaInsight explainer. Default is 2.
+        :param metainsight_max_filter_cols: Maximum number of columns to analyze distribution of in the MetaInsight
+                                            explainer. Default is 3.
+        :param metainsight_max_agg_cols: Maximum number of columns to aggregate by in the MetaInsight explainer. Default is 3.
+        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
+                                   visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
+        :param verbose: If True, will print additional information about the process. Default is False.
+        :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
+        Default is 3.
+        :param beautify_fedex_visualizations: If True, will use the LLM beautify feature to try and beautify the FEDEx visualizations.
+        Default is False.
+        :param beautify_metainsight_visualizations: If True, will use the LLM beautify feature to try and beautify the MetaInsight visualizations.
+        Default is False.
+        :param beautify_query_tree_visualizations: If True, will use the LLM beautify feature to try and beautify the query tree visualizations.
+        Default is False.
+        :param beautify_all_visualizations: If True, will use the LLM beautify feature to try and beautify all visualizations.
+        Default is False.
+
+        :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
+        """
+        if self.last_used_explainer is None:
+            raise ValueError("No explainer has been used yet. Please run explain() first.")
+        indexes_valid = isinstance(explanation_index, int) and explanation_index >= 0
+        if not isinstance(self.last_used_explainer, OutlierExplainer) and not indexes_valid:
+            raise ValueError("If the explainer last used on this DataFrame is not the outlier explainer, you must "
+                             "provide a non-negative integer index to follow up on the explanation. ")
+
+        description = self.last_used_explainer.get_explanation_in_textual_description(index=explanation_index)
+        explorer_query = f"{description}\n"
+        explorer_query += ("Your goal is to use the data to follow up on the findings, to try and provide context to them "
+                           "and further explain them and draw more information from them using the data, by querying the original "
+                           "dataframe that had no queries applied to it yet.\n"
+                           "If there is context guessed by a LLM included, in your report you should state whether your findings "
+                           "corroborate, reject, or are inconclusive about the context provided. You may try to use this "
+                           "context as a starting point for what to look for, but do not base your entire analysis on it.\n")
+        input_df = None
+        if self.operation is not None:
+            if hasattr(self.operation, 'source_df'):
+                input_df = self.operation.source_df
+            elif hasattr(self.operation, 'left_df'):
+                input_df = self.operation.left_df
+        return self.automated_data_exploration(
+            user_query=explorer_query,
+            num_iterations=num_iterations,
+            queries_per_iteration=queries_per_iteration,
+            fedex_top_k=fedex_top_k,
+            metainsight_top_k=metainsight_top_k,
+            metainsight_max_filter_cols=metainsight_max_filter_cols,
+            metainsight_max_agg_cols=metainsight_max_agg_cols,
+            visualization_type=visualization_type,
+            verbose=verbose,
+            input_df=input_df,
+            max_iterations_to_add=max_iterations_to_add,
+            beautify_fedex_visualizations=beautify_fedex_visualizations,
+            beautify_metainsight_visualizations=beautify_metainsight_visualizations,
+            beautify_query_tree_visualizations=beautify_query_tree_visualizations,
+            beautify_all_visualizations=beautify_all_visualizations,
+        )
 
     @property
     def _constructor_sliced(self) -> Callable[..., ExpSeries]:
@@ -125,7 +405,8 @@ class ExpDataFrame(pd.DataFrame):
         if isinstance(to_return, ExpDataFrame) or isinstance(to_return, ExpSeries):
             # We only want to make the updates if the operation is not None, and if the get_item is a column
             # selection, not a row selection (a filter operation).
-            if self.operation is not None and (isinstance(key, str) or (isinstance(key, list)) and all([x in self.columns for x in key])):
+            if self.operation is not None and (
+                    isinstance(key, str) or (isinstance(key, list)) and all([x in self.columns for x in key])):
 
                 # Copy the operation, to avoid changing the original operation of the dataframe.
                 to_return.operation = cpy(self.operation)
@@ -314,9 +595,9 @@ class ExpDataFrame(pd.DataFrame):
                     # We always set update_operation to False, as we don't want to update other dataframes' operations.
                     # We also always set inplace to False, as we don't want to change the original dataframe.
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
-                                                                           columns=columns, axis=axis,
-                                                                           copy=copy, inplace=False, level=level,
-                                                                           errors=errors, update_operation=False)
+                                                                             columns=columns, axis=axis,
+                                                                             copy=copy, inplace=False, level=level,
+                                                                             errors=errors, update_operation=False)
                 else:
                     res.operation.source_df = res.operation.source_df.rename(mapper=mapper, index=index,
                                                                              columns=columns, axis=axis,
@@ -546,10 +827,18 @@ class ExpDataFrame(pd.DataFrame):
         result_df = ExpDataFrame(super()._getitem_bool_array(key))
         try:
             if self.filter_items:
+                if isinstance(key, ExpSeries) and key.filter_query is not None:
+                    op = key.filter_query['op']
+                    other = key.filter_query['other']
+                else:
+                    op = None
+                    other = None
                 result_df.operation = Filter(source_df=self,
                                              source_scheme={},
                                              attribute=self.filter_items.pop(),
-                                             result_df=result_df)
+                                             result_df=result_df,
+                                             operation_str=op,
+                                             value=other)
         except Exception as error:
             print(f'Error {error} with operation filter explanation')
 
@@ -702,8 +991,10 @@ class ExpDataFrame(pd.DataFrame):
             left_df = self.copy()
             right_df = right_df.copy()
 
-            left_df = left_df.rename(columns={col: col + lsuffix for col in coinciding_cols}, inplace=False, update_operation=False)
-            right_df = right_df.rename(columns={col: col + rsuffix for col in coinciding_cols}, inplace=False, update_operation=False)
+            left_df = left_df.rename(columns={col: col + lsuffix for col in coinciding_cols}, inplace=False,
+                                     update_operation=False)
+            right_df = right_df.rename(columns={col: col + rsuffix for col in coinciding_cols}, inplace=False,
+                                       update_operation=False)
 
             result_df.operation = Join(left_df, right_df, None, on, result_df, left_name, right_name)
 
@@ -831,7 +1122,7 @@ class ExpDataFrame(pd.DataFrame):
 
     def explain(self, schema: dict = None, attributes: List = None, use_sampling: bool | None = None,
                 sample_size: int | float = 5000, top_k: int = None,
-                explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley']='fedex',
+                explainer: Literal['fedex', 'outlier', 'many_to_one', 'shapley', 'metainsight'] = 'fedex',
                 target=None, dir=None,
                 figs_in_row: int = 2, show_scores: bool = False, title: str = None, corr_TH: float = 0.7,
                 consider='right', value=None, attr=None, ignore=None,
@@ -841,11 +1132,24 @@ class ExpDataFrame(pd.DataFrame):
                 prune_if_too_many_labels: bool = True, max_labels: int = 10, pruning_method='largest',
                 bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
                 label_name: str = 'label', explain_errors=True,
-                error_explanation_threshold: float = 0.05, debug_mode: bool = False):
+                error_explanation_threshold: float = 0.05, debug_mode: bool = False,
+                add_llm_explanation_reasoning: bool = False,
+                min_commonness: float = 0.5, no_exception_penalty_weight=0.1,
+                balance_factor: float = 1, filter_columns: List[str] | str = None,
+                aggregations: List[Tuple[str, str]] = None, groupby_columns: List[List[str]] | List[str] = None,
+                correlation_aggregation_method: Literal['avg', 'max', 'sum'] = 'avg',
+                max_filter_columns: int = 3, max_aggregation_columns: int = 3,
+                allow_multiple_aggregations: bool = False, allow_multiple_groupbys: bool = False,
+                use_all_groupby_combinations: bool = False,
+                do_not_visualize: bool = False,
+                log_query: bool = False,
+                display_mode: Literal['grid', 'carousel'] = 'grid',
+                beautify: bool = False, beautify_max_fix_attempts: int = 10, silent_beautify: bool = True,
+                ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
 
-        :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'shapley', 'outlier'. Note
+        :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'shapley', 'outlier', 'metainsight'. Note
         that 'outlier' is only supported for series, not for dataframes.
         :param attributes: All explainers. Which columns to consider in the explanation.
         :param use_sampling: All explainers. Whether or not to use sampling when generating an explanation. This can massively speed up
@@ -861,6 +1165,7 @@ class ExpDataFrame(pd.DataFrame):
         :param show_scores: Fedex explainer. show scores on explanation.
         :param title: Fedex / outlier / shapley explainers. explanation title.
         :param corr_TH: Fedex explainer. Correlation threshold, above this threshold the columns are considered correlated.
+        :param log_query: Fedex explainer. If true, the query that produced the explanation will be logged.
         :param target: Outlier explainer. Target value for the outlier explainer
         :param dir: Outlier explainer. Direction for the outlier explainer. Can be either 'high' or 'low'.
         :param consider: Fedex explainer. Which side of a join to consider for the explanation. Can be either 'left' or 'right'.
@@ -897,7 +1202,48 @@ class ExpDataFrame(pd.DataFrame):
         :param error_explanation_threshold: Many to one explainer. The threshold for how much a group needs to contribute
         to the separation error to be included in the explanation. Groups that contribute less than this threshold will
         be aggregated into a single group. Defaults to 0.05.
+        :param add_llm_explanation_reasoning: All explainers. Enables using a LLM to generate additional context explanations, explaining why
+        the explanations found occur. Defaults to False. Requires setting an API key. See the documentation for more information.
+        Note that setting this to True will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
+        Also note that the output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
         :param debug_mode: Developer option. Disables multiprocessing and enables debug prints. Defaults to False.
+        :param min_commonness: MetaInsight explainer. Patterns must encompass at-least this percentage of the values to
+        be considered a common pattern. Defaults to 0.5.
+        :param no_exception_penalty_weight: MetaInsight explainer. The weight given to the penalty in the case no exceptions
+        are found to a common pattern. Defaults to 0.1. Higher values will give more priority to common patterns with exceptions.
+        :param balance_factor: MetaInsight explainer. The weight given to exceptions when computing the score of a common pattern.
+        Defaults to 1 - same ratio for both common patterns and exceptions. Higher values will give more priority to common patterns without exceptions.
+        :param filter_columns: MetaInsight explainer. The columns to filter on when mining for common patterns.
+        :param max_filter_columns: MetaInsight explainer. The maximum number of filter columns to use when automatically
+        selecting the filter columns. Defaults to 3.
+        :param aggregations: MetaInsight explainer. The aggregations to use when mining for common patterns.
+        :param max_aggregation_columns: MetaInsight explainer. The maximum number of aggregation columns to use when automatically
+        selecting the aggregation columns. Defaults to 3.
+        :param groupby_columns: MetaInsight explainer. The columns to group by when mining for common patterns. If not provided,
+        will be inferred automatically from the filter / aggregation columns.
+        :correlation_aggregation_method: MetaInsight explainer. When auto-selecting groupby / filter / aggregation columns,
+        a correlation based method is used to determine the best method to use. This parameter determines which aggregation
+        function is used to aggregate the computed correlation in the case of multiple columns. Can be either 'avg', 'max' or 'sum'.
+        :param allow_multiple_aggregations: MetaInsight explainer. Whether or not to allow multiple aggregations to be used
+        in the same pattern. Defaults to False. May result in more complex and less interpretable patterns if set to True.
+        :param allow_multiple_groupbys: MetaInsight explainer. Whether or not to allow multiple groupbys to be used in the same pattern.
+        Defaults to False. May result in more complex and less interpretable patterns, possibly with multiple
+        (almost or completely) disjoint indexes if set to True.
+        :param use_all_groupby_combinations:MetaInsight explainer. When automatically inferring on a result of a groupby operation, whether to
+        use all combinations of the groupby columns or just the provided ones. For example, if set to True and the groupby columns are ['A', 'B'],
+        the groupby columns will be [['A'], ['B'], ['A', 'B']]. If set to False, only the provided groupby columns will be used.
+        :param do_not_visualize: If True, the explanation will not be visualized (if the explainer supports disabling visualization).
+        :param display_mode: Fedex explainer and MetaInsight explainer. How to visualize the multiple figures returned by
+        the explainer. Can be either 'grid' for a regular plot in a grid format displaying all plots at once,
+         or 'carousel' for a carousel that shows one figure at a time with navigation buttons.
+        :param beautify: MetaInsight and Fedex explainers. If True, we will attempt to beautify the explanation by having a LLM generate code for producing
+        a more visually appealing explanation for this specific case. Defaults to False. Please note that:
+        1. This will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
+        2. The output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
+        :param beautify_max_fix_attempts: MetaInsight and Fedex explainers. The maximum number of attempts to fix the
+        returned code from the LLM to make it work or improve the visualization,, if the beautify parameter is set to True. Defaults to 10.
+        :param silent_beautify: MetaInsight and Fedex explainers. If True, the beautify process will not print any information
+        about its progress, and will only return the final result. Defaults to False.
 
         :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.
         """
@@ -925,9 +1271,27 @@ class ExpDataFrame(pd.DataFrame):
                                              bin_numeric=bin_numeric, num_bins=num_bins, binning_method=binning_method,
                                              label_name=label_name,
                                              use_sampling=use_sampling, sample_size=sample_size,
-                                             explain_errors=explain_errors, error_explanation_threshold=error_explanation_threshold,
-                                             debug_mode=debug_mode
+                                             explain_errors=explain_errors,
+                                             error_explanation_threshold=error_explanation_threshold,
+                                             debug_mode=debug_mode,
+                                             add_llm_context_explanations=add_llm_explanation_reasoning,
+                                             min_commonness=min_commonness,
+                                             no_exception_penalty_weight=no_exception_penalty_weight,
+                                             balance_factor=balance_factor, filter_columns=filter_columns,
+                                             aggregations=aggregations, groupby_columns=groupby_columns,
+                                             correlation_aggregation_method=correlation_aggregation_method,
+                                             max_filter_columns=max_filter_columns,
+                                             max_aggregation_columns=max_aggregation_columns,
+                                             allow_multiple_aggregations=allow_multiple_aggregations,
+                                             allow_multiple_groupbys=allow_multiple_groupbys,
+                                             use_all_groupby_combinations=use_all_groupby_combinations,
+                                             do_not_visualize=do_not_visualize,
+                                             log_query=log_query,
+                                             display_mode=display_mode, beautify=beautify,
+                                             beautify_max_fix_attempts=beautify_max_fix_attempts,
+                                             silent_beautify=silent_beautify,
                                              )
+        self.last_used_explainer = explainer
         explanation = explainer.generate_explanation()
 
         if explainer.can_visualize():

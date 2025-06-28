@@ -1,6 +1,8 @@
 from typing import Literal, List
 
 from .explainer_interface import ExplainerInterface
+from pd_explain.llm_integrations.explanation_reasoning import ExplanationReasoning
+
 import pandas as pd
 from pandas import DataFrame, Series
 from cluster_explorer import Explainer, condition_generator, str_rule_to_list, rule_to_human_readable
@@ -25,6 +27,7 @@ class ManyToOneExplainer(ExplainerInterface):
                  bin_numeric: bool = False, num_bins: int = 10, binning_method: str = 'quantile',
                  label_name: str = 'label', sample_size: int = DEFAULT_SAMPLE_SIZE, explain_errors=True,
                  error_explanation_threshold: float = DEFAULT_ERROR_EXPLANATION_THRESHOLD,
+                 add_llm_context_explanations: bool = False,
                  *args, **kwargs):
         """
         Initialize the many-to-one explainer.
@@ -87,7 +90,7 @@ class ManyToOneExplainer(ExplainerInterface):
         self._num_bins = num_bins
         self._binning_method = binning_method
         self._bin_numeric = bin_numeric
-        self._label_name = label_name if label_name is not None else 'label'
+        self._label_name = label_name
 
         if labels is None or len(labels) == 0:
             self._source_df, self._labels = self._create_groupby_labels(operation=operation)
@@ -114,6 +117,9 @@ class ManyToOneExplainer(ExplainerInterface):
         # If the labels are already a Series object, we simply use them as they are.
         else:
             self._labels = labels
+
+        if self._label_name is None:
+            self._label_name = self._labels.name if (hasattr(self._labels, 'name') and self._labels.name is not None) else 'label'
 
         if self._source_df.shape[0] != len(self._labels):
             raise ValueError("The number of rows in the source DataFrame and the number of labels must be equal.")
@@ -160,6 +166,20 @@ class ManyToOneExplainer(ExplainerInterface):
         self._sample_size = sample_size
         self._explain_errors = explain_errors
         self._error_explanation_threshold = error_explanation_threshold
+        self._add_llm_context_explanations = add_llm_context_explanations
+        self._added_explanations = None
+        self._query_string = None
+        self.out_df = None
+
+        if operation is not None:
+            if hasattr(operation, 'source_name'):
+                self._source_name = operation.source_name
+            elif hasattr(operation, 'left_name') and hasattr(operation, 'right_name'):
+                self._source_name = operation.left_name + " join " + operation.right_name
+            else:
+                self._source_name = "source"
+        else:
+            self._source_name = "source"
 
         # Optional operations to speed up explanation generation.
         if prune_if_too_many_labels:
@@ -330,6 +350,8 @@ class ManyToOneExplainer(ExplainerInterface):
             raise ValueError(
                 "If this dataframe is not the result of a groupby operation, you must provide the labels.")
         else:
+            if operation is not None:
+                self._query, _ = self._create_query_string(operation=operation)
             # Extract the source and result df from the operation, if one is provided.
             if source_df is None:
                 source_df = DataFrame(operation.source_df)
@@ -569,6 +591,20 @@ class ManyToOneExplainer(ExplainerInterface):
                 if self._explain_errors:
                     out_df.loc[(cluster, "No explanation found"), 'Separation Error Origins'] = np.nan
 
+
+        if self._add_llm_context_explanations:
+            reasoning = ExplanationReasoning(
+                data=self._source_df,
+                labels=self._labels,
+                explanations_found=out_df,
+                source_name=self._source_name,
+                query_type='many_to_one',
+            )
+            llm_explanations = reasoning.do_llm_action()
+            out_df['LLM Explanation'] = llm_explanations
+
+        self.out_df = out_df
+
         return out_df
 
     def generate_explanation(self):
@@ -596,3 +632,32 @@ class ManyToOneExplainer(ExplainerInterface):
         self._ran_explainer = True
 
         return self._explanations
+
+
+    def get_explanation_in_textual_description(self, index: int) -> str:
+        """
+        Get the explanation for a specific index in a textual description format.
+        If the explanations have not been generated yet, this method should raise an error.
+        :param index: A single index to get the explanation for.
+        :return: A human-readable string that explains the operation performed, what was found, and the explanation itself.
+        """
+        if not self._ran_explainer:
+            raise RuntimeError("You must run the explainer before getting the explanations.")
+
+        explanation = self.out_df.iloc[index]
+        textual_description = (f"For the dataframe {self._source_name}, "
+                               f"we used automated analysis to create rule based explanations for groupings in the data.\n")
+        if self._label_name is not None:
+            textual_description += (f"The labels used for the groupings were taken from a series called '{self._label_name}', "
+                                    f"which may also correspond to a column in the dataframe.\n")
+        textual_description += (
+                               f"For the group {explanation.name[0]}, we found the following rule: {explanation.name[1]}.\n"
+                               f"This explanation covers {(explanation['Coverage'] * 100):.2f}% of the data in the group, "
+                               f"and has a separation error (coverage of points outside the group) of {(explanation['Separation Error'] * 100):.2f}%.\n"
+        )
+        if self._explain_errors:
+            textual_description += (f"The separation error originates from the following groups: {explanation['Separation Error Origins']}.\n")
+        if 'LLM Explanation' in explanation:
+            textual_description += (f"Using a LLM, it suggested the following context to the explanation: {explanation['LLM Explanation']}\n")
+        return textual_description
+

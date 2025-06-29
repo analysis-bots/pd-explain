@@ -753,7 +753,6 @@ class ExpDataFrame(pd.DataFrame):
     def groupby(
             self,
             by=None,
-            axis=0,
             level=None,
             as_index: bool = True,
             sort: bool = True,
@@ -796,13 +795,13 @@ class ExpDataFrame(pd.DataFrame):
             group_attributes = by
             tmp = pd.core.groupby.generic.DataFrameGroupBy
             pd.core.groupby.generic.DataFrameGroupBy = ExpDataFrameGroupBy
-            g = super().groupby(by=group_attributes, axis=axis, level=level, as_index=as_index, sort=sort,
+            g = super().groupby(by=group_attributes, level=level, as_index=as_index, sort=sort,
                                 group_keys=group_keys
                                 , observed=observed, dropna=dropna)
             g.group_attributes = by
             g.source_name = utils.get_calling_params_name(self)
             g.operation = GroupBy(source_df=self, group_attributes=by, result_df=g, source_scheme=None, agg_dict=None)
-            g.original = super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort,
+            g.original = super().groupby(by=by, level=level, as_index=as_index, sort=sort,
                                          group_keys=group_keys
                                          , observed=observed, dropna=dropna)
 
@@ -811,11 +810,11 @@ class ExpDataFrame(pd.DataFrame):
 
         except Exception as error:
             print(f'Error {error} with operation group by explanation')
-            g = super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+            g = super().groupby(by=by, level=level, as_index=as_index, sort=sort, group_keys=group_keys
                                 , observed=observed, dropna=dropna)
             # g.group_attributes = by
             # g.operation = GroupBy(source_df=self, group_attributes=by, result_df=g)
-            return super().groupby(by=by, axis=axis, level=level, as_index=as_index, sort=sort, group_keys=group_keys
+            return super().groupby(by=by, level=level, as_index=as_index, sort=sort, group_keys=group_keys
                                    , observed=observed, dropna=dropna)
 
     def _getitem_bool_array(self, key):

@@ -7,6 +7,7 @@ import traceback
 import networkx as nx
 import matplotlib.patches as mpatches
 import ipycytoscape
+import copy
 
 import ipywidgets as widgets
 import pandas as pd
@@ -75,7 +76,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             "**Key Goals for Improvement:**\n"
             "1.  **Consolidation & Clarity:** The original visualization might have multiple, cluttered subplots. If possible, consolidate them into a single, well-organized figure. Use shared axes where appropriate. The goal is to reduce visual clutter and make comparisons easier.\n"
             "2.  **Aesthetics:** Use a professional color palette (e.g. from matplotlib). Ensure font sizes are legible and titles/labels are clear.\n"
-            "3.  **Information Preservation:** The new visualization must preserve all the crucial information from the original, such as which groups are outliers and the values they represent.\n"
+            "3.  **Information Preservation:** The new visualization must preserve all the crucial information from the original, such as which groups are outliers and the values they represent. Additionally, if the visualization had added text to it, such as LLM generated text, this text MUST be in the beautified visualization too.\n"
             "4.  **Limited Implementation Information:** We can not provide you with the full implementation code of the visualization. For all objects in the code, unless they are from a known library,"
             " you must assume that they are defined in the code, and you can only use functions and properties of those objects that you explicitly see in the code.\n"
             "5.  **No Visual Overload:**: Make sure the visualization is not overloaded with information. If there are too many data points or categories, consider aggregating or pruning them to focus on the most important aspects.\n"
@@ -326,7 +327,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                 # Call the generated function to get the figure
                 beautified_figure = create_visualization_func(**self.visualization_params)
 
-                if not isinstance(beautified_figure, Figure):
+                if beautified_figure is None or not isinstance(beautified_figure, Figure):
                     error_message = (
                         "The `create_visualization` function did not return a matplotlib Figure object. "
                         "Please ensure your function concludes with `return fig`.")
@@ -368,6 +369,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         data_summary = io.StringIO()
         self.data.info(buf=data_summary)
         data_summary_str = data_summary.getvalue()
+        code_score_dict = {}
 
         user_message: str = (
             f"Here is the original code that produced the visualization:\n\n"
@@ -465,7 +467,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                 # 1. To approve or disapprove the generated visualization.
                 # 2. If it disapproves, to provide a new code that fixes the issues.
                 else:
-                    last_working_code = self.llm_generated_code
+                    last_working_code = self.llm_generated_code[:]
                     if not self.silent:
                         print("The generated code executed successfully.")
                         print(f"Approving or improving the generated visualization... {i + 1}/{self.max_fix_attempts}")
@@ -514,8 +516,9 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                     if isinstance(score, str):
                         score = score.strip().lower()
                     else:
-                        score = "1"
+                        score = "0.0"  # Default to 0.0 if we can't extract a score
                     score = float(score)
+                    code_score_dict[self.llm_generated_code] = score
                     # While the instruction is that 10 is approval, we will consider a more lenient threshold of 9.5
                     approved = score >= 9.5
                     # If the LLM approves the generated visualization, we can stop here.
@@ -523,7 +526,9 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                         if not self.silent:
                             print(f"The LLM approved the generated visualization, giving it a score of {score} / 10")
                         highest_score = score
-                        highest_scoring_code = self.llm_generated_code
+                        # Copy the code. Not doing this seems to result in highest_scoring_code getting a pointer to the
+                        # self.llm_generated_code, which is not what we want as this will change in the next iteration.
+                        highest_scoring_code = self.llm_generated_code[:]
                         break
                     # If the LLM disapproves, we will try to fix the code.
                     else:
@@ -536,7 +541,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                             break
                         if score > highest_score:
                             highest_score = score
-                            highest_scoring_code = self.llm_generated_code
+                            highest_scoring_code = self.llm_generated_code[:]
 
         else:
             with beautified_vis_widget:
@@ -551,6 +556,14 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         # First condition is not really needed, but it is here for clarity.
         elif highest_scoring_code is None and last_working_code is not None:
             beautified_figure, error_message, _ = self._execute(last_working_code)
+        # If for some reason both didn't work, we check the code_score dictionary for the highest scoring code.
+        elif code_score_dict:
+            # sort the dictionary by score, and iteratively try to execute the code with the highest score.
+            sorted_codes = sorted(code_score_dict.items(), key=lambda item: item[1], reverse=True)
+            for code, score in sorted_codes:
+                beautified_figure, error_message, _ = self._execute(code)
+                if beautified_figure:
+                    break
         else:
             beautified_figure = None
 

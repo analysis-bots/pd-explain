@@ -55,6 +55,8 @@ class MetaInsightExplainer(ExplainerInterface):
                  return_beautify_code: bool = False,
                  generalize_beautify_code: bool = False,
                  figs_in_row: int = 2,
+                 max_labels_per_plot: int = 8,
+                 max_common_categories_per_plot: int = 3,
                  *args, **kwargs):
         """
         Initialize the MetaInsightExplainer with the provided arguments.
@@ -91,6 +93,11 @@ class MetaInsightExplainer(ExplainerInterface):
         :param beautify_max_fix_attempts: The maximum number of attempts to fix the code returned by the LLM beautifier.
         :param add_llm_context_explanations: Whether to add LLM context explanations to the explanation. Defaults to False.
         :param figs_in_row: How many figures to display in a row when visualizing the explanations.
+        :param max_labels_per_plot: The maximum number of labels to display per plot. If there are more labels, they will be truncated.
+        There may be more labels than this number in the final plot if there are more than this number of indexes with
+        highlights in them.
+        :param max_common_categories_per_plot: The maximum number of common categories to display per plot. If there are more categories,
+        they will be grouped together and their average value will be displayed.
         """
         self.metainsights = None
         self.source_df = pd.DataFrame(source_df)
@@ -125,6 +132,8 @@ class MetaInsightExplainer(ExplainerInterface):
             warnings.warn(f"Display mode {display_mode} is not supported. Defaulting to 'grid'.")
             display_mode = 'grid'
         self._display_mode = display_mode
+        self.max_labels_per_plot = max_labels_per_plot
+        self.max_common_categories_per_plot = max_common_categories_per_plot
 
         if self.source_df is None:
             raise ValueError("Source dataframe cannot be None")
@@ -154,7 +163,8 @@ class MetaInsightExplainer(ExplainerInterface):
                 # We want to convert the groupby columns to a list of lists, so that we can handle multiple groupby columns.
                 if isinstance(self.groupby_columns, str):
                     self.groupby_columns = [self.groupby_columns]
-                if isinstance(self.groupby_columns, list) and any(isinstance(group, str) for group in self.groupby_columns):
+                if isinstance(self.groupby_columns, list) and any(
+                        isinstance(group, str) for group in self.groupby_columns):
                     self.groupby_columns = [self.groupby_columns]
                 self.source_df = pd.DataFrame(operation.source_df)
                 self.filter_columns = []
@@ -323,7 +333,6 @@ class MetaInsightExplainer(ExplainerInterface):
                 self.source_df = operation.source_df
             need_restore_source_df = True
 
-
         correlated_cols, numerical_cols = self._find_correlated_columns_multi(self.filter_columns,
                                                                               method=correlation_aggregation_method)
 
@@ -359,35 +368,30 @@ class MetaInsightExplainer(ExplainerInterface):
             self.aggregations = [(col, 'mean') for col in best_numerical_cols] + [(col, 'std') for col in
                                                                                   best_numerical_cols]
 
-
-    def _add_llm_reasoning_to_plot(self, llm_reasoning_text_dict: dict, explanations,
+    def _add_llm_reasoning_to_plot(self, llm_reasoning_series: pd.Series,
                                    explanation_nums: list[int] | None = None) -> None:
         """
         Adds LLM reasoning text to the bottom left of the plot.
-        :param llm_reasoning_text_dict: A dictionary containing the LLM reasoning text for each explanation.
-        :param explanations: A list of explanations for which we want to add the LLM reasoning text. These serve as keys for the
-        dict, and must be the same as the ones given to the reasoner.
+        :param llm_reasoning_series: A series the LLM reasoning text for each explanation.
         :param explanation_nums: A list of integers representing the explanation numbers. If None, we will not add the
         explanation numbers to the text. If provided, they will be used to format the text.
         """
         added_text = ""
-        for i, explanation in enumerate(zip(explanations, explanation_nums)):
-            explanation_added_text = llm_reasoning_text_dict.get(explanation, None)
-            if explanation_added_text is None:
+        for i, explanation_num in enumerate(explanation_nums):
+            explanation_added_text = llm_reasoning_series.get(i, None)
+            if not explanation_added_text:
                 continue
-            explanation_added_text = explanation_added_text.get('added_text', "")
             if not isinstance(explanation_added_text, str):
                 explanation_added_text = str(explanation_added_text)
             # Replace any wrapping done previously - we want our own custom wrapping here, since we know
             # what length of text we want to display.
             explanation_added_text = explanation_added_text.replace("\n", " ")
-            added_text += f"[{i}] {explanation_added_text}\n\n"
-
+            added_text += f"[{explanation_num}] {explanation_added_text}\n\n"
 
         # If there is text to add, add it to the bottom left of the plot.
         if added_text:
             plt.figtext(0, 0, added_text, horizontalalignment='left', verticalalignment='top',
-                        fontsize=16, wrap=True,)
+                        fontsize=22, wrap=True, )
 
     def visualize(self, metainsights: List[MetaInsight] = None, beautify_code: str = None) -> None | str:
         if metainsights is None:
@@ -399,7 +403,7 @@ class MetaInsightExplainer(ExplainerInterface):
                     Aggregations: {self.aggregations}""")
         else:
             explanations_str = [
-                metainsight.to_str_full() for metainsight in metainsights
+                metainsight.__str__() for metainsight in metainsights
             ]
             if self.add_llm_context_explanations:
                 reasoner = ExplanationReasoning(
@@ -418,11 +422,14 @@ class MetaInsightExplainer(ExplainerInterface):
                 fig, axs = plt.subplots(
                     nrows=num_rows, ncols=self.figs_per_row, figsize=(11 * self.figs_per_row, 13 * num_rows),
                 )
+                plt.subplots_adjust(hspace=0.5)
                 if len(axs.shape) != 1:
                     axs = axs.flatten()
                 for i, mi in enumerate(metainsights[:self.top_k]):
                     mi.visualize(plt_ax=axs[i],
-                                 plot_num = i + 1)
+                                 plot_num=i + 1,
+                                 max_labels=self.max_labels_per_plot,
+                                 max_common_categories=self.max_common_categories_per_plot)
 
                 # Hide any unused subplots
                 for j in range(len(metainsights[:self.top_k]), len(axs)):
@@ -430,9 +437,8 @@ class MetaInsightExplainer(ExplainerInterface):
 
                 if added_explanations is not None:
                     self._add_llm_reasoning_to_plot(
-                        llm_reasoning_text_dict=added_explanations.to_dict(),
-                        explanations=explanations_str,
-                        explanation_nums= list(range(1, len(metainsights)))
+                        llm_reasoning_series=added_explanations,
+                        explanation_nums=list(range(1, len(metainsights) + 1))
                     )
 
                 if self.beautify:
@@ -586,8 +592,9 @@ class MetaInsightExplainer(ExplainerInterface):
 
         return all_correlations, numerical_corr
 
-    def _find_correlated_columns_multi(self, column_names: List[str] | List[List[str]] | set[str], method='avg') -> Tuple[
-        List[str], List[str]]:
+    def _find_correlated_columns_multi(self, column_names: List[str] | List[List[str]] | set[str], method='avg') -> \
+            Tuple[
+                List[str], List[str]]:
         """
         Finds correlated columns for multiple target columns.
 
@@ -696,8 +703,7 @@ class MetaInsightExplainer(ExplainerInterface):
         self.can_run_visualize = True
         return self.metainsights
 
-
-    def get_explanation_in_textual_description(self, index:int) -> str:
+    def get_explanation_in_textual_description(self, index: int) -> str:
         """
         Get explanations after they have already been generated.
         If the explanations have not been generated yet, this method will generate them.

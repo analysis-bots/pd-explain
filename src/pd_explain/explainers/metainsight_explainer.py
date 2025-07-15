@@ -484,8 +484,7 @@ class MetaInsightExplainer(ExplainerInterface):
                         mi.visualize(plt_ax=ax, plot_num=i + 1)
                         if added_explanations is not None:
                             self._add_llm_reasoning_to_plot(
-                                llm_reasoning_text_dict=added_explanations.to_dict(),
-                                explanations=[explanations_str[i]],
+                                llm_reasoning_series=added_explanations,
                                 explanation_nums=[i + 1]
                             )
                         plt.close(fig)

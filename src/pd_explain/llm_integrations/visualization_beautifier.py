@@ -7,7 +7,6 @@ import traceback
 import networkx as nx
 import matplotlib.patches as mpatches
 import ipycytoscape
-import copy
 
 import ipywidgets as widgets
 import pandas as pd
@@ -34,6 +33,9 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                  visualization_code: Optional[str] = None,
                  max_fix_attempts: int = 10,
                  must_generalize: bool = False,
+                 give_llm_source_code: bool = True,
+                 show_llm_original_image: bool = True,
+                 visualization_description: Optional[list[str]] = None,
                  silent: bool = True) -> None:
         """
         Initializes the VisualizationBeautifier.
@@ -47,12 +49,17 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                                    If provided, it overrides the code extraction from the KNOWLEDGE_BANK.
         """
         code_extractor = VisualizationCodeExtractor()
-        if requester_name:
-            self.visualization_code: str = code_extractor.get_visualization_code_from_source(requester_name)
-        elif visualization_code:
-            self.visualization_code: str = visualization_code
+        if not show_llm_original_image and visualization_description is None:
+            raise ValueError("If show_llm_original_image is False, visualization_description must be provided.")
+        if give_llm_source_code:
+            if requester_name:
+                self.visualization_code: str = code_extractor.get_visualization_code_from_source(requester_name)
+            elif visualization_code:
+                self.visualization_code: str = visualization_code
+            else:
+                raise ValueError("Either requester_name or visualization_code must be provided.")
         else:
-            raise ValueError("Either requester_name or visualization_code must be provided.")
+            self.visualization_code: str = ""
 
         self.visualization_object: Any = visualization_object
         self.data: pd.DataFrame = data
@@ -63,24 +70,53 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         self.must_generalize: bool = must_generalize
         self.silent: bool = silent
         self.requester_name: Optional[str] = requester_name
+        self.give_llm_source_code: bool = give_llm_source_code
+        self.show_llm_original_image: bool = show_llm_original_image
+        self.visualization_description: Optional[list] = visualization_description
 
 
     def _define_task(self) -> str:
         """
         Defines the task for the LLM.
         """
-        task_str = (
-            "You are a data visualization expert using Python's matplotlib and seaborn libraries. "
-            "Your task is to take Python code that generates a visualization and an image of that visualization, and then "
-            "produce new Python code for a more aesthetically pleasing and effective visualization.\n\n"
+        task_str = ""
+        task_str += (
+            "You are a data visualization expert using Python's matplotlib and pandas libraries.\n"
+            "Your task is to accepts either:"
+            "1.  Python code that generates a visualization, as well as an image of the visualization itself.\n"
+            "2.  Only the image of a visualization, without the code the generates it.\n"
+            "3.  A textual description of what to visualize, without any code or image.\n\n"
+            "Using this input, you must create new Python code that generates a new visualization that is more appealing, "
+            "consolidated, and aesthetically pleasing than the original, or a visualization that matches the description, "
+            "using an iterative process of improvement.\n\n"
             "**Key Goals for Improvement:**\n"
             "1.  **Consolidation & Clarity:** The original visualization might have multiple, cluttered subplots. If possible, consolidate them into a single, well-organized figure. Use shared axes where appropriate. The goal is to reduce visual clutter and make comparisons easier.\n"
             "2.  **Aesthetics:** Use a professional color palette (e.g. from matplotlib). Ensure font sizes are legible and titles/labels are clear.\n"
             "3.  **Information Preservation:** The new visualization must preserve all the crucial information from the original, such as which groups are outliers and the values they represent. Additionally, if the visualization had added text to it, such as LLM generated text, this text MUST be in the beautified visualization too.\n"
-            "4.  **Limited Implementation Information:** We can not provide you with the full implementation code of the visualization. For all objects in the code, unless they are from a known library,"
-            " you must assume that they are defined in the code, and you can only use functions and properties of those objects that you explicitly see in the code.\n"
-            "5.  **No Visual Overload:**: Make sure the visualization is not overloaded with information. If there are too many data points or categories, consider aggregating or pruning them to focus on the most important aspects.\n"
+            "4.  **No Visual Overload:**: Make sure the visualization is not overloaded with information. If there are too many data points or categories, consider aggregating or pruning them to focus on the most important aspects.\n"
+            "5.  **Reasonable Size:** The visualization should be of a reasonable size, not too large or too small. It should fit well within the context it will be displayed in, and not stretched out or squished beyond what it should be for clear viewing.\n"
         )
+        if self.give_llm_source_code:
+            task_str += (
+            "6.  **Limited Implementation Information:** We can not provide you with the full implementation code of the visualization. For all objects in the code, unless they are from a known library,"
+            " you must assume that they are defined in the code, and you can only use functions and properties of those objects that you explicitly see in the code.\n"
+            )
+        if self.requester_name.lower().startswith("fedex"):
+            task_str += (
+                "\n The visualizations you are improving are meant to point out the most interesting statistical "
+                "changes in the data after it has been queried.\n"
+            )
+        if self.requester_name.lower().startswith("metainsight"):
+            task_str += (
+                "\n The visualizations you are created are meant to point out the most interesting common patterns found "
+                "in the data.\n"
+                "You will only be provided with the __init__ function of our custom objects, you must come up with the visualization code yourself.\n"
+            )
+        if self.requester_name.lower().startswith("graph_visualizer"):
+            task_str += (
+                "\n The visualization you are improving is that of a query graph, created using the ipycytoscape library, "
+                "after a process of automated query generation and execution.\n"
+            )
         if not self.must_generalize:
             task_str += (
             "The code you create will be for one-time use and executed immediately. The user will only see the visualization, not the code. "
@@ -95,6 +131,10 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                 "You may also be provided visualization code that is more general and for more cases than just this one visualization "
                 "you see, so you must ensure that the code you create is compatible with that code.\n\n"
             )
+            if self.requester_name.lower().startswith("fedex"):
+                task_str += "The code you create needs to handle visualization cases for the insights found via filter, groupby and join queries."
+            if self.requester_name.lower().startswith("metainsight"):
+                task_str += "The code you create needs to handle visualization cases for the patterns: trends, outliers and unimodalities."
         return task_str
 
     def _describe_output_format(self) -> str:
@@ -371,17 +411,35 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         data_summary_str = data_summary.getvalue()
         code_score_dict = {}
 
-        user_message: str = (
-            f"Here is the original code that produced the visualization:\n\n"
-            f"<python>\n{self.visualization_code}\n</python>\n\n"
+        user_message = ""
+
+        if self.give_llm_source_code:
+            user_message += (
+                f"Here is part of the original code that produced the visualization:\n\n"
+                f"<python>\n{self.visualization_code}\n</python>\n\n"
+            )
+        else:
+            user_message += (
+                "You will not be provided with the original code that produced the visualization."
+            )
+
+        user_message += (
             f"For context, here is a summary of the pandas DataFrame that will be passed to your function:\n"
             f"```\n{data_summary_str}\n```\n"
             f"And here is the head of the data:\n"
             f"```\n{self.data.head().to_string()}\n```\n\n"
-            f"Attached as well is the visualization itself. Please improve it by making it clearer and more consolidated.\n\n"
             f"{self._describe_output_format()}\n"
             f"Remember again to place the code inside <python> and </python> tags, or the program will not be able to extract it.\n"
         )
+
+        if self.show_llm_original_image:
+            user_message += f"Attached as well is the visualization itself. Please improve it by making it clearer and more consolidated.\n\n"
+        else:
+            user_message += (
+                "The original visualization is not provided as an image. "
+                f"Instead, create a new visualization based on the following descriptions of the insights you need to visualize:"
+                f"\n{self.visualization_description}\n\n"
+            )
         if self.requester_name == 'graph_visualizer':
             user_message += (
                 "Note: The visualization is a graph visualization created using the ipycytoscape library. "
@@ -413,6 +471,8 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             user_messages=user_messages,
             override_user_messages_formatting=True
         )
+
+        user_messages.append({"role": "assistant", "content": response})
 
         self._handle_response(response)
         if not self.llm_generated_code:
@@ -448,11 +508,8 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                         print(f"Error encountered in LLM generated code - {printed_error}")
                         print(f"Attempting to fix the code... ({i + 1}/{self.max_fix_attempts})")
 
-                    # Append the previous attempt and the error to the message history
-                    user_messages.append(
-                        {"role": "assistant", "content": f"<python>{self.llm_generated_code}</python>"})
                     user_messages.append({"role": "user",
-                                          "content": f"This is iteration {i + 1} / {self.max_fix_attempts} of the iterative improvement process after you first generated code..\n"
+                                          "content": f"This is iteration {i + 1} / {self.max_fix_attempts} of the iterative improvement process.\n"
                                                      f"{error_message}\nPlease fix the code and provide the full, corrected code block."})
 
                     response = client(
@@ -460,6 +517,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                         user_messages=user_messages,
                         override_user_messages_formatting=True
                     )
+                    user_messages.append({"role": "assistant", "content": response})
                     self._handle_response(response)
                     if not self.llm_generated_code:
                         break  # Exit the loop if we can't get new code
@@ -471,28 +529,20 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                     if not self.silent:
                         print("The generated code executed successfully.")
                         print(f"Approving or improving the generated visualization... {i + 1}/{self.max_fix_attempts}")
-                    user_messages.append(
-                        {"role": "assistant", "content": f"<python>{self.llm_generated_code}</python>"}
-                    )
                     encoded_image = self._encode_visualization(beautified_figure)
                     user_message_text = (
-                        f"This is iteration {i + 1} / {self.max_fix_attempts} of the iterative improvement process after you first generated code.\n"
-                        "Please review the generated visualization and score it between 1 to 10. If you give it a score of 10,"
-                        "this iterative improvement process will stop and the user will be shown the visualization.\n"
-                        "Give a score of 10 if you think the visualization is clear, consolidated, and aesthetically pleasing, while also "
-                        "relaying all of the important information from the original visualization.\n"
-                        "Provide your score status between <score and </score> and as a single boolean float.\n"
-                        "Provide the new code (if the score if below 10) inside <python> and </python> tags, or the program will not be able to extract it.\n"
-                        "The user will be shown the highest scoring visualization at the end of the process.\n"
+                        f"This is iteration {i + 1} / {self.max_fix_attempts} of the iterative improvement process.\n"
+                        f"You have three tasks, in this order:\n"
+                        f"1. Describe in detail what you see in the visualization, including any issues or areas for improvement. "
+                        f"This should be in between <description> and </description> tags.\n"
+                        f"2. Rate the visualization on a scale from 0 to 10, where 10 is perfect and 0 is completely unusable. "
+                        f"A score of 9.0 or higher will immediately approve the visualization, while a score below 9.0 will require you to improve it. "
+                        f"This should be in between <score> and </score> tags. "
+                        f"A score of 9.0 should mean that other than some really minor details, the visualization is good, and does not justify more calls to the "
+                        f"LLM API and paying for more tokens to improve it any more.\n"
+                        f"3. If you disapprove of the visualization, provide a new code that fixes the issues you found. "
+                        f"This code should be in between <python> and </python> tags, and it should be a complete code block that can be executed on its own.\n"
                     )
-                    if self.requester_name == 'graph_visualizer':
-                        user_message += (
-                            "Note: The visualization is a graph visualization created using the ipycytoscape library. "
-                            "Meanwhile, the image you see is a static, matplotlib representation of the graph, extracted using the "
-                            "_encode_visualization method. "
-                            "This is a very rough approximation of the actual visualization, so while it may be helpful, you should put "
-                            "the most emphasis on the code itself, which is what will be executed.\n"
-                        )
                     user_messages.append(
                         {
                             "role": "user",
@@ -512,6 +562,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                         user_messages=user_messages,
                         override_user_messages_formatting=True
                     )
+                    user_messages.append({"role": "assistant", "content": response})
                     score = self._extract_response(response, "<score>", "</score>")
                     if isinstance(score, str):
                         score = score.strip().lower()
@@ -520,7 +571,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                     score = float(score)
                     code_score_dict[self.llm_generated_code] = score
                     # While the instruction is that 10 is approval, we will consider a more lenient threshold of 9.5
-                    approved = score >= 9.5
+                    approved = score >= 9.0
                     # If the LLM approves the generated visualization, we can stop here.
                     if approved:
                         if not self.silent:
@@ -539,7 +590,8 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                             if not self.silent:
                                 print("Could not extract beautified code from the LLM response after approval attempt.")
                             break
-                        if score > highest_score:
+                        # We assume that even if the score is the same, newer code is better, hence the greater-equal comparison.
+                        if score >= highest_score:
                             highest_score = score
                             highest_scoring_code = self.llm_generated_code[:]
 

@@ -78,7 +78,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "Do not ever select only a single column after performing an operation. If you perform column selection, it must always be multiple columns."
                 "Your queries must never create a Series object, they must always return a DataFrame. "
                 "This is an iterative process, and it is expected that you will generate follow-up queries based on the results of previous queries. "
-                "Plan your queries such that they can potentially be followed up on in future iterations. You will be told which iteration you are in, and how many iterations are left. "
+                "You will be given an overall exploration plan. Your queries should aim to address the goals outlined in the plan."
                 )
 
     def _describe_data(self, user_query: str) -> str:
@@ -156,9 +156,9 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         # If there are too many errors in the history, we want to increase the number of queries per iteration
         if num_errors > history.shape[0] / 3 or recent_errors > 3:
             queries_per_iteration *= 2
-        return (f"You are expected to generate at-least {queries_per_iteration} queries. "
-                f"Increase this number as needed if there is a significant number of failed queries (errors in the history) or if there are a lot recent errors. "
-                f"Be aggressive about increasing the number of queries, especially if you see that we are not getting enough insights to produce anything meaningful. "
+        return (f"You are expected to generate a variable number of queries in each turn. "
+                f"Start with one or two queries. You can generate more queries in a single turn if you "
+                f"believe it is necessary to explore multiple paths based on the previous findings.\n "
                 f"Each query must be in the format index: query, where index is the index of the row in the history "
                 f"that you want to apply the query to. Use index 0 for the original DataFrame. "
                 "Example for a query on index i -  i: [x > 5], i: .groupby('column_name').mean(), etc. Never use a groupby within or as a filter query."
@@ -172,7 +172,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "For example, if you want to filter by a column, write [[df]['column_name'] > 5]. The usage of square brackets must "
                 "never be done outside of a filter query or column selection, and the inside of a filter query must never be any operation but simple comparisons. "
                 "For example, [[df].groupby('column_name').mean() > 5] is not a valid query, but [[df]['column_name'] > 5] is. "
-                f"The output must be a list of queries, where each row in the list starts with a * symbol and ends with a new line. "
+                f"The output must be a list of queries, where each row in the list starts with a * symbol and ends with a new line (provide it in list format even if you only have one query). "
                 f"The list should be surrounded by <queries> and </queries> tags. so it can be easily extracted programmatically. "
                 f"Avoid repeating queries that have already been applied in the history. "
                 f"If you use the std function, make sure to also specify the ddof parameters, otherwise std throws an error."
@@ -340,13 +340,136 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         final_report_user_message += (f"Ignore the error column, it is not relevant for the final report.\n"
                                       f"Extract the findings from the history, and generate a final report summarizing the findings, "
                                       f"according to the user query. This report, while it should be concise, should be detailed enough for the user to "
-                                      f"understand and draw conclusions from.\n"
+                                      f"understand and draw conclusions from. Every conclusion should list exactly which queries it was drawn from. \n"
                                       f"Provide the report surrounded by <report> and </report> tags, so it can be easily extracted programmatically. "
                                       f"Also, provide a list of the most important queries that were used in the analysis. This list "
                                       f"should be a list of indexes from the history DataFrame, with a * symbol before each index and a new line after each index. "
                                       f"This list should be surrounded by <vis> and </vis> tags, so it can be easily extracted programmatically. "
                                       f"This list should be short, and only contain the most important queries that were used in the analysis. ")
         return final_report_system_message, final_report_user_message
+
+    def _generate_initial_plan(self, client: Client, user_query: str, num_iterations: int, data_description_str: str):
+        """
+        Have the LLM generate an initial plan for the analysis.
+        :param client: The LLM client to use for the request.
+        :param user_query: The user query that initiated the analysis.
+        :param num_iterations: The number of iterations to perform in the analysis.
+        :param data_description_str: A string description of the data in the DataFrame.
+        """
+        system_message = (
+            "You are a data analysis planner for an iterative data exploration system, that automatically "
+            "queries a DataFrame based on a user query and generates findings from those queries.\n"
+            "It can not do anything except generate and run those queries, and then generate a final report at the end (after the iterative process is done. You do not need to plan for this step, it will always happen.).\n"
+            "The system can not visualize the data, can not generate plots, can not perform any statistical tests, "
+            "and can not perform any other operations except for generating queries and running them on the DataFrame.\n"
+            "Based on a user query and a description of the data, "
+            "your task is to generate an initial plan for how to query the data and explore it.\n"
+            "create a step-by-step plan for exploration. The plan should consist of high-level goals."
+        )
+        user_message = (
+            f"User query: {user_query}\n"
+            f"Data description: {data_description_str}\n"
+            f"You will have {num_iterations} iterations to perform the analysis.\n"
+            f"Place the plan in <plan> and </plan> tags, so it can be easily extracted programmatically. "
+        )
+
+        try:
+            response = client(
+                system_messages=[system_message],
+                user_messages=[user_message]
+            )
+            plan = self._extract_response(response, "<plan>", "</plan>")
+            if self.verbose:
+                if plan is not None and len(plan) > 0:
+                    print(f"Initial plan generated by the LLM:\n{plan}")
+                else:
+                    print("No initial plan generated by the LLM.")
+        except InvalidRequestError as e:
+            if self.verbose:
+                print(f"Failed to generate initial plan with error: {e}")
+            plan = "No initial plan generated due to an error."
+        return plan
+
+    def _analyze_queries(self, query_results: List[apply_result],
+                         fedex_top_k, metainsight_max_filter_cols,
+                         metainsight_max_agg_cols,
+                         verbose: bool = False) -> List[QueryResultObject]:
+        """
+        Use fedex and metainsight to analyze the queries and their results.
+        :param query_results: A list of DataFrames containing the results of the queries.
+        :param fedex_top_k: The number of top findings to return from the FedEx explainer.
+        :param metainsight_max_filter_cols: The maximum number of filter columns to use in the MetaInsight explainer.
+        :param metainsight_max_agg_cols: The maximum number of columns to use for aggregation in the MetaInsight explainer.
+        :param verbose: If True, print additional information during the analysis.
+        """
+        results: List[QueryResultObject] = []
+        for idx, result in enumerate(query_results):
+            if result.error_occurred:
+                if verbose:
+                    print(
+                        f"\t - Error occurred while applying query: {result.generating_query} - {result.result}")
+                    results.append(
+                        QueryResultObject(
+                            fedex=None,
+                            metainsight=None,
+                            error=str(result.result),
+                        )
+                    )
+            else:
+                res = QueryResultObject()
+                result_df = result.result
+                fedex_finding_str = ""
+                metainsight_finding_str = ""
+                try:
+                    fedex_findings = result_df.explain(
+                        explainer="fedex",
+                        top_k=fedex_top_k,
+                        do_not_visualize=True,
+                        log_query=False,
+                        display_mode='carousel' if not self.beautify_fedex else 'grid'
+                    )
+                    res.fedex = result_df.last_used_explainer
+                    # Store the raw FedEx findings in the query and results mapping
+                    title, scores, K, figs_in_row, explanations, bins, influence_vals, source_name, show_scores = fedex_findings
+                    fedex_findings = explanations
+                    # Remove the LaTeX formatting from the FedEx findings
+                    fedex_findings = fedex_findings.values.tolist()
+                    pattern = re.compile(r'\$\\+bf{(.*?)}\$')
+                    fedex_findings = [pattern.sub(r'\1', finding) for finding in fedex_findings]
+                    fedex_findings = [finding.replace("(in green)", "").replace("\n", " ").replace("\\", "") for
+                                      finding in fedex_findings]
+                    res.fedex_findings = fedex_findings
+                    if verbose:
+                        fedex_finding_str = f"{len(fedex_findings)} FEDEx findings"
+                except Exception as e:
+                    res.fedex_findings = f"Error"
+                    res.fedex = None
+                try:
+                    metainsight_findings = result_df.explain(
+                        explainer="metainsight",
+                        top_k=2,
+                        do_not_visualize=True,
+                        max_filter_columns=metainsight_max_filter_cols,
+                        max_aggregation_columns=metainsight_max_agg_cols,
+                        display_mode='carousel' if not self.beautify_metainsight else 'grid'
+                    )
+                    metainsight_findings = [finding.__str__() for finding in metainsight_findings]
+                    # Store the MetaInsight objects in the query and results mapping
+                    res.metainsight = result_df.last_used_explainer
+                    res.metainsight_findings = metainsight_findings
+                    if verbose:
+                        metainsight_finding_str = f"{len(metainsight_findings)} MetaInsight findings"
+                except Exception as e:
+                    res.metainsight_findings = "Error"
+                    res.metainsight = None
+                results.append(res)
+                if verbose:
+                    if metainsight_finding_str or fedex_finding_str:
+                        print(
+                            f"\t - Query {result.generating_query} produced {fedex_finding_str} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}")
+                    else:
+                        print(f"\t - Query {result.generating_query} produced no findings.")
+        return results
 
     def do_llm_action(self, user_query: str = None, num_iterations: int = 10,
                       queries_per_iteration: int = 5, fedex_top_k: int = 4, metainsight_top_k: int = 2,
@@ -395,9 +518,12 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         pd.set_option('display.max_colwidth', None)  # No limit on column width
         client = Client(
             api_key=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_LLM_KEY, None),
-            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER, consts.DEFAULT_AUTOMATED_EXPLORATION_LLM_PROVIDER),
-            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER_URL, consts.DEFAULT_AUTOMATED_EXPLORATION_LLM_PROVIDER_URL),
-            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_LLM_MODEL, consts.DEFAULT_AUTOMATED_EXPLORATION_LLM_MODEL)
+            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER,
+                               consts.DEFAULT_AUTOMATED_EXPLORATION_LLM_PROVIDER),
+            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_PROVIDER_URL,
+                                   consts.DEFAULT_AUTOMATED_EXPLORATION_LLM_PROVIDER_URL),
+            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_AUTOMATED_EXPLORATION_LLM_MODEL,
+                            consts.DEFAULT_AUTOMATED_EXPLORATION_LLM_MODEL)
         )
         system_message = self._define_task()
         data_description = self._describe_data(user_query)
@@ -414,6 +540,10 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         # Suppress warnings while we are running the automated data exploration, since LLMs are pros at
         # generating queries that will result in warnings, and we don't want to clutter the output with them.
         warnings.filterwarnings("ignore")
+        plan = self._generate_initial_plan(
+            client=client, user_query=user_query, num_iterations=max_iterations,
+            data_description_str=data_description
+        )
         try:
             while iteration_num < max_iterations:
                 if verbose:
@@ -424,9 +554,11 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 user_message = (
                     f"This is iteration {iteration_num + 1} out of {max_iterations} of the analysis process.\n"
                     f"User query: {user_query}\n"
+                    f"The current exploration plan is:\n{plan}\n"
                     f"History of queries and findings:\n{formatted_history}\n"
                     f"Data description:\n{data_description}\n"
                     f"Format description:\n{format_description}")
+
                 # If anything goes wrong with the LLM, we break out of the loop.
                 # Examples of errors that can occur are:
                 # - Rate limit exceeded
@@ -454,6 +586,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
                     iteration_num += 1
                     continue
+
                 # Extract the queries from the response
                 queries = self._extract_response(response, "<queries>", "</queries>")
                 if queries is None or len(queries) == 0:
@@ -471,16 +604,19 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                 f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
                     iteration_num += 1
                     continue
+
                 queries = queries.split("\n")
                 queries = [query.replace("*", "").strip() for query in queries if
                            query.strip() and query.startswith('*')]
                 # Split the queries into a Series
                 queries_series = pd.Series(queries)
+
                 descriptions = self._extract_response(response, "<desc>", "</desc>")
                 if descriptions is not None and len(descriptions) > 0:
                     descriptions = descriptions.split("\n")
                     descriptions = [desc.replace("*", "").strip() for desc in descriptions if
                                     desc.strip() and desc.startswith('*')]
+
                 findings = self._extract_response(response, "<findings>", "</findings>")
                 if findings is not None and len(findings) > 0:
                     findings = findings.split("\n")
@@ -492,7 +628,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     if len(findings) > 0:
                         for i, finding in enumerate(findings):
                             # Find the first row in the history where need_explanation is True
-                            while history_index < history.shape[0] and not history.iloc[history_index]['need_explanation']:
+                            while history_index < history.shape[0] and not history.iloc[history_index][
+                                'need_explanation']:
                                 history_index += 1
                             if history_index >= history.shape[0]:
                                 break
@@ -506,100 +643,49 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 if not new_results:
                     iteration_num += 1
                     continue
+
                 # Update the history DataFrame with new results
-                for idx, result in enumerate(new_results):
-                    # print(f"\t - Checking query: {result.generating_query} (index: {result.index})")
-                    curr_index = len(history)
-                    if result.error_occurred:
-                        if verbose:
-                            print(
-                                f"\t - Error occurred while applying query: {result.generating_query} - {result.result}")
+                analysis_results = self._analyze_queries(
+                    query_results=new_results,
+                    fedex_top_k=fedex_top_k,
+                    metainsight_max_filter_cols=metainsight_max_filter_cols,
+                    metainsight_max_agg_cols=metainsight_max_agg_cols,
+                    verbose=verbose
+                )
+                for idx, (apply_res, analysis_res) in enumerate(zip(new_results, analysis_results)):
+                    if apply_res.error_occurred:
                         history = history._append({
-                            "query": f"{result.index}: {result.generating_query}",
+                            "query": f"{apply_res.index}: {apply_res.generating_query}",
                             "fedex_explainer_findings": None,
                             "metainsight_explainer_findings": None,
-                            "error": str(result.result),
+                            "error": str(analysis_res.error),
                             "need_explanation": False,
-                            "query_description": None,
+                            "query_description": descriptions[idx] if descriptions is not None and idx < len(
+                                descriptions) else None,
                             "query_findings": None
                         }, ignore_index=True)
-                        # Store the error in the query and results mapping, so it can be used later
-                        query_and_results[curr_index] = QueryResultObject(
-                            fedex=None,
-                            metainsight=None,
-                            error=str(result.result)
-                        )
                     else:
-                        result_df = result.result
-                        fedex_finding_str = ""
-                        metainsight_finding_str = ""
-                        try:
-                            fedex_findings = result_df.explain(
-                                explainer="fedex",
-                                top_k=fedex_top_k,
-                                do_not_visualize=True,
-                                log_query=False,
-                                display_mode='carousel' if not self.beautify_fedex else 'grid'
-                            )
-                            # Store the raw FedEx findings in the query and results mapping
-                            query_and_results[curr_index].fedex = result_df.last_used_explainer
-                            title, scores, K, figs_in_row, explanations, bins, influence_vals, source_name, show_scores = fedex_findings
-                            fedex_findings = explanations
-                            # Remove the LaTeX formatting from the FedEx findings
-                            fedex_findings = fedex_findings.values.tolist()
-                            pattern = re.compile(r'\$\\+bf{(.*?)}\$')
-                            fedex_findings = [pattern.sub(r'\1', finding) for finding in fedex_findings]
-                            fedex_findings = [finding.replace("(in green)", "").replace("\n", " ").replace("\\", "") for
-                                              finding in fedex_findings]
-                            if verbose:
-                                fedex_finding_str = f"{len(fedex_findings)} FEDEx findings"
-                        except Exception as e:
-                            # Commented out line can potentially give more information to the LLM on how to avoid the error,
-                            # but in most cases, it just takes up more tokens (which we don't have a lot of),
-                            # fedex_findings = f"Error: {str(e)}"
-                            fedex_findings = f"Error"
-                            query_and_results[curr_index].fedex = None
-                        try:
-                            metainsight_findings = result_df.explain(
-                                explainer="metainsight",
-                                top_k=2,
-                                do_not_visualize=True,
-                                max_filter_columns=metainsight_max_filter_cols,
-                                max_aggregation_columns=metainsight_max_agg_cols,
-                                display_mode='carousel' if not self.beautify_metainsight else 'grid'
-                            )
-                            metainsight_findings = [finding.__str__() for finding in metainsight_findings]
-                            # Store the MetaInsight objects in the query and results mapping
-                            query_and_results[curr_index].metainsight = result_df.last_used_explainer
-                            if verbose:
-                                metainsight_finding_str = f"{len(metainsight_findings)} MetaInsight findings"
-                        except Exception as e:
-                            # metainsight_findings = f"Error: {str(e)}"
-                            metainsight_findings = f"Error"
-                            query_and_results[curr_index].metainsight = None
-                        if verbose:
-                            if metainsight_finding_str or fedex_finding_str:
-                                print(
-                                    f"\t - Query {result.generating_query} produced {fedex_finding_str} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}")
-                            else:
-                                print(f"\t - Query {result.generating_query} produced no findings.")
                         history = history._append({
-                            "query": f"{result.index}: {result.generating_query}",
-                            "fedex_explainer_findings": fedex_findings,
-                            "metainsight_explainer_findings": metainsight_findings,
+                            "query": f"{apply_res.index}: {apply_res.generating_query}",
+                            "fedex_explainer_findings": analysis_res.fedex_findings,
+                            "metainsight_explainer_findings": analysis_res.metainsight_findings,
                             "error": None,
                             "need_explanation": True,  # We need explanations for the new queries
-                            "query_description": descriptions[idx] if descriptions is not None and idx < len(descriptions) else None,
+                            "query_description": descriptions[idx] if descriptions is not None and idx < len(
+                                descriptions) else None,
                             "query_findings": None
                         }, ignore_index=True)
+                    curr_index = len(history) - 1
                     # Update the query tree with the new query
-                    query_tree.add_node(result.index, result.generating_query, curr_index)
+                    query_tree.add_node(apply_res.index, apply_res.generating_query, curr_index)
                     # Update the result history mapping with the new results
-                    result_history_mapping[len(history) - 1] = result.result
+                    result_history_mapping[len(history) - 1] = apply_res.result
                 iteration_num += 1
+
             if history.empty:
                 print_error = True
                 return history, None, query_and_results, [], query_tree
+
             # At the end of the iterations, generate a final report
             total_parts = 1
             final_report_response = None

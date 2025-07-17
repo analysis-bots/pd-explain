@@ -18,6 +18,8 @@ class QueryResultObject:
     """
     fedex: FedexExplainer | None = None
     metainsight: MetaInsightExplainer | None = None
+    fedex_findings = str | None
+    metainsight_findings = str | None
     error: str | None = None
 
 

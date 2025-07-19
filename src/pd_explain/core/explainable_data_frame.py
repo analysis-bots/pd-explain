@@ -135,8 +135,7 @@ class ExpDataFrame(pd.DataFrame):
         )
         return recommender.recommend()
 
-    def automated_data_exploration(self, user_query: str, num_iterations: int = 10,
-                                   queries_per_iteration: int = 5, fedex_top_k: int = 3, metainsight_top_k: int = 2,
+    def automated_data_exploration(self, user_query: str, num_iterations: int = 10, fedex_top_k: int = 3, metainsight_top_k: int = 2,
                                    metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
                                    visualization_type: Literal['graph', 'simple'] = 'graph',
                                    verbose: bool = False,
@@ -190,8 +189,6 @@ class ExpDataFrame(pd.DataFrame):
             raise ValueError("user_query must be a string describing what you want to analyze in the DataFrame.")
         if not isinstance(num_iterations, int) or num_iterations <= 0:
             raise ValueError("num_iterations must be a positive integer.")
-        if not isinstance(queries_per_iteration, int) or queries_per_iteration <= 0:
-            raise ValueError("queries_per_iteration must be a positive integer.")
         if not isinstance(fedex_top_k, int) or fedex_top_k <= 0:
             raise ValueError("fedex_top_k must be a positive integer.")
         if not isinstance(metainsight_top_k, int) or metainsight_top_k <= 0:
@@ -214,7 +211,6 @@ class ExpDataFrame(pd.DataFrame):
         self.data_explorer.do_llm_action(
             user_query=user_query,
             num_iterations=num_iterations,
-            queries_per_iteration=queries_per_iteration,
             fedex_top_k=fedex_top_k,
             metainsight_top_k=metainsight_top_k,
             metainsight_max_filter_cols=metainsight_max_filter_cols,
@@ -286,8 +282,7 @@ class ExpDataFrame(pd.DataFrame):
                                                      'query_tree_beautify_code'])
 
     def follow_up_with_automated_data_exploration(self, explanation_index: int = None,
-                                                  num_iterations: int = 10,
-                                                  queries_per_iteration: int = 5, fedex_top_k: int = 3,
+                                                  num_iterations: int = 10, fedex_top_k: int = 3,
                                                   metainsight_top_k: int = 2,
                                                   metainsight_max_filter_cols: int = 3,
                                                   metainsight_max_agg_cols: int = 3,
@@ -362,7 +357,6 @@ class ExpDataFrame(pd.DataFrame):
         return self.automated_data_exploration(
             user_query=explorer_query,
             num_iterations=num_iterations,
-            queries_per_iteration=queries_per_iteration,
             fedex_top_k=fedex_top_k,
             metainsight_top_k=metainsight_top_k,
             metainsight_max_filter_cols=metainsight_max_filter_cols,

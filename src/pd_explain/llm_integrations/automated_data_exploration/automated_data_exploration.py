@@ -140,24 +140,15 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         return data_description
 
     def _describe_input_format(self) -> str:
-        return ("The history is formatted as a DataFrame with the following columns: "
-                "query, fedex_explainer_findings, metainsight_explainer_findings. "
-                "The query column is listed as index: query, where index is the index of the row in the history "
-                "that the query was applied to. For example, 5: query means this result was created by applying the "
-                "query to the result of the query at index 5 in the history. "
-                "The fedex_explainer_findings and metainsight_explainer_findings columns are lists of findings done "
-                "by the FedEx and MetaInsight explainers, respectively. "
+        return ("You will receive a summary of the history of queries and findings.\n"
+                "If LLM generated descriptions of the findings are available, you will be provided those. If not, you will "
+                "receive the findings from the FedEx and MetaInsight explainers.\n"
                 "FedEx findings are the most important statistical changes as a result of the query, and MetaInsight "
                 "findings are the most significant patterns detected in the data after the query was applied.\n")
 
-    def _describe_output_format(self, queries_per_iteration: int, history: pd.DataFrame) -> str:
-        num_errors = history[history['error'].notnull()].shape[0]
-        recent_errors = history.tail(10)[history['error'].notnull()].shape[0]
-        # If there are too many errors in the history, we want to increase the number of queries per iteration
-        if num_errors > history.shape[0] / 3 or recent_errors > 3:
-            queries_per_iteration *= 2
+    def _describe_output_format(self) -> str:
         return (f"You are expected to generate a variable number of queries in each turn. "
-                f"Start with one or two queries. You can generate more queries in a single turn if you "
+                f"Start with one or two queries at most. You can generate more queries in a single turn if you "
                 f"believe it is necessary to explore multiple paths based on the previous findings.\n "
                 f"Each query must be in the format index: query, where index is the index of the row in the history "
                 f"that you want to apply the query to. Use index 0 for the original DataFrame. "
@@ -192,8 +183,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "The second, is a list explaining the findings of queries from the previous iteration, surrounded by <findings> and </findings> tags. "
                 "These explanations should be concise, explaining in simple words what the query found and what it means. "
                 "These explanations should be stand-alone, and should not reference the history or previous queries.\n"
-                "Look at the 'need_explanation' column in the history DataFrame to see which queries are those from the previous iteration that need explanations. "
-                "If there are none, leave this section empty.\n"
+                "Queries that require these explanations will have the words 'This query requires a summary of its findings, which will also be provided in the next iteration.' "
+                "explicitly stated. Only those queries need an explanation, and the rest of the queries do not need an explanation.\n"
                 "These two lists should not include query numbers, as those are not relevant and are already present in the history DataFrame.\n"
                 "Both of these lists must likewise be un-numbered lists, starting with a * character and separated by new-line characters.\n"
                 "The description list should be in order of the generated queries.\n"
@@ -203,29 +194,24 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                         total_parts: int = None,
                         remove_errors: bool = False) -> str:
         """
-        Format the history of queries and findings for the LLM.
+        Prepare the history DataFrame for the LLM, removing unnecessary columns and trimming it if necessary,
+        then summarizing it into a string.
         :param history: The history DataFrame containing the queries and findings.
         :param truncate_early_by: The number of rows to truncate from the beginning of the history.
         :param part: The part of the history to return, if specified.
         :param total_parts: The total number of parts to split the history into, if specified.
         :param remove_errors: If True, remove rows with errors from the history.
 
-        :return: A string representation of the history DataFrame, formatted for the LLM.
+        :return: A string summarizing the history DataFrame, formatted for the LLM.
         """
         if history.empty:
-            return "The history is empty."
-        # Do not take the 'query_description' and 'query_findings' columns into account when formatting the history,
-        # since they contain information meant for the user, not the LLM.
-        if 'query_description' in history.columns:
-            history = history.drop(columns=['query_description'])
-        if 'query_findings' in history.columns:
-            history = history.drop(columns=['query_findings'])
+            return history
         if remove_errors:
             # Remove rows with errors from the history
             history = history[history['error'].isnull()]
         # If part or total parts is not specified, we return the whole history - possible truncation
         if part is None or total_parts is None:
-            return history.tail(history.shape[0] - truncate_early_by).to_string(index=True, header=True)
+            return self._summarize_history(history.tail(history.shape[0] - truncate_early_by))
         # If part and total parts are specified, we return only the specified part of the history
         else:
             if part < 1 or part > total_parts:
@@ -235,7 +221,66 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             start_index = (part - 1) * part_length
             end_index = min(start_index + part_length, history_length)
             # Return only the specified part of the history
-            return history.iloc[start_index:end_index].to_string(index=True, header=True)
+            return self._summarize_history(history.iloc[start_index:end_index], truncated_history = part > 1)
+
+
+    def _summarize_history(self, history: pd.DataFrame, truncated_history: bool = False) -> str:
+        """
+        Summarize the history of queries and findings for the LLM.
+        :param history: The history DataFrame containing the queries and findings.
+        :param truncated_history: A boolean value indicating whether the history is truncated. If it is, the first row is not ignored.
+        If it is not, then the first row is assumed to be the original DataFrame and is ignored.
+        :return: A string summarizing the history DataFrame, formatted for the LLM.
+        """
+        if history.empty:
+            return "The history is empty."
+        summary_string = ""
+        # First, include how many queries were generated in total, and how many of them were successful.
+        total_queries = history.shape[0]
+        successful_queries = history[history['error'].isnull()].shape[0]
+        summary_string += (f"So far, {total_queries - 1} queries were generated, "
+                           f"of which {successful_queries - 1} were successful and {total_queries - successful_queries} failed with errors.\n")
+        # Loop over the history df, and summarize each query (skip the first row, which is the original DataFrame)
+        for idx, row in history.iterrows():
+            if idx == 0 and not truncated_history:
+                continue
+            summary_string += "\n\n"
+            query = row['query']
+            query_description = row['query_description']
+            query_findings = row['query_findings']
+            error = row['error']
+            # Extract the query origin from the query string, which is in the format index: query
+            query_split = query.split(':', 1)
+            query_origin = query_split[0].strip() if len(query_split) > 1 else "0"
+            if query_origin == '0':
+                query_origin = "Original DataFrame"
+            else:
+                query_origin = f"Result of query {query_origin}"
+            query = query_split[1].strip() if len(query_split) > 1 else query.strip()
+            summary_string += f"Query {idx}: {query} applied to {query_origin}.\n"
+            if query_description:
+                summary_string += f"Description: {query_description}\n"
+            # If no error occurred, we include the findings from the query.
+            if error is None:
+                if query_findings:
+                    summary_string += f"Findings: {query_findings}\n"
+                else:
+                    fedex_findings = str(row['fedex_explainer_findings'])
+                    metainsight_findings = str(row['metainsight_explainer_findings'])
+                    if fedex_findings != "[]":
+                        summary_string += f"FedEx findings: {fedex_findings}\n"
+                    if metainsight_findings != "[]":
+                        summary_string += f"MetaInsight findings: {metainsight_findings}\n"
+                    # If the query's findings have not been explained yet, we note that.
+                    if row['need_explanation']:
+                        summary_string += "This query requires a summary of its findings, which will also be provided in the next iteration.\n"
+            else:
+                summary_string += f"This query failed with the following error: {error}\n"
+
+        return summary_string
+
+
+
 
     def _apply(self, response: pd.Series, result_mapping: dict) -> List[apply_result]:
         if result_mapping is None:
@@ -310,16 +355,14 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                        "done according to a user query. "
                                        "The second is to point out which queries were most important in the analysis, so they "
                                        "can be visualized to the user as part of the final report. "
-                                       "You will be given the history of the queries that have been used for the analysis, along "
+                                       "You will be given a textual summary of the queries that have been used for the analysis, along "
                                        "with the findings derived from those queries."
                                        )
         final_report_user_message = (f"This is the final report generation step. "
-                                     f"The user query was: {user_query}\n"
-                                     f"The history has the following format:\n"
-                                     f"{self._describe_input_format()}\n")
+                                     f"The user query was: {user_query}\n")
         if (total_parts is None and part is None) or total_parts <= 1:
             final_report_user_message += (
-                f"The history of queries and findings is as follows:\n"
+                f"The summary history of queries and findings is as follows:\n"
                 f"{self._format_history(history, remove_errors=True)}\n"
             )
         else:
@@ -471,8 +514,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                         print(f"\t - Query {result.generating_query} produced no findings.")
         return results
 
-    def do_llm_action(self, user_query: str = None, num_iterations: int = 10,
-                      queries_per_iteration: int = 5, fedex_top_k: int = 4, metainsight_top_k: int = 2,
+    def do_llm_action(self, user_query: str = None, num_iterations: int = 10, fedex_top_k: int = 4, metainsight_top_k: int = 2,
                       metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
                       verbose=False, max_iterations_to_add: int = 3) \
             -> tuple[DataFrame, str | None, defaultdict[Any, QueryResultObject], list[str], QueryTree]:
@@ -481,7 +523,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
 
         :param user_query: A textual description of what the user wants to explore in the DataFrame.
         :param num_iterations: The number of iterations to perform in the analysis.
-        :param queries_per_iteration: The number of queries to generate per iteration.
         :param fedex_top_k: The number of top findings to return from the FedEx explainer.
         :param metainsight_top_k: The number of top findings to return from the MetaInsight explainer.
         :param metainsight_max_filter_cols: The maximum number of filter columns to use in the MetaInsight explainer.
@@ -527,8 +568,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         )
         system_message = self._define_task()
         data_description = self._describe_data(user_query)
-        format_description = self._describe_input_format() + self._describe_output_format(queries_per_iteration,
-                                                                                          history)
+        format_description = self._describe_input_format() + self._describe_output_format()
         format_description += self._describe_additional_output_format()
         query_and_results = defaultdict(QueryResultObject)
         query_tree = QueryTree(source_name=self.source_name)
@@ -554,8 +594,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 user_message = (
                     f"This is iteration {iteration_num + 1} out of {max_iterations} of the analysis process.\n"
                     f"User query: {user_query}\n"
-                    f"The current exploration plan is:\n{plan}\n"
-                    f"History of queries and findings:\n{formatted_history}\n"
+                    f"The exploration plan is:\n{plan}\n"
+                    f"Summary of the history of queries and findings:\n{formatted_history}\n"
                     f"Data description:\n{data_description}\n"
                     f"Format description:\n{format_description}")
 
@@ -678,6 +718,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     curr_index = len(history) - 1
                     # Update the query tree with the new query
                     query_tree.add_node(apply_res.index, apply_res.generating_query, curr_index)
+                    query_and_results[curr_index] = analysis_res
                     # Update the result history mapping with the new results
                     result_history_mapping[len(history) - 1] = apply_res.result
                 iteration_num += 1

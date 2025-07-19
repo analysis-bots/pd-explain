@@ -11,6 +11,7 @@ import ipycytoscape
 import ipywidgets as widgets
 import pandas as pd
 from IPython.display import display, Image
+from ipywidgets import Output
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 import warnings
@@ -19,6 +20,7 @@ from pd_explain.llm_integrations.llm_integration_interface import LLMIntegration
 from pd_explain.llm_integrations.client import Client
 from pd_explain.llm_integrations import consts
 from pd_explain.utils.visualization_code_extractor import VisualizationCodeExtractor
+
 
 class VisualizationBeautifier(LLMIntegrationInterface):
     """
@@ -74,7 +76,6 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         self.show_llm_original_image: bool = show_llm_original_image
         self.visualization_description: Optional[list] = visualization_description
 
-
     def _define_task(self) -> str:
         """
         Defines the task for the LLM.
@@ -98,8 +99,8 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         )
         if self.give_llm_source_code:
             task_str += (
-            "6.  **Limited Implementation Information:** We can not provide you with the full implementation code of the visualization. For all objects in the code, unless they are from a known library,"
-            " you must assume that they are defined in the code, and you can only use functions and properties of those objects that you explicitly see in the code.\n"
+                "6.  **Limited Implementation Information:** We can not provide you with the full implementation code of the visualization. For all objects in the code, unless they are from a known library,"
+                " you must assume that they are defined in the code, and you can only use functions and properties of those objects that you explicitly see in the code.\n"
             )
         if self.requester_name.lower().startswith("fedex"):
             task_str += (
@@ -119,9 +120,9 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             )
         if not self.must_generalize:
             task_str += (
-            "The code you create will be for one-time use and executed immediately. The user will only see the visualization, not the code. "
-            "Therefore, you can make the code completely specific to this one visualization, without needing to generalize it for future use, "
-            "and you can even hardcode specific values or data into the code.\n\n"
+                "The code you create will be for one-time use and executed immediately. The user will only see the visualization, not the code. "
+                "Therefore, you can make the code completely specific to this one visualization, without needing to generalize it for future use, "
+                "and you can even hardcode specific values or data into the code.\n\n"
             )
         else:
             task_str += (
@@ -135,6 +136,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                 task_str += "The code you create needs to handle visualization cases for the insights found via filter, groupby and join queries."
             if self.requester_name.lower().startswith("metainsight"):
                 task_str += "The code you create needs to handle visualization cases for the patterns: trends, outliers and unimodalities."
+        task_str += "\nYou must not cause any permanent changes, such as changing the default style of matplotlib, or changing the default settings of pandas. "
         return task_str
 
     def _describe_output_format(self) -> str:
@@ -153,7 +155,6 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             "5.  **No comments** should be included in the code. No one will see the code, so comments are unnecessary and only waste tokens.\n"
             "6.  **Keep things simple**: Do not override the entire codebase, only write what is strictly necessary to create the improved visualization.\n"
         )
-
 
     def _handle_response(self, response: str):
         """
@@ -187,7 +188,6 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                     print("Could not extract code from the LLM response.")
                     return None
         return None
-
 
     def _encode_visualization(self, visualization_object) -> Optional[str]:
         """
@@ -349,7 +349,6 @@ class VisualizationBeautifier(LLMIntegrationInterface):
 
         return tab
 
-
     def _execute(self, code) -> Tuple[Optional[Figure], Optional[str], Optional[str]]:
         """
         Executes the generated code in a controlled environment and checks the output.
@@ -397,9 +396,12 @@ class VisualizationBeautifier(LLMIntegrationInterface):
         """
         client = Client(
             api_key=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_KEY, None),
-            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER, consts.DEFAULT_BEAUTIFICATION_LLM_PROVIDER),
-            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_VISION_MODEL, consts.DEFAULT_BEAUTIFICATION_LLM_VISION_MODEL),
-            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER_URL, consts.DEFAULT_BEAUTIFICATION_LLM_PROVIDER_URL)
+            provider=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER,
+                               consts.DEFAULT_BEAUTIFICATION_LLM_PROVIDER),
+            model=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_VISION_MODEL,
+                            consts.DEFAULT_BEAUTIFICATION_LLM_VISION_MODEL),
+            provider_url=os.getenv(consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_PROVIDER_URL,
+                                   consts.DEFAULT_BEAUTIFICATION_LLM_PROVIDER_URL)
         )
 
         encoded_image: Optional[str] = self._encode_visualization(self.visualization_object)
@@ -486,14 +488,13 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             else:
                 display(self.visualization_object)
 
-
         # Create the widget for the beautified visualization.
         beautified_vis_widget = widgets.Output()
 
         last_working_code = None
+        best_visualization_tab = None
         highest_score = 0.0
         highest_scoring_code = None
-        last_loop_provided_code = False
         beautified_figure = None
         # Suppress warnings, because the LLM code may raise warnings galore.
         warnings.filterwarnings("ignore")
@@ -536,10 +537,11 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                         f"1. Describe in detail what you see in the visualization, including any issues or areas for improvement. "
                         f"This should be in between <description> and </description> tags.\n"
                         f"2. Rate the visualization on a scale from 0 to 10, where 10 is perfect and 0 is completely unusable. "
-                        f"A score of 9.0 or higher will immediately approve the visualization, while a score below 9.0 will require you to improve it. "
-                        f"This should be in between <score> and </score> tags. "
-                        f"A score of 9.0 should mean that other than some really minor details, the visualization is good, and does not justify more calls to the "
-                        f"LLM API and paying for more tokens to improve it any more.\n"
+                        f"A score of 10 will immediately approve the visualization, while a score below that will require you to improve it. "
+                        f"This should be in between <score> and </score> tags.\n"
+                        f"A score of 9.0 should mean the the visualization is good (but not completely perfect), any further improvements to it are minor, and "
+                        f"are a waste of tokens and paying for LLM API calls.\n"
+                        f"The score should be based on figure readability, aesthetics, and most importantly how well it preserves and conveys the information from the original visualization.\n"
                         f"3. If you disapprove of the visualization, provide a new code that fixes the issues you found. "
                         f"This code should be in between <python> and </python> tags, and it should be a complete code block that can be executed on its own.\n"
                     )
@@ -580,11 +582,15 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                         # Copy the code. Not doing this seems to result in highest_scoring_code getting a pointer to the
                         # self.llm_generated_code, which is not what we want as this will change in the next iteration.
                         highest_scoring_code = self.llm_generated_code[:]
+                        best_visualization_tab = Output()
+                        with best_visualization_tab:
+                            display(beautified_figure)
                         break
                     # If the LLM disapproves, we will try to fix the code.
                     else:
                         if not self.silent:
-                            print(f"The LLM disapproved the generated visualization and scored it {score} / 10. It will attempt to improve it.")
+                            print(
+                                f"The LLM disapproved the generated visualization and scored it {score} / 10. It will attempt to improve it.")
                         self._handle_response(response)
                         if not self.llm_generated_code:
                             if not self.silent:
@@ -592,6 +598,9 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                             break
                         # We assume that even if the score is the same, newer code is better, hence the greater-equal comparison.
                         if score >= highest_score:
+                            best_visualization_tab = Output()
+                            with best_visualization_tab:
+                                display(beautified_figure)
                             highest_score = score
                             highest_scoring_code = self.llm_generated_code[:]
 
@@ -601,31 +610,34 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                 print("\nRaw response:\n")
                 print(response)
 
+        # Check best_visualization_tab to see if we have a tab with the best visualization.
+        if best_visualization_tab:
+            beautified_vis_widget = best_visualization_tab
 
-        # We use the highest scoring code to execute the final beautified visualization.
-        if highest_scoring_code is not None:
-            beautified_figure, error_message, _ = self._execute(highest_scoring_code)
-        # First condition is not really needed, but it is here for clarity.
-        elif highest_scoring_code is None and last_working_code is not None:
-            beautified_figure, error_message, _ = self._execute(last_working_code)
-        # If for some reason both didn't work, we check the code_score dictionary for the highest scoring code.
-        elif code_score_dict:
-            # sort the dictionary by score, and iteratively try to execute the code with the highest score.
-            sorted_codes = sorted(code_score_dict.items(), key=lambda item: item[1], reverse=True)
-            for code, score in sorted_codes:
-                beautified_figure, error_message, _ = self._execute(code)
-                if beautified_figure:
-                    break
         else:
-            beautified_figure = None
-
-
-        with beautified_vis_widget:
-            if beautified_figure:
-                # Display the beautified figure
-                display(beautified_figure)
+            # We use the highest scoring code to execute the final beautified visualization.
+            if highest_scoring_code is not None:
+                beautified_figure, error_message, _ = self._execute(highest_scoring_code)
+            # First condition is not really needed, but it is here for clarity.
+            elif highest_scoring_code is None and last_working_code is not None:
+                beautified_figure, error_message, _ = self._execute(last_working_code)
+            # If for some reason both didn't work, we check the code_score dictionary for the highest scoring code.
+            elif code_score_dict:
+                # sort the dictionary by score, and iteratively try to execute the code with the highest score.
+                sorted_codes = sorted(code_score_dict.items(), key=lambda item: item[1], reverse=True)
+                for code, score in sorted_codes:
+                    beautified_figure, error_message, _ = self._execute(code)
+                    if beautified_figure:
+                        break
             else:
-                print(f"No valid beautified figure was generated within the allowed {self.max_fix_attempts} attempts.")
+                beautified_figure = None
+            # If we have a beautified figure, display it.
+            with beautified_vis_widget:
+                if beautified_figure is not None:
+                    display(beautified_figure)
+                else:
+                    print(
+                        f"No valid beautified figure was generated within the allowed {self.max_fix_attempts} attempts.")
 
         plt.close('all')  # Close all figures to avoid displaying them outside the widget.
 

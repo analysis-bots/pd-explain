@@ -51,6 +51,23 @@ class SimpleAutomatedExplorationVisualizer:
         self.metainsight_beautify_code = None
         self.query_tree_beautify_code = None
         self.verbose = verbose
+        # Annoying case that sometimes happens: visualization_queries can be a list of strings that can not be
+        # converted to integers, such as 'query 1', 'query 2', etc.
+        # We will try to deal with that here
+        for i, query_idx in enumerate(self.visualization_queries):
+            try:
+                # Try to convert the query index to an integer
+                self.visualization_queries[i] = int(query_idx.strip() if isinstance(query_idx, str) else query_idx)
+            except ValueError:
+                # If it fails, we lower the string, split it by spaces, and try to find the first integer in it.
+                parts = query_idx.lower().split()
+                for part in parts:
+                    try:
+                        self.visualization_queries[i] = int(part)
+                        break  # If we found a valid integer, break out of the loop
+                    except ValueError:
+                        continue
+                # If we still can't convert it, we just leave it as is, and let the error handling later on skip it.
 
     def _create_query_string(self, query_idx: int) -> str:
         """
@@ -193,13 +210,6 @@ class SimpleAutomatedExplorationVisualizer:
                 height='100%',  # Set the height to 90vh to fill most of the screen
                 overflow_y='auto'  # Allow vertical scrolling if content is taller than 90vh
             )
-        )
-        disclaimer = widgets.HTML(
-            value="<p style='font-weight: bold; padding-bottom: 10px; font-size: 14px;'>"
-                  "The queries presented in this tab are the ones deemed most important by the LLM when drawing up the conclusions "
-                  "from the analysis. <br>"
-                  "As such, these may not truly be the most important queries performed during the analysis."
-                  "</p>"
         )
         #  Create the “Main Query Visualizations” tab,
         #  which itself has subtabs for each query.

@@ -5,56 +5,43 @@ import importlib.util
 
 
 class VisualizationCodeExtractor:
-
     KNOWLEDGE_BANK: Dict[str, List[Dict[str, Optional[str]]]] = {
         'MetaInsight': [
             {
-                'package': 'pd_explain',
-                'file': 'metainsight_explainer.py',
-                'class': 'MetaInsightExplainer',
-                'function': 'visualize'
-            },
-            {
                 'package': 'external_explainers',
                 'file': 'meta_insight.py',
                 'class': 'MetaInsight',
-                'function': 'visualize'
+                'function': '__init__'
             },
             {
                 'package': 'external_explainers',
-                'file': 'patterns.py',
-                'class': 'UnimodalityPattern',
-                'function': 'visualize_many'
+                'file': 'data_pattern.py',
+                'class': 'BasicDataPattern',
+                'function': '__init__'
             },
             {
                 'package': 'external_explainers',
-                'file': 'patterns.py',
-                'class': 'TrendPattern',
-                'function': 'visualize_many'
+                'file': 'data_pattern.py',
+                'class': 'BasicDataPattern',
+                'function': '__init__'
             },
             {
                 'package': 'external_explainers',
-                'file': 'patterns.py',
-                'class': 'OutlierPattern',
-                'function': 'visualize_many'
+                'file': 'data_scope.py',
+                'class': 'DataScope',
+                'function': '__init__'
             },
             {
                 'package': 'external_explainers',
-                'file': 'patterns.py',
-                'class': 'CyclePattern',
-                'function': 'visualize_many'
+                'file': 'data_scope.py',
+                'class': 'HomogenousDataScope',
+                'function': '__init__'
             },
             {
                 'package': 'external_explainers',
-                'file': 'meta_insight.py',
-                'class': 'MetaInsight',
-                'function': '_create_labels'
-            },
-            {
-                'package': 'external_explainers',
-                'file': 'meta_insight.py',
-                'class': 'MetaInsight',
-                'function': '_create_commonness_set_title'
+                'file': 'pattern_base_classes.py',
+                'class': 'PatternBase',
+                'function': '__init__'
             },
         ],
         'fedex-gb': [
@@ -109,7 +96,7 @@ class VisualizationCodeExtractor:
             {
                 'package': 'fedex_generator',
                 'file': 'DiversityMeasure.py',
-                'class': None, # No class, top-level function
+                'class': None,  # No class, top-level function
                 'function': 'draw_bar'
             }
         ],
@@ -314,7 +301,13 @@ class VisualizationCodeExtractor:
 
             pkg_path = self.package_paths.get(pkg_name)
             if not pkg_path:
-                continue
+                # Our local packages use snake_case, but the pip packages use kebab-case.
+                # That might have been the reason for not finding the file.
+                # So, we try to find the file with the kebab-case name.
+                pkg_path = self.package_paths.get(pkg_name.replace('_', '-'))
+                if not pkg_path:
+                    # If we still can't find the package, skip this function.
+                    continue
 
             file_path = self._find_file_in_package(pkg_path, file_name)
             if not file_path:
@@ -368,7 +361,8 @@ class VisualizationCodeExtractor:
             return file_content
         return ast.get_source_segment(file_content, func_node)
 
-    def _find_function_node(self, file_ast: ast.Module, class_name: Optional[str], func_name: str) -> Optional[ast.FunctionDef | ast.Module]:
+    def _find_function_node(self, file_ast: ast.Module, class_name: Optional[str], func_name: str) -> Optional[
+        ast.FunctionDef | ast.Module | ast.ClassDef]:
         """
         Finds the AST node for a specific function within a file's AST.
 
@@ -381,6 +375,9 @@ class VisualizationCodeExtractor:
             # Search within a specific class.
             for node in file_ast.body:
                 if isinstance(node, ast.ClassDef) and node.name == class_name:
+                    if func_name is None:
+                        # If no function name is provided, return the entire class AST.
+                        return node
                     for sub_node in node.body:
                         if isinstance(sub_node, ast.FunctionDef) and sub_node.name == func_name:
                             return sub_node
@@ -393,4 +390,3 @@ class VisualizationCodeExtractor:
                 if isinstance(node, ast.FunctionDef) and node.name == func_name:
                     return node
         return None
-

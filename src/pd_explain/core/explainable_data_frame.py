@@ -135,8 +135,7 @@ class ExpDataFrame(pd.DataFrame):
         )
         return recommender.recommend()
 
-    def automated_data_exploration(self, user_query: str, num_iterations: int = 10,
-                                   queries_per_iteration: int = 5, fedex_top_k: int = 3, metainsight_top_k: int = 2,
+    def automated_data_exploration(self, user_query: str, num_iterations: int = 10, fedex_top_k: int = 3, metainsight_top_k: int = 2,
                                    metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
                                    visualization_type: Literal['graph', 'simple'] = 'graph',
                                    verbose: bool = False,
@@ -190,8 +189,6 @@ class ExpDataFrame(pd.DataFrame):
             raise ValueError("user_query must be a string describing what you want to analyze in the DataFrame.")
         if not isinstance(num_iterations, int) or num_iterations <= 0:
             raise ValueError("num_iterations must be a positive integer.")
-        if not isinstance(queries_per_iteration, int) or queries_per_iteration <= 0:
-            raise ValueError("queries_per_iteration must be a positive integer.")
         if not isinstance(fedex_top_k, int) or fedex_top_k <= 0:
             raise ValueError("fedex_top_k must be a positive integer.")
         if not isinstance(metainsight_top_k, int) or metainsight_top_k <= 0:
@@ -214,7 +211,6 @@ class ExpDataFrame(pd.DataFrame):
         self.data_explorer.do_llm_action(
             user_query=user_query,
             num_iterations=num_iterations,
-            queries_per_iteration=queries_per_iteration,
             fedex_top_k=fedex_top_k,
             metainsight_top_k=metainsight_top_k,
             metainsight_max_filter_cols=metainsight_max_filter_cols,
@@ -271,7 +267,8 @@ class ExpDataFrame(pd.DataFrame):
         return data_explorer.do_follow_up_action(visualization_type=visualization_type,
                                                  history=data_explorer_attributes['history'],
                                                  query_and_results=data_explorer_attributes['query_and_results'],
-                                                 visualization_queries=data_explorer_attributes['visualization_queries'],
+                                                 visualization_queries=data_explorer_attributes[
+                                                     'visualization_queries'],
                                                  query_tree=data_explorer_attributes['query_tree'],
                                                  final_report=data_explorer_attributes['final_report'],
                                                  source_name=data_explorer_attributes['source_name'],
@@ -279,12 +276,13 @@ class ExpDataFrame(pd.DataFrame):
                                                  beautify_metainsight=data_explorer_attributes['beautify_metainsight'],
                                                  beautify_query_tree=data_explorer_attributes['beautify_query_tree'],
                                                  fedex_beautify_code=data_explorer_attributes['fedex_beautify_code'],
-                                                 metainsight_beautify_code=data_explorer_attributes['metainsight_beautify_code'],
-                                                 query_tree_beautify_code=data_explorer_attributes['query_tree_beautify_code'])
+                                                 metainsight_beautify_code=data_explorer_attributes[
+                                                     'metainsight_beautify_code'],
+                                                 query_tree_beautify_code=data_explorer_attributes[
+                                                     'query_tree_beautify_code'])
 
     def follow_up_with_automated_data_exploration(self, explanation_index: int = None,
-                                                  num_iterations: int = 10,
-                                                  queries_per_iteration: int = 5, fedex_top_k: int = 3,
+                                                  num_iterations: int = 10, fedex_top_k: int = 3,
                                                   metainsight_top_k: int = 2,
                                                   metainsight_max_filter_cols: int = 3,
                                                   metainsight_max_agg_cols: int = 3,
@@ -343,12 +341,13 @@ class ExpDataFrame(pd.DataFrame):
 
         description = self.last_used_explainer.get_explanation_in_textual_description(index=explanation_index)
         explorer_query = f"{description}\n"
-        explorer_query += ("Your goal is to use the data to follow up on the findings, to try and provide context to them "
-                           "and further explain them and draw more information from them using the data, by querying the original "
-                           "dataframe that had no queries applied to it yet.\n"
-                           "If there is context guessed by a LLM included, in your report you should state whether your findings "
-                           "corroborate, reject, or are inconclusive about the context provided. You may try to use this "
-                           "context as a starting point for what to look for, but do not base your entire analysis on it.\n")
+        explorer_query += (
+            "Your goal is to use the data to follow up on the findings, to try and provide context to them "
+            "and further explain them and draw more information from them using the data, by querying the original "
+            "dataframe that had no queries applied to it yet.\n"
+            "If there is context guessed by a LLM included, in your report you should state whether your findings "
+            "corroborate, reject, or are inconclusive about the context provided. You may try to use this "
+            "context as a starting point for what to look for, but do not base your entire analysis on it.\n")
         input_df = None
         if self.operation is not None:
             if hasattr(self.operation, 'source_df'):
@@ -358,7 +357,6 @@ class ExpDataFrame(pd.DataFrame):
         return self.automated_data_exploration(
             user_query=explorer_query,
             num_iterations=num_iterations,
-            queries_per_iteration=queries_per_iteration,
             fedex_top_k=fedex_top_k,
             metainsight_top_k=metainsight_top_k,
             metainsight_max_filter_cols=metainsight_max_filter_cols,
@@ -1144,6 +1142,8 @@ class ExpDataFrame(pd.DataFrame):
                 log_query: bool = False,
                 display_mode: Literal['grid', 'carousel'] = 'grid',
                 beautify: bool = False, beautify_max_fix_attempts: int = 10, silent_beautify: bool = True,
+                max_labels_per_plot: int = 8,
+                max_common_categories_per_plot: int = 3,
                 ):
         """
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
@@ -1160,7 +1160,7 @@ class ExpDataFrame(pd.DataFrame):
         of the total number of samples. Defaults to 5000, which is also the minimum value.
         :param schema: Fedex explainer. Result columns, can change columns name and ignored columns.
         :param top_k: Fedex explainer. Number of explanations.
-        :param figs_in_row: Fedex explainer. Number of explanations figs in one row.
+        :param figs_in_row: Fedex and MetaInsight explainers. Number of explanations figs in one row.
         :param show_scores: Fedex explainer. show scores on explanation.
         :param title: Fedex / outlier / shapley explainers. explanation title.
         :param corr_TH: Fedex explainer. Correlation threshold, above this threshold the columns are considered correlated.
@@ -1243,6 +1243,11 @@ class ExpDataFrame(pd.DataFrame):
         returned code from the LLM to make it work or improve the visualization,, if the beautify parameter is set to True. Defaults to 10.
         :param silent_beautify: MetaInsight and Fedex explainers. If True, the beautify process will not print any information
         about its progress, and will only return the final result. Defaults to False.
+        :param max_labels_per_plot: MetaInsight explainer. The maximum number of labels to display per plot. If there are more labels, they will be truncated.
+        There may be more labels than this number in the final plot if there are more than this number of indexes with
+        highlights in them.
+        :param max_common_categories_per_plot: MetaInsight explainer. The maximum number of common categories to display per plot. If there are more categories,
+        they will be grouped together and their average value will be displayed.
 
         :return: A visualization of the explanation, if possible. Otherwise, the raw explanation.
         """
@@ -1289,6 +1294,8 @@ class ExpDataFrame(pd.DataFrame):
                                              display_mode=display_mode, beautify=beautify,
                                              beautify_max_fix_attempts=beautify_max_fix_attempts,
                                              silent_beautify=silent_beautify,
+                                             max_labels_per_plot=max_labels_per_plot,
+                                             max_common_categories_per_plot=max_common_categories_per_plot
                                              )
         self.last_used_explainer = explainer
         explanation = explainer.generate_explanation()

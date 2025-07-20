@@ -404,7 +404,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                                    consts.DEFAULT_BEAUTIFICATION_LLM_PROVIDER_URL)
         )
 
-        encoded_image: Optional[str] = self._encode_visualization(self.visualization_object)
+        original_encoded_image: Optional[str] = self._encode_visualization(self.visualization_object)
 
         system_message: str = self._define_task()
         # Create a data summary
@@ -461,7 +461,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f'data:image/jpeg;base64,{encoded_image}',
+                            "url": f'data:image/jpeg;base64,{original_encoded_image}',
                         },
                     },
                 ],
@@ -533,11 +533,15 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                     encoded_image = self._encode_visualization(beautified_figure)
                     user_message_text = (
                         f"This is iteration {i + 1} / {self.max_fix_attempts} of the iterative improvement process.\n"
+                        f"You will receive images, in this order: the original visualization (as a reminder) and the generated visualization "
+                        f"after running the code you generated.\n"
                         f"You have three tasks, in this order:\n"
                         f"1. Describe in detail what you see in the visualization, including any issues or areas for improvement. "
+                        f"If there are inconsistencies between the original visualization and the generated one or important information that is missing, "
+                        f"very clearly point them out in this description.\n"
                         f"This should be in between <description> and </description> tags.\n"
                         f"2. Rate the visualization on a scale from 0 to 10, where 10 is perfect and 0 is completely unusable. "
-                        f"A score of 10 will immediately approve the visualization, while a score below that will require you to improve it. "
+                        f"A score of 9.5 or higher will immediately approve the visualization, while a score below that will require you to improve it. "
                         f"This should be in between <score> and </score> tags.\n"
                         f"A score of 9.0 should mean the the visualization is good (but not completely perfect), any further improvements to it are minor, and "
                         f"are a waste of tokens and paying for LLM API calls.\n"
@@ -550,6 +554,12 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                             "role": "user",
                             "content": [
                                 {"type": "text", "text": user_message_text},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f'data:image/jpeg;base64,{original_encoded_image}',
+                                    },
+                                },
                                 {
                                     "type": "image_url",
                                     "image_url": {

@@ -42,7 +42,7 @@ class VisualizationCodeExtractor:
                 'file': 'pattern_base_classes.py',
                 'class': 'PatternBase',
                 'function': '__init__'
-            }
+            },
         ],
         'fedex-gb': [
             {
@@ -362,7 +362,7 @@ class VisualizationCodeExtractor:
         return ast.get_source_segment(file_content, func_node)
 
     def _find_function_node(self, file_ast: ast.Module, class_name: Optional[str], func_name: str) -> Optional[
-        ast.FunctionDef | ast.Module]:
+        ast.FunctionDef | ast.Module | ast.ClassDef]:
         """
         Finds the AST node for a specific function within a file's AST.
 
@@ -375,6 +375,9 @@ class VisualizationCodeExtractor:
             # Search within a specific class.
             for node in file_ast.body:
                 if isinstance(node, ast.ClassDef) and node.name == class_name:
+                    if func_name is None:
+                        # If no function name is provided, return the entire class AST.
+                        return node
                     for sub_node in node.body:
                         if isinstance(sub_node, ast.FunctionDef) and sub_node.name == func_name:
                             return sub_node

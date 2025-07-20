@@ -451,11 +451,17 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 if verbose:
                     print(
                         f"\t - Error occurred while applying query: {result.generating_query} - {result.result}")
+                    error_str = str(result.result)
+                    # Edge case - error string is too long, truncate it to 100 characters.
+                    # I have only seen it happen once, when it produced an error string "could not convert key '<=50k''>50k'
+                    # repeated some 30000 times, which bricked the process.
+                    if len(error_str) > 100:
+                        error_str = error_str[:100] + "..."
                     results.append(
                         QueryResultObject(
                             fedex=None,
                             metainsight=None,
-                            error=str(result.result),
+                            error=error_str,
                         )
                     )
             else:
@@ -469,7 +475,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                         top_k=fedex_top_k,
                         do_not_visualize=True,
                         log_query=False,
-                        display_mode='carousel' if not self.beautify_fedex else 'grid'
+                        display_mode='grid'
                     )
                     res.fedex = result_df.last_used_explainer
                     # Store the raw FedEx findings in the query and results mapping
@@ -494,7 +500,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                         do_not_visualize=True,
                         max_filter_columns=metainsight_max_filter_cols,
                         max_aggregation_columns=metainsight_max_agg_cols,
-                        display_mode='carousel' if not self.beautify_metainsight else 'grid'
+                        display_mode='grid'
                     )
                     metainsight_findings = [finding.__str__() for finding in metainsight_findings]
                     # Store the MetaInsight objects in the query and results mapping
@@ -692,6 +698,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     metainsight_max_agg_cols=metainsight_max_agg_cols,
                     verbose=verbose
                 )
+                all_errors = True
                 for idx, (apply_res, analysis_res) in enumerate(zip(new_results, analysis_results)):
                     if apply_res.error_occurred:
                         history = history._append({
@@ -705,6 +712,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             "query_findings": None
                         }, ignore_index=True)
                     else:
+                        all_errors = False
                         history = history._append({
                             "query": f"{apply_res.index}: {apply_res.generating_query}",
                             "fedex_explainer_findings": analysis_res.fedex_findings,
@@ -721,6 +729,17 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     query_and_results[curr_index] = analysis_res
                     # Update the result history mapping with the new results
                     result_history_mapping[len(history) - 1] = apply_res.result
+                if all_errors:
+                    if verbose:
+                        print(f"\t - All queries in iteration {iteration_num + 1} failed with errors. ")
+                    if iterations_added < max_iterations_to_add:
+                        iterations_added += 1
+                        max_iterations += 1
+                        if verbose:
+                            print(f"\t - Adding one additional iteration to compensate, now {max_iterations} iterations in total.")
+                    else:
+                        if verbose:
+                            print(f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
                 iteration_num += 1
 
             if history.empty:

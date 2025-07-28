@@ -1,3 +1,8 @@
+"""
+This feature is still in Beta, and is not yet ready for production use.
+While it works mostly fine for fedex, it is not yet ready for other use cases.
+"""
+
 import base64
 import io
 import json

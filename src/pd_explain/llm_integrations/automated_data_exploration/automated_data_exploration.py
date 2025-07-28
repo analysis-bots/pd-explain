@@ -60,6 +60,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             self.beautify_query_tree = True
         self.visualizer = None
         self.verbose = False
+        self.log = []  # A list to store logs of the process, for debugging and analysis purposes.
 
     def _define_task(self) -> str:
         """
@@ -350,11 +351,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         """
         # At the end of the iterations, generate a final report
         final_report_system_message = ("You are part of an automated data exploration system on Pandas DataFrames. "
-                                       "You have two tasks."
-                                       "The first is to generate a final report summarizing the findings from an automated analysis "
+                                       "Your task generate a final report summarizing the findings from an automated analysis "
                                        "done according to a user query. "
-                                       "The second is to point out which queries were most important in the analysis, so they "
-                                       "can be visualized to the user as part of the final report. "
                                        "You will be given a textual summary of the queries that have been used for the analysis, along "
                                        "with the findings derived from those queries."
                                        )
@@ -383,12 +381,13 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         final_report_user_message += (f"Ignore the error column, it is not relevant for the final report.\n"
                                       f"Extract the findings from the history, and generate a final report summarizing the findings, "
                                       f"according to the user query. This report, while it should be concise, should be detailed enough for the user to "
-                                      f"understand and draw conclusions from. Every conclusion should list exactly which queries it was drawn from. \n"
-                                      f"Provide the report surrounded by <report> and </report> tags, so it can be easily extracted programmatically. "
-                                      f"Also, provide a list of the most important queries that were used in the analysis. This list "
-                                      f"should be a list of indexes from the history DataFrame, with a * symbol before each index and a new line after each index. "
-                                      f"This list should be surrounded by <vis> and </vis> tags, so it can be easily extracted programmatically. "
-                                      f"This list should be short, and only contain the most important queries that were used in the analysis. ")
+                                      f"understand and draw conclusions from.\n"
+                                      f"Every conclusion should list exactly which queries it was drawn from. "
+                                      f"This referencing of queries should always be done in the format (Query x, Query y, ...) - i.e., referencing within "
+                                      f"brackets and with the word query before the exact query number. This format will be used to "
+                                      f"programmatically find these specified queries and create links for the user to click to get more "
+                                      f"info about the query, so it is very important you use this exact format.\n"
+                                      f"Provide the report surrounded by <report> and </report> tags, so it can be easily extracted programmatically.")
         return final_report_system_message, final_report_user_message
 
     def _generate_initial_plan(self, client: Client, user_query: str, num_iterations: int, data_description_str: str):
@@ -436,6 +435,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
     def _analyze_queries(self, query_results: List[apply_result],
                          fedex_top_k, metainsight_max_filter_cols,
                          metainsight_max_agg_cols,
+                         log: List[str],
                          verbose: bool = False) -> List[QueryResultObject]:
         """
         Use fedex and metainsight to analyze the queries and their results.
@@ -512,12 +512,14 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     res.metainsight_findings = "Error"
                     res.metainsight = None
                 results.append(res)
+                if metainsight_finding_str or fedex_finding_str:
+                    log_str =  f"\t - Query {result.generating_query} produced {fedex_finding_str if fedex_finding_str else ''} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}"
+                else:
+                    log_str = f"\t - Query {result.generating_query} produced no findings."
                 if verbose:
-                    if metainsight_finding_str or fedex_finding_str:
-                        print(
-                            f"\t - Query {result.generating_query} produced {fedex_finding_str} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}")
-                    else:
-                        print(f"\t - Query {result.generating_query} produced no findings.")
+                    print(log_str)
+                log.append(log_str)
+
         return results
 
     def do_llm_action(self, user_query: str = None, num_iterations: int = 10, fedex_top_k: int = 4, metainsight_top_k: int = 2,
@@ -545,6 +547,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         :raises ValueError: If the user_query is None or empty.
         """
         self.verbose = verbose
+        self.log = []
         if user_query is None or len(user_query) == 0:
             raise ValueError("User query must be provided for deep dive analysis.")
         history = pd.DataFrame(data=[["Original DataFrame", None, None, None, False, None, None]],
@@ -590,10 +593,12 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             client=client, user_query=user_query, num_iterations=max_iterations,
             data_description_str=data_description
         )
+        self.log.append(f"Initial plan generated: {plan}")
         try:
             while iteration_num < max_iterations:
                 if verbose:
                     print(f"Starting iteration {iteration_num + 1}/{max_iterations}")
+                self.log.append(f"Iteration {iteration_num + 1}/{max_iterations} started:")
                 # Format the history for the LLM
                 formatted_history = self._format_history(history, truncate_early_by=truncate_by)
                 # Create the user message for the LLM
@@ -696,7 +701,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     fedex_top_k=fedex_top_k,
                     metainsight_max_filter_cols=metainsight_max_filter_cols,
                     metainsight_max_agg_cols=metainsight_max_agg_cols,
-                    verbose=verbose
+                    verbose=verbose,
+                    log=self.log
                 )
                 all_errors = True
                 for idx, (apply_res, analysis_res) in enumerate(zip(new_results, analysis_results)):
@@ -794,7 +800,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             self.history = history
             self.final_report = final_report
             self.query_and_results = query_and_results
-            self.visualization_queries = visualization_queries
             self.query_tree = query_tree
             return history, final_report, query_and_results, visualization_queries, query_tree
         finally:
@@ -852,7 +857,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 source_name=source_name if source_name else self.source_name,
                 beautify_fedex=beautify_fedex,
                 beautify_metainsight=beautify_metainsight,
-                beautify_query_tree=beautify_query_tree
+                beautify_query_tree=beautify_query_tree,
+                log=self.log
             )
             visualizer.fedex_beautify_code = fedex_beautify_code
             visualizer.metainsight_beautify_code = metainsight_beautify_code
@@ -875,6 +881,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 beautify_metainsight=self.beautify_metainsight,
                 beautify_query_tree=self.beautify_query_tree,
                 verbose=self.verbose,
+                log=self.log
             )
             self.visualizer = visualizer
         return self.visualizer.visualize_data_exploration()

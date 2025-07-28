@@ -15,7 +15,7 @@ from pd_explain.llm_integrations import ExplanationReasoning
 from pd_explain.experimental.query_recommenders import QueryLogger
 from pd_explain.experimental.query_recommenders.query_score_functions import score_queries
 from pd_explain.visualizer_adaptations.carousel_adapter import CarouselAdapter
-from pd_explain.llm_integrations.visualization_beautifier import VisualizationBeautifier
+from pd_explain.llm_integrations.beta_integrations.visualization_beautifier import VisualizationBeautifier
 
 
 class FedexExplainer(ExplainerInterface):

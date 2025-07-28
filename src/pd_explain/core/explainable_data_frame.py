@@ -235,7 +235,7 @@ class ExpDataFrame(pd.DataFrame):
         attributes = {
             'history': self.data_explorer.history,
             'query_and_results': self.data_explorer.query_and_results,
-            'visualization_queries': self.data_explorer.visualization_queries,
+            'visualization_queries': self.data_explorer.referenced_queries,
             'query_tree': self.data_explorer.query_tree,
             'final_report': self.data_explorer.final_report,
             'source_name': self.data_explorer.source_name,
@@ -1149,7 +1149,8 @@ class ExpDataFrame(pd.DataFrame):
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
 
         :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'shapley', 'outlier', 'metainsight'. Note
-        that 'outlier' is only supported for series, not for dataframes.
+        that 'outlier' is only supported for series, not for dataframes. Please note that the metainsight explainer is still
+        in beta, and may not work as expected. Defaults to 'fedex'.
         :param attributes: All explainers. Which columns to consider in the explanation.
         :param use_sampling: All explainers. Whether or not to use sampling when generating an explanation. This can massively speed up
         the explanation generation process, but may result in less accurate explanations. We use sampling methods that
@@ -1239,6 +1240,7 @@ class ExpDataFrame(pd.DataFrame):
         a more visually appealing explanation for this specific case. Defaults to False. Please note that:
         1. This will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
         2. The output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
+        Please also note that this feature is still in beta, and may not work as expected.
         :param beautify_max_fix_attempts: MetaInsight and Fedex explainers. The maximum number of attempts to fix the
         returned code from the LLM to make it work or improve the visualization,, if the beautify parameter is set to True. Defaults to 10.
         :param silent_beautify: MetaInsight and Fedex explainers. If True, the beautify process will not print any information
@@ -1259,6 +1261,14 @@ class ExpDataFrame(pd.DataFrame):
             raise ValueError("Outlier explainer is not supported for multi-attribute dataframes, only for series.")
 
         use_sampling = use_sampling if use_sampling is not None else get_use_sampling_value()
+
+        if str.lower(explainer) == "metainsight":
+            warnings.warn("The MetaInsight explainer is still in beta, and may not work as expected. "
+                          "Please use with caution. ")
+        if beautify:
+            warnings.warn("The beautify feature is still in beta, and may not work as expected. "
+                          "It may also take a long time to run, depending on the LLM API response time. "
+                          "Please use with caution.")
 
         factory = ExplainerFactory()
         explainer = factory.create_explainer(explainer=explainer, operation=self.operation,

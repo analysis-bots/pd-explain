@@ -1,3 +1,9 @@
+"""
+Note: this feature is currently in beta.
+To whoever takes up the project next, please note that this code may still contain bugs and is not fully optimized.
+There are also still some issues with the visualizations, which are not yet satisfactory.
+"""
+
 import math
 from collections import defaultdict
 import numpy as np
@@ -6,7 +12,7 @@ import itertools
 import warnings
 
 import pandas as pd
-from matplotlib import pyplot as plt, gridspec
+from matplotlib import pyplot as plt
 from IPython.display import display
 
 from pd_explain.explainers.explainer_interface import ExplainerInterface
@@ -17,7 +23,7 @@ from fedex_generator.Operations.GroupBy import GroupBy
 from fedex_generator.Operations.Join import Join
 from fedex_generator.commons.utils import get_calling_params_name
 from pd_explain.visualizer_adaptations.carousel_adapter import CarouselAdapter
-from pd_explain.llm_integrations.visualization_beautifier import VisualizationBeautifier
+from pd_explain.llm_integrations.beta_integrations.visualization_beautifier import VisualizationBeautifier
 from pd_explain.llm_integrations.explanation_reasoning import ExplanationReasoning
 
 from typing import List, Tuple, Literal

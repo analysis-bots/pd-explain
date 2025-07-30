@@ -12,14 +12,14 @@ from pd_explain.llm_integrations.automated_data_exploration.data_structures impo
     tree_node
 
 
-class SimpleAutomatedExplorationVisualizer:
+class AutomatedExplorationVisualizer:
     """
     A class to visualize the results of an automated data exploration analysis performed by an LLM on a DataFrame.
     This class provides a tabbed interface to display the summary report, important queries, and the query tree.
     """
 
     def __init__(self, history: pd.DataFrame, final_report, query_and_results: dict[int, QueryResultObject],
-                 query_tree: QueryTree, log: list[str],
+                 query_tree: QueryTree, log: list[str] = None,
                  source_name: str = "Original DataFrame", beautify_fedex: bool = False,
                  beautify_metainsight: bool = False, beautify_query_tree: bool = False, verbose: bool = False,
                  *args,
@@ -39,13 +39,8 @@ class SimpleAutomatedExplorationVisualizer:
         :param beautify_query_tree: Whether to beautify the query tree visualizations using the LLM beautifier.
         """
         self.history = history
-        # Regex - find all queries in the specified format, i.e., "Query 1", "Query 2", etc.
-        # and replace them with <need_link> Query 1 </need_link>, so we can later easily find them and link to them.
-        referenced_queries_regex = r"\s*([Qq]uery)\s+\d+"
-        referenced_queries = re.findall(referenced_queries_regex, final_report)
-        # Take only the last part of the query, which is the index.
-        self.referenced_queries = [query.split()[-1] for query in referenced_queries if query.strip()]
-        self.final_report = re.sub(referenced_queries_regex, r"<need_link> \1 <\need_link>", final_report)
+        self.final_report = final_report
+        self.referenced_queries = self._find_referenced_queries()
         self.query_and_results = query_and_results
         self.query_tree = query_tree
         self.source_name = source_name
@@ -58,23 +53,6 @@ class SimpleAutomatedExplorationVisualizer:
         self.query_tree_beautify_code = None
         self.verbose = verbose
         self.log = log
-        # Annoying case that sometimes happens: visualization_queries can be a list of strings that can not be
-        # converted to integers, such as 'query 1', 'query 2', etc.
-        # We will deal with the conversion to integers here, and if it fails, we will try to find the first integer in the string.
-        for i, query_idx in enumerate(self.referenced_queries):
-            try:
-                # Try to convert the query index to an integer
-                self.referenced_queries[i] = int(query_idx.strip() if isinstance(query_idx, str) else query_idx)
-            except ValueError:
-                # If it fails, we lower the string, split it by spaces, and try to find the first integer in it.
-                parts = query_idx.lower().split()
-                for part in parts:
-                    try:
-                        self.referenced_queries[i] = int(part)
-                        break  # If we found a valid integer, break out of the loop
-                    except ValueError:
-                        continue
-                # If we still can't convert it, we just leave it as is, and let the error handling later on skip it.
 
     def _create_query_string(self, query_idx: int) -> str:
         """
@@ -334,268 +312,163 @@ class SimpleAutomatedExplorationVisualizer:
 
         return on_button_click
 
-    def _create_tree_node(self, node_index: int, query_tree_str: dict[int, str],
-                          parent_index: int = None) -> widgets.VBox | None:
+    def _find_referenced_queries(self) -> list[int]:
         """
-        Creates a tree node for the query tree visualization.
-        Each tree node is a button that, when clicked, opens a new tab with the visualization of the findings from
-        the explainers.
-        Each button displays the query string, the findings, and in the case there was an error in the query,
-        is painted red and becomes unclickable.
+        Finds all queries referenced in the final report and returns a list of their indices,
+        as well as a list of their text indexes in the final report.
 
-        :param node_index: The index of the tree node to create.
-        :param query_tree_str: A dictionary mapping query indices to their string representations.
+        :return: A tuple containing a list of referenced query indices and a list of their text indexes in the final report.
         """
-        # Create a button for the tree node
-        node_query_str = query_tree_str.get(node_index, None)
-        # Error handling: if we somehow passed an invalid index, return None
-        if node_query_str is None:
-            return None
-        node_row = self.history.iloc[node_index] if node_index < len(self.history) else None
-        # Error handling for the same case
-        if node_row is None:
-            return None
-        error = node_row['error']
+        # Regex - find all queries in the specified format, i.e., "Query 1", "Query 2", etc.
+        # and replace them with <need_link> Query 1 </need_link>, so we can later easily find them and link to them.
+        referenced_queries_regex = r"\s*[Qq]uery\s+\d+"
+        referenced_queries_iter = re.findall(referenced_queries_regex, self.final_report)
+        referenced_queries = set()
+        # Take only the last part of the query, which is the index.
+        for match in referenced_queries_iter:
+            referenced_queries.add(match.split(maxsplit=1)[-1])
+        # Convert the set to a list and sort it
+        referenced_queries = list(referenced_queries)
+        # Annoying case that sometimes happens: referenced queries can be a list of strings that can not be
+        # converted to integers, if the LLM gets the format wrong.
+        # We will deal with the conversion to integers here, and if it fails, we will try to find the first integer in the string.
+        for i, query_idx in enumerate(referenced_queries):
+            try:
+                # Try to convert the query index to an integer
+                referenced_queries[i] = int(query_idx.strip() if isinstance(query_idx, str) else query_idx)
+            except ValueError:
+                # If it fails, we lower the string, split it by spaces, and try to find the first integer in it.
+                parts = query_idx.lower().split()
+                for part in parts:
+                    try:
+                        self.referenced_queries[i] = int(part)
+                        break  # If we found a valid integer, break out of the loop
+                    except ValueError:
+                        continue
+                    # If we still can't convert it, we just leave it as is, and let the error handling later on skip it.
+        # Sort the referenced queries by their index
+        referenced_queries.sort()
+        # Return the list of referenced queries and their text indexes
+        return referenced_queries
 
-        # Create the text that will go into the visualization for this node.
-        query_description = node_row['query_description'] if 'query_description' in node_row else None
-        findings_description = node_row['query_findings'] if 'query_findings' in node_row else None
-        if query_description is not None:
-            button_title = f"Query {node_index}: {query_description}"
-        else:
-            button_title = f"Query {node_index}"
-        if findings_description is not None:
-            button_findings = f"Findings: {findings_description}"
-        else:
-            button_findings = None
-        title_html = widgets.HTML(
-            value=f"<h3 style='margin-top: 10px; margin-bottom: 5px;'>{button_title}</h3>",
-        )
-        if button_findings is not None:
-            findings_desc_html = widgets.HTML(
-                value=f"<h4 style='margin-bottom: 10px;'>{button_findings}</h4>",
-            )
-        else:
-            findings_desc_html = widgets.HTML()
-        fedex_finding_lines = node_row['fedex_explainer_findings']
-        metainsight_finding_lines = node_row['metainsight_explainer_findings']
-        finding_lines = ""
-        query_str = textwrap.fill(node_query_str, width=50).replace('\n', '<br>')
-        if node_index != 0:
-            finding_lines += f"<strong>Query:</strong> {query_str}"
-        if isinstance(fedex_finding_lines, list) and len(fedex_finding_lines) > 0:
-            if len(finding_lines) > 0:
-                finding_lines += "<br>"
-            finding_lines += f"<strong>FedEx Findings:</strong> {len(fedex_finding_lines)}"
-        if isinstance(metainsight_finding_lines, list) and len(metainsight_finding_lines) > 0:
-            if len(finding_lines) > 0:
-                finding_lines += "<br>"
-            finding_lines += f"<strong>MetaInsight Findings:</strong> {len(metainsight_finding_lines)}"
-        if parent_index is not None:
-            if len(finding_lines) > 0:
-                finding_lines += "<br>"
-            finding_lines += f"<strong>Parent:</strong> {parent_index if parent_index != 0 else 'Original DataFrame'}"
-        if len(finding_lines) > 0:
-            findings_html = widgets.HTML(
-                value=finding_lines if finding_lines else "<p>No findings available for this query.</p>",
-            )
-        else:
-            findings_html = widgets.HTML()
-
-        if node_index != 0 and error is None:
-            # If there are findings to visualize
-            if len(metainsight_finding_lines) > 0 or len(fedex_finding_lines) > 0:
-                button_description = f"Visualize findings for query {node_index}"
-                button_disabled = False
-            else:
-                # If there are no findings to visualize, we still create a button, but it is disabled
-                button_description = f"Nothing to visualize for query {node_index}"
-                button_disabled = True
-        elif node_index == 0:
-            button_description = f"Original DataFrame: {node_query_str}"
-            button_disabled = True
-        else:
-            button_description = f"Error computing query {node_index}"
-            button_disabled = True
-
-        button_layout = widgets.Layout(width='210px',
-                                       height='auto',
-                                       white_space='normal',
-                                       text_wrap='auto',
-                                       justify_self='center',
-                                       align_self='center',
-                                       )
-        if error is not None:
-            # If there was an error, create a red button that is unclickable
-            button = widgets.Button(
-                description=button_description,
-                disabled=True,
-                button_style='danger',
-                layout=button_layout,
-            )
-        else:
-            # If there was no error, create a clickable button
-            button = widgets.Button(
-                description=button_description,
-                disabled=button_disabled,
-                # Disable the button for the original DataFrame (index 0) as it has no findings
-                tooltip=f"Click to visualize findings for query {node_index}",
-                button_style='info' if node_index != 0 else 'primary',
-                layout=button_layout,
-            )
-
-            on_button_click = self._create_on_button_click_handler(
-                node_index=node_index,
-                query_tree_str=query_tree_str
-            )
-            button.on_click(on_button_click)
-
-        # Create a VBox to hold the button and the findings
-        tree_node_vbox = widgets.VBox(
-            children=[button, title_html, findings_desc_html, findings_html],
-            layout=widgets.Layout(
-                border='1px solid #ddd',
-                padding='10px',
-                margin='5px 0',
-                align_items='stretch',  # Ensures children expand to full width
-                width='100%',  # Important: take full width of parent VBox
-            )
-        )
-        return tree_node_vbox
-
-    def _measure_depth(self, node: tree_node) -> int:
+    def _create_summary_tab(self, query_tree_str) -> widgets.VBox:
         """
-        Measure the depth of a node in the query tree.
-        :param node: The tree node to measure the depth of.
-        :return: The depth of the node in the query tree.
+        Create a summary tab that displays the final report generated by the LLM with clickable query references.
         """
-        if node.source is None:
-            return 0
-        parent_node = self.query_tree.get_node(node.source)
-        if parent_node is None:
-            return 0
-        return 1 + self._measure_depth(parent_node)
-
-    def _create_query_tree_tab(self, query_tree_str: dict[int, str], ) -> widgets.HBox:
-        """
-        Create a tab for the query tree visualization.
-        :param query_tree_str: A dictionary mapping query indices to their string representations.
-        :return: A Tab widget containing the query tree visualization.
-        """
-        # The root, the original dataframe, is always at index 0
-        curr_node_index = 0
-        # Create the tree structure using BFS traversal
-        seen_set = set()
-        queue = [curr_node_index]
-        depth_map = defaultdict(list)
-        while len(queue) > 0:
-            # Pop the first node from the queue and make sure it has not been seen before
-            current_node_index = queue.pop(0)
-            if current_node_index in seen_set:
-                continue
-            seen_set.add(curr_node_index)
-            curr_node = self.query_tree[current_node_index]
-            # Add all of the children of the current node to the queue, if they have not been seen before
-            for child_index in curr_node.children:
-                if child_index not in seen_set:
-                    queue.append(child_index)
-            # Create a tree node for the current node
-            node_depth = self._measure_depth(curr_node)
-            new_node = self._create_tree_node(
-                node_index=current_node_index,
-                query_tree_str=query_tree_str,
-                parent_index=curr_node.source if curr_node.source is not None else None
-            )
-            # Place the tree node in the appropriate layer based on its depth, and connect an arrow to it
-            # from its parent node if it has one.
-            if new_node is not None:
-                depth_map[node_depth].append(new_node)
-
-        layers = []
-        for depth in depth_map.keys():
-            title_html = widgets.HTML(
-                value=f"<h3 style='text-align: center;'>Depth {depth}</h3>",
-                layout=widgets.Layout(
-                    width='100%',
-                    text_align='center',
-                    margin='10px 0'
-                )
-            )
-            # For each depth, add the tree nodes to the appropriate layer
-            new_layer = widgets.VBox(
-                layout=widgets.Layout(
-                    min_width='300px',  # Minimum width for each layer
-                    width='auto',  # Let width grow to fit content
-                    flex='1 1 0px',  # Allow all columns to have same width if possible
-                    align_items='stretch',  # Important: makes child nodes fill column width
-                    padding='20px',
-                ),
-                children=[title_html, *depth_map[depth]]
-            )
-            layers.append(new_layer)
-
-        query_tree_box = widgets.HBox(
-            layout=widgets.Layout(
-                width='100%',
-                height='100%',
-                overflow_y='auto',
-                overflow_x='auto',
-                overflow='auto',
-                display='flex',
-                flex_direction='row',
-                align_items='flex-start',
-                flex_flow='row nowrap',  # Ensure horizontal scroll
-                flex_wrap='nowrap'  # ensures horizontal arrangement, and overflow-x handles it
-            ),
-            children=layers
-        )
-        return query_tree_box
-
-
-    def _create_summary_tab(self) -> widgets.HTML:
-        """
-        Create a summary tab that displays the final report generated by the LLM.
-        Displays the report in a formatted HTML structure with appropriate styling, and adds
-        clickable links to each of the referenced queries in the report.
-        """
-        # Tab 0: Text Summary / HTML
         if self.final_report is None:
-            summary_html = "<p>No summary was generated.</p>"
-        else:
-            formatted_report = self.final_report.replace('\n\n', '</p><p>')
-            formatted_report = formatted_report.replace('\n', '<br>')
-            # Replace <need_link> and </need_link> with actual links to the queries
-            pattern = re.compile(r"<need_link>.*?</need_link>")
-            # Find all indexes of the queries in the report
-            query_indexes = [int(match.group(0).split()[-1]) for match in
-                                pattern.finditer(formatted_report)]
-            # Replace each <need_link> Query X </need_link> with a link to the query tab
-            for query_idx in query_indexes:
-                # Create a link to the query tab
-                link = f"<a href='#' onclick='document.querySelector(\"#tab_{query_idx}\").click();'>Query {query_idx}</a>"
-                formatted_report = formatted_report.replace(
-                    f"<need_link> Query {query_idx} </need_link>", link
+            return widgets.HTML(value="<p>No final report available.</p>")
+
+        # Add custom CSS to style buttons as links
+        css = """
+        <style>
+        .link-button {
+            background: none !important;
+            border: none !important;
+            padding: 0 !important;
+            color: #0645AD !important;
+            text-decoration: underline !important;
+            cursor: pointer !important;
+            font-family: inherit !important;
+            font-size: inherit !important;
+            line-height: inherit !important;
+        }
+        .link-button:hover {
+            color: #0b0080 !important;
+        }
+        </style>
+        """
+
+        # Prepare report with sections to split
+        formatted_report = self.final_report.replace('\n\n', '</p><p>')
+        formatted_report = formatted_report.replace('\n', '<br>')
+
+        # Process for bold text
+        pattern = re.compile(r'\*\*(.*?)\*\*')
+        formatted_report = pattern.sub(r'<strong>\1</strong>', formatted_report)
+
+        # Create containers for HTML sections and buttons
+        sections = []
+        current_text = ""
+
+        # Find and replace query references with unique markers
+        for query_idx in self.referenced_queries:
+            try:
+                query_idx = int(query_idx) if isinstance(query_idx, str) else query_idx
+                pattern = rf"\s*([Qq]uery)\s+{query_idx}\s*"
+                # Mark with a unique placeholder
+                formatted_report = re.sub(pattern, f"__QUERY_BUTTON_{query_idx}__", formatted_report)
+            except (ValueError, TypeError):
+                continue
+
+        # Split report at button markers and create HTML/button sequence
+        for part in re.split(r'__QUERY_BUTTON_(\d+)__', formatted_report):
+            if part.isdigit():
+                # This is a query reference, add current text first
+                if current_text:
+                    sections.append(widgets.HTML(value=current_text))
+                    current_text = ""
+
+                # Create a link-like button
+                query_idx = int(part)
+                button = widgets.Button(
+                    description=f"Query {query_idx}",
+                    tooltip=f"Click to view Query {query_idx}",
+                    layout=widgets.Layout(width='75px', height='auto', display='inline-block')
                 )
-            # Replace ** with <strong> and ** with </strong> for bold text
-            pattern = re.compile(r'\*\*(.*?)\*\*')
-            formatted_report = pattern.sub(r'<strong>\1</strong>', formatted_report)
-            summary_html = f"""
-            <div style='padding:20px; max-width:800px; line-height:1.5; font-family:Arial,sans-serif;'>
-                <p>{formatted_report}</p>
-                <br>
-                <br>
-                <p><strong>This report was generated by a LLM, and may contain inaccuracies or errors.</strong></p>
-                <p>Please review the findings and visualizations carefully, and use your own judgment to draw conclusions.</p>
-                <br>
-                <p>For more information about the queries the LLM deemed the most important when finalizing the report, please refer to the "Important Queries" tab.</p>
-                <p>Please note that the queries presented in this tab are the ones deemed most important by the LLM when drawing up the conclusions from the analysis, 
-                and may not truly be the most important queries.</p>
-                <br>
-                <p>To see the entire query tree and how the queries relate to each other, please refer to the "Query Tree" tab.</p>
-            </div>
-            """
-        summary_tab = widgets.HTML(value=summary_html)
-        return summary_tab
+                button.add_class('link-button')
+                button.on_click(self._create_on_button_click_handler(query_idx, query_tree_str))
+                sections.append(button)
+            else:
+                # This is regular text
+                current_text += part
+
+        # Add remaining text
+        if current_text:
+            sections.append(widgets.HTML(value=current_text))
+
+        # Add CSS and disclaimer
+        sections.insert(0, widgets.HTML(value=css))
+
+        disclaimer_html = """
+        <div style='max-width:800px; line-height:1.5; font-family:Arial,sans-serif;'>
+            <br>
+            <hr>
+            <p><strong>This report was generated by a LLM, and may contain inaccuracies or errors.</strong></p>
+            <p>Please review the findings and visualizations carefully, and use your own judgment to draw conclusions.</p>
+            <br>
+            <p>For more information about the queries the LLM deemed the most important when finalizing the report, please refer to the "Important Queries" tab.</p>
+            <p>Please note that the queries presented in this tab are the ones deemed most important by the LLM when drawing up the conclusions from the analysis,
+            and may not truly be the most important queries.</p>
+            <br>
+            <p>To see the entire query tree and how the queries relate to each other, please refer to the "Query Tree" tab.</p>
+        </div>
+        """
+        sections.append(widgets.HTML(value=disclaimer_html))
+
+        # Use HBox for each line to maintain inline flow of text and buttons
+        return widgets.VBox(
+            sections,
+            layout=widgets.Layout(width='100%', overflow_y='auto')
+        )
+
+
+    def _create_log_tab(self) -> widgets.HTML:
+        """
+        Create a tab that displays the log messages generated during the analysis.
+        This tab will show the log messages in a formatted HTML structure with appropriate styling.
+        """
+        if not self.log:
+            return widgets.HTML(value="<p>No log messages available.</p>")
+
+        formatted_log = "<br>".join(self.log)
+        formatted_log = formatted_log.replace('\n', '<br>')
+        log_html = f"""
+        <div style='padding:20px; max-width:100%; line-height:1.5; font-family:Arial,sans-serif;'>
+            <p>{formatted_log}</p>
+        </div>
+        """
+        log_tab = widgets.HTML(value=log_html)
+        return log_tab
 
     def visualize_data_exploration(self) -> widgets.Tab:
         """
@@ -686,20 +559,19 @@ class SimpleAutomatedExplorationVisualizer:
         )
         self.main_tabs = main_tabs  # Store the main tabs for later use in the close button handler
 
-        summary_tab = self._create_summary_tab()
+        summary_tab = self._create_summary_tab(query_tree_str)
 
         visualizations_subtabs = self._create_important_visualizations_tab(
             query_tree_str
         )
 
-        # Create a placeholder for Query Tree
-        query_tree_tab = self._create_query_tree_tab(query_tree_str)
+        log_tab = self._create_log_tab()
 
         # Hook everything into the main_tabs widget
-        main_tabs.children = [summary_tab, visualizations_subtabs, query_tree_tab]
+        main_tabs.children = [summary_tab, visualizations_subtabs, log_tab]
         main_tabs.set_title(0, "Summary")
-        main_tabs.set_title(1, "Important Queries")
-        main_tabs.set_title(2, "Query Tree")
+        main_tabs.set_title(1, "Referenced Queries")
+        main_tabs.set_title(2, "Log")
 
         # A complete hack to make the tabs display correctly in Jupyter notebook, so they won't be squished.Add commentMore actions
         display(

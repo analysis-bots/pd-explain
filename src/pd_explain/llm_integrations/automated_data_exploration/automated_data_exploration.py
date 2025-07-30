@@ -12,12 +12,11 @@ from together.error import InvalidRequestError
 
 from pd_explain.llm_integrations import Client
 from pd_explain.llm_integrations import consts
-from pd_explain.llm_integrations.automated_data_exploration.simple_visualizer import \
-    SimpleAutomatedExplorationVisualizer
+from pd_explain.llm_integrations.automated_data_exploration.visualizer import \
+    AutomatedExplorationVisualizer
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.automated_data_exploration.data_structures import apply_result, QueryResultObject, \
     QueryTree
-from pd_explain.llm_integrations.automated_data_exploration.graph_visualizer import GraphAutomatedExplorationVisualizer
 
 
 class AutomatedDataExploration(LLMIntegrationInterface):
@@ -49,7 +48,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         self.history = None
         self.final_report = None
         self.query_and_results = None
-        self.visualization_queries = None
         self.query_tree = None
         self.beautify_fedex = beautify_fedex
         self.beautify_metainsight = beautify_metainsight
@@ -635,6 +633,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                         else:
                             print(
                                 f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
+                    self.log.append(f"\t - Iteration failed - Invalid request error {e}. Potentially adding more iterations.")
                     iteration_num += 1
                     continue
 
@@ -654,6 +653,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             print(
                                 f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
                     iteration_num += 1
+                    self.log.append("\t Iteration failed to generate queries, potentially adding more iterations.")
                     continue
 
                 queries = queries.split("\n")
@@ -747,6 +747,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                         if verbose:
                             print(f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
                 iteration_num += 1
+                self.log.append(f"Iteration failed, potentially adding more iterations. ")
 
             if history.empty:
                 print_error = True
@@ -816,8 +817,9 @@ class AutomatedDataExploration(LLMIntegrationInterface):
 
     def do_follow_up_action(self, history: pd.DataFrame = None, final_report=None,
                             query_and_results: dict[int, QueryResultObject] = None,
-                            visualization_queries: list[int | str] = None, query_tree: QueryTree = None,
-                            source_name: str = None, visualization_type: Literal['graph', 'simple'] = "graph",
+                            query_tree: QueryTree = None,
+                            source_name: str = None,
+                            log: list[str] = None,
                             beautify_fedex: bool = False, beautify_metainsight: bool = False,
                             beautify_query_tree: bool = False,
                             fedex_beautify_code: str = None, metainsight_beautify_code: str = None,
@@ -832,9 +834,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         :param visualization_queries: A list of query indices that are deemed important for visualization. Optional.
         :param query_tree: A QueryTree object containing the structure of the queries and their ancestry. Optional.
         :param source_name: The name of the source DataFrame, if different from the default. Optional.
-        :param visualization_type: The type of visualization to use, either "rich" or "simple". Default is "rich".
-        Rich visualizations use interactive graphs for the query tree, while the simple visualization uses a much more
-        basic visualization.
         If all optional parameters (except for source_name) are provided, the method will visualize the deep dive
         using the provided parameters, enabling visualization without running the LLM again.
         If the parameters are not provided, it will use the results from the last run of do_llm_action() to visualize the deep dive.
@@ -845,13 +844,11 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         :return: The visualized deep dive results as a ipywidgets tab.
         """
         all_params_provided = history is not None and final_report is not None and query_and_results is not None \
-                              and visualization_queries is not None and query_tree is not None
-        visualizer_class = GraphAutomatedExplorationVisualizer if visualization_type == "graph" else SimpleAutomatedExplorationVisualizer
+                              and query_tree is not None
         if all_params_provided:
-            visualizer = visualizer_class(
+            visualizer = AutomatedExplorationVisualizer(
                 history=history,
                 query_and_results=query_and_results,
-                visualization_queries=visualization_queries,
                 query_tree=query_tree,
                 final_report=final_report,
                 source_name=source_name if source_name else self.source_name,
@@ -865,15 +862,14 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             visualizer.query_tree_beautify_code = query_tree_beautify_code
             return visualizer.visualize_data_exploration()
         all_self_params_exist = self.history is not None and self.final_report is not None \
-                                and self.query_and_results is not None and self.visualization_queries is not None \
+                                and self.query_and_results is not None \
                                 and self.query_tree is not None
         if not all_self_params_exist:
             raise ValueError("No deep dive analysis has been performed yet. Please run do_llm_action() first.")
         if self.visualizer is None:
-            visualizer = visualizer_class(
+            visualizer = AutomatedExplorationVisualizer(
                 history=self.history,
                 query_and_results=self.query_and_results,
-                visualization_queries=self.visualization_queries,
                 query_tree=self.query_tree,
                 final_report=self.final_report,
                 source_name=source_name if source_name else self.source_name,

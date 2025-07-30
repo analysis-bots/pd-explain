@@ -219,7 +219,7 @@ class ExpDataFrame(pd.DataFrame):
             max_iterations_to_add=max_iterations_to_add
         )
         # Visualize and save the results in the exploration_visualization property.
-        exploration_visualization = self.data_explorer.do_follow_up_action(visualization_type=visualization_type)
+        exploration_visualization = self.data_explorer.do_follow_up_action()
         return exploration_visualization
 
     def save_data_exploration(self, file_path: str):
@@ -235,7 +235,6 @@ class ExpDataFrame(pd.DataFrame):
         attributes = {
             'history': self.data_explorer.history,
             'query_and_results': self.data_explorer.query_and_results,
-            'visualization_queries': self.data_explorer.referenced_queries,
             'query_tree': self.data_explorer.query_tree,
             'final_report': self.data_explorer.final_report,
             'source_name': self.data_explorer.source_name,
@@ -245,6 +244,7 @@ class ExpDataFrame(pd.DataFrame):
             'fedex_beautify_code': self.data_explorer.visualizer.fedex_beautify_code,
             'metainsight_beautify_code': self.data_explorer.visualizer.metainsight_beautify_code,
             'query_tree_beautify_code': self.data_explorer.visualizer.query_tree_beautify_code,
+            'log': self.data_explorer.log,
         }
 
         with open(file_path, 'wb') as file:
@@ -264,15 +264,13 @@ class ExpDataFrame(pd.DataFrame):
             data_explorer_attributes = dill.load(file)
         # Don't actually need the dataframe here, as we are only visualizing the results.
         data_explorer = AutomatedDataExploration(pd.DataFrame())
-        return data_explorer.do_follow_up_action(visualization_type=visualization_type,
-                                                 history=data_explorer_attributes['history'],
+        return data_explorer.do_follow_up_action(history=data_explorer_attributes['history'],
                                                  query_and_results=data_explorer_attributes['query_and_results'],
-                                                 visualization_queries=data_explorer_attributes[
-                                                     'visualization_queries'],
                                                  query_tree=data_explorer_attributes['query_tree'],
                                                  final_report=data_explorer_attributes['final_report'],
                                                  source_name=data_explorer_attributes['source_name'],
                                                  beautify_fedex=data_explorer_attributes['beautify_fedex'],
+                                                 # log=data_explorer_attributes['log'],
                                                  beautify_metainsight=data_explorer_attributes['beautify_metainsight'],
                                                  beautify_query_tree=data_explorer_attributes['beautify_query_tree'],
                                                  fedex_beautify_code=data_explorer_attributes['fedex_beautify_code'],

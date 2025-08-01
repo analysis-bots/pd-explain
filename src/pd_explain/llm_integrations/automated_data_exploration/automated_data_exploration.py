@@ -1,6 +1,6 @@
 import itertools
 import math
-from typing import List, Any, Literal
+from typing import List, Any
 from collections import defaultdict
 import re
 import os
@@ -59,6 +59,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         self.visualizer = None
         self.verbose = False
         self.log = []  # A list to store logs of the process, for debugging and analysis purposes.
+        self.current_query_num = 1  # A counter to keep track of the current query number.
 
     def _define_task(self) -> str:
         """
@@ -433,7 +434,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
     def _analyze_queries(self, query_results: List[apply_result],
                          fedex_top_k, metainsight_max_filter_cols,
                          metainsight_max_agg_cols,
-                         log: List[str],
                          verbose: bool = False) -> List[QueryResultObject]:
         """
         Use fedex and metainsight to analyze the queries and their results.
@@ -446,22 +446,23 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         results: List[QueryResultObject] = []
         for idx, result in enumerate(query_results):
             if result.error_occurred:
+                error_str = str(result.result)
+                # Edge case - error string is too long, truncate it to 100 characters.
+                # I have only seen it happen once, when it produced an error string "could not convert key '<=50k''>50k'
+                # repeated some 30000 times, which bricked the process.
+                if len(error_str) > 100:
+                    error_str = error_str[:100] + "..."
+                log_str = f"\t - Error occurred while applying query: {result.generating_query} - {error_str}"
                 if verbose:
-                    print(
-                        f"\t - Error occurred while applying query: {result.generating_query} - {result.result}")
-                    error_str = str(result.result)
-                    # Edge case - error string is too long, truncate it to 100 characters.
-                    # I have only seen it happen once, when it produced an error string "could not convert key '<=50k''>50k'
-                    # repeated some 30000 times, which bricked the process.
-                    if len(error_str) > 100:
-                        error_str = error_str[:100] + "..."
-                    results.append(
-                        QueryResultObject(
-                            fedex=None,
-                            metainsight=None,
-                            error=error_str,
-                        )
+                    print(log_str)
+                self.log.append(log_str.replace("\t", "&emsp;"))
+                results.append(
+                    QueryResultObject(
+                        fedex=None,
+                        metainsight=None,
+                        error=error_str,
                     )
+                )
             else:
                 res = QueryResultObject()
                 result_df = result.result
@@ -486,8 +487,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     fedex_findings = [finding.replace("(in green)", "").replace("\n", " ").replace("\\", "") for
                                       finding in fedex_findings]
                     res.fedex_findings = fedex_findings
-                    if verbose:
-                        fedex_finding_str = f"{len(fedex_findings)} FEDEx findings"
+                    fedex_finding_str = f"{len(fedex_findings)} FEDEx findings"
                 except Exception as e:
                     res.fedex_findings = f"Error"
                     res.fedex = None
@@ -504,19 +504,19 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     # Store the MetaInsight objects in the query and results mapping
                     res.metainsight = result_df.last_used_explainer
                     res.metainsight_findings = metainsight_findings
-                    if verbose:
-                        metainsight_finding_str = f"{len(metainsight_findings)} MetaInsight findings"
+                    metainsight_finding_str = f"{len(metainsight_findings)} MetaInsight findings"
                 except Exception as e:
                     res.metainsight_findings = "Error"
                     res.metainsight = None
                 results.append(res)
                 if metainsight_finding_str or fedex_finding_str:
-                    log_str =  f"\t - Query {result.generating_query} produced {fedex_finding_str if fedex_finding_str else ''} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}"
+                    log_str =  f"\t - Query {self.current_query_num}: {result.generating_query} produced {fedex_finding_str if fedex_finding_str else ''} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}"
                 else:
-                    log_str = f"\t - Query {result.generating_query} produced no findings."
+                    log_str = f"\t - Query {self.current_query_num}: {result.generating_query} produced no findings."
                 if verbose:
                     print(log_str)
-                log.append(log_str)
+                self.log.append(log_str.replace("\t", "&emsp;"))
+                self.current_query_num += 1
 
         return results
 
@@ -591,7 +591,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             client=client, user_query=user_query, num_iterations=max_iterations,
             data_description_str=data_description
         )
-        self.log.append(f"Initial plan generated: {plan}")
+        self.log.append(f"Initial plan generated: {plan.replace('\t', '&emsp;')}")
         try:
             while iteration_num < max_iterations:
                 if verbose:
@@ -621,39 +621,43 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     )
                 except InvalidRequestError as e:
                     truncate_by += 10
+                    iteration_added = False
                     if iterations_added < max_iterations_to_add:
                         iterations_added += 1
                         max_iterations += 1
+                        iteration_added = True
                     if verbose:
                         print(f"\t - LLM request failed with error: {e}")
                         print(f"\t - Truncating history seen by the LLM by {truncate_by} rows and retrying...")
-                        if iterations_added <= max_iterations_to_add:
+                        if iteration_added:
                             print(
                                 f"\t - Adding one additional iteration to compensate, now {max_iterations} iterations in total.")
                         else:
                             print(
                                 f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
-                    self.log.append(f"\t - Iteration failed - Invalid request error {e}. Potentially adding more iterations.")
+                    self.log.append(f"&emsp; - Iteration failed - Invalid request error {e}. {'Adding additional iteration' if iteration_added else 'Not adding more iterations since maximum number of additional iterations reached.'}")
                     iteration_num += 1
                     continue
 
                 # Extract the queries from the response
                 queries = self._extract_response(response, "<queries>", "</queries>")
                 if queries is None or len(queries) == 0:
+                    iteration_added = False
+                    if iterations_added < max_iterations_to_add:
+                        iterations_added += 1
+                        max_iterations += 1
+                        iteration_added = True
                     if verbose:
                         print(
                             f"\t - LLM did not generate queries or got the format wrong and queries could not be extracted during iteration {iteration_num + 1}. ")
-                        if iterations_added < max_iterations_to_add:
-                            iterations_added += 1
-                            max_iterations += 1
-                        if iterations_added <= max_iterations_to_add:
+                        if iteration_added:
                             print(
                                 f"\t - Adding one additional iteration to compensate, now {max_iterations} iterations in total.")
                         else:
                             print(
                                 f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
                     iteration_num += 1
-                    self.log.append("\t Iteration failed to generate queries, potentially adding more iterations.")
+                    self.log.append(f"&emsp; - Iteration failed to generate queries. {'Adding additional iteration' if iteration_added else 'Not adding more iterations since maximum number of additional iterations reached.'}")
                     continue
 
                 queries = queries.split("\n")
@@ -689,6 +693,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             history.at[history_index, 'need_explanation'] = False
                 if verbose:
                     print(f"\t - Generated {len(queries_series)} queries for iteration {iteration_num + 1}")
+                self.log.append(f"&emsp; - Generated {len(queries_series)} queries")
                 # Apply the queries to the DataFrame and update the history
                 new_results = self._apply(queries_series, result_history_mapping)
                 if not new_results:
@@ -702,7 +707,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     metainsight_max_filter_cols=metainsight_max_filter_cols,
                     metainsight_max_agg_cols=metainsight_max_agg_cols,
                     verbose=verbose,
-                    log=self.log
                 )
                 all_errors = True
                 for idx, (apply_res, analysis_res) in enumerate(zip(new_results, analysis_results)):
@@ -735,19 +739,21 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     query_and_results[curr_index] = analysis_res
                     # Update the result history mapping with the new results
                     result_history_mapping[len(history) - 1] = apply_res.result
+
                 if all_errors:
-                    if verbose:
-                        print(f"\t - All queries in iteration {iteration_num + 1} failed with errors. ")
+                    iteration_added = False
                     if iterations_added < max_iterations_to_add:
                         iterations_added += 1
                         max_iterations += 1
-                        if verbose:
+                        iteration_added = True
+                    if verbose:
+                        print(f"\t - All queries in iteration {iteration_num + 1} failed with errors. ")
+                        if iteration_added:
                             print(f"\t - Adding one additional iteration to compensate, now {max_iterations} iterations in total.")
-                    else:
-                        if verbose:
+                        else:
                             print(f"\t - Not adding any more iterations as the maximum number of additional iterations ({max_iterations_to_add}) has been reached.")
+                    self.log.append(f"&emsp; - Iteration failed, all queries produced no findings. {'Adding additional iteration' if iteration_added else 'Not adding more iterations since maximum number of additional iterations reached.'}")
                 iteration_num += 1
-                self.log.append(f"Iteration failed, potentially adding more iterations. ")
 
             if history.empty:
                 print_error = True

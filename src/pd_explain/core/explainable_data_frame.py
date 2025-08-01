@@ -137,7 +137,6 @@ class ExpDataFrame(pd.DataFrame):
 
     def automated_data_exploration(self, user_query: str, num_iterations: int = 10, fedex_top_k: int = 3, metainsight_top_k: int = 2,
                                    metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
-                                   visualization_type: Literal['graph', 'simple'] = 'graph',
                                    verbose: bool = False,
                                    input_df: 'ExpDataFrame' = None,
                                    max_iterations_to_add: int = 3,
@@ -158,15 +157,11 @@ class ExpDataFrame(pd.DataFrame):
         column A and column B".
         :param num_iterations: Number of iterations to run the automated exploration for. Default is 10. Note that each iteration
         will call the LLM once.
-        :param queries_per_iteration: Number of queries to generate per iteration. Default is 5. This number is not set in
-        stone, and may go up during the process if the LLM's queries fail too often.
         :param fedex_top_k: Number of top findings to return from the FEDEx explainer. Default is 3.
         :param metainsight_top_k: Number of top findings to return from the MetaInsight explainer. Default is 2.
         :param metainsight_max_filter_cols: Maximum number of columns to analyze distribution of in the MetaInsight
         explainer. Default is 3.
         :param metainsight_max_agg_cols: Maximum number of columns to aggregate by in the MetaInsight explainer. Default is 3.
-        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
-        visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
         :param verbose: If True, will print additional information about the process. Default is False.
         :param input_df: Optional parameter to pass an input DataFrame to replace the self DataFrame.
         :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
@@ -284,7 +279,6 @@ class ExpDataFrame(pd.DataFrame):
                                                   metainsight_top_k: int = 2,
                                                   metainsight_max_filter_cols: int = 3,
                                                   metainsight_max_agg_cols: int = 3,
-                                                  visualization_type: Literal['graph', 'simple'] = 'graph',
                                                   verbose=False,
                                                   max_iterations_to_add: int = 3,
                                                   beautify_fedex_visualizations: bool = False,
@@ -308,14 +302,11 @@ class ExpDataFrame(pd.DataFrame):
                                     - Outlier explainer: Irrelevant, as it only has one explanation.
                                     All explainers but the Outlier explainer require at least one explanation index to be provided.
         :param num_iterations: Number of iterations to run the automated exploration for. Default is 10.
-        :param queries_per_iteration: Number of queries to generate per iteration. Default is 5.
         :param fedex_top_k: Number of top findings to return from the FEDEx explainer. Default is 3.
         :param metainsight_top_k: Number of top findings to return from the MetaInsight explainer. Default is 2.
         :param metainsight_max_filter_cols: Maximum number of columns to analyze distribution of in the MetaInsight
                                             explainer. Default is 3.
         :param metainsight_max_agg_cols: Maximum number of columns to aggregate by in the MetaInsight explainer. Default is 3.
-        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
-                                   visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
         :param verbose: If True, will print additional information about the process. Default is False.
         :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
         Default is 3.
@@ -359,7 +350,6 @@ class ExpDataFrame(pd.DataFrame):
             metainsight_top_k=metainsight_top_k,
             metainsight_max_filter_cols=metainsight_max_filter_cols,
             metainsight_max_agg_cols=metainsight_max_agg_cols,
-            visualization_type=visualization_type,
             verbose=verbose,
             input_df=input_df,
             max_iterations_to_add=max_iterations_to_add,

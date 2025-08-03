@@ -342,17 +342,33 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             num_closing_brackets = query_string.count('[')
             num_opening_brackets = query_string.count(']')
             if num_closing_brackets > num_opening_brackets:
-                # If there are more closing brackets than opening brackets, we iteratively remove the last closing bracket
-                # until the number of closing brackets is equal to the number of opening brackets.
+                # If there are more closing brackets than opening brackets, this usually happens where the LLM
+                # puts double square brackets somewhere in the queyr when it should not, for example: [[df]['column_name'] > 5]].
+                # We need to remove the extra closing brackets until the number of closing brackets matches the number
+                # of opening brackets.
+                query_string = re.sub(r'\[\[', '[', query_string)  # Replace [[ with [
+                query_string = re.sub(r']]', ']', query_string)  # Replace ]] with ]
+                # Recalculate the number of closing and opening brackets.
+                num_closing_brackets = query_string.count(']')
+                num_opening_brackets = query_string.count('[')
+                # If there are still more closing brackets than opening brackets, we remove closing brackets
+                # from the end of the query until they match.
+                # This is really just a guess that the extra closing brackets are at the end of the query,
+                # but the query won't work anyways if the number doesn't match, so we remove them and hope
+                # that was the issue.
                 while num_closing_brackets > num_opening_brackets:
-                    all_square_brackets = re.finditer(r']', query_string)
+                    square_brackets = re.finditer(r']', query_string)
+                    # Find the last closing square bracket in the query.
                     last_square_bracket = None
-                    for match in all_square_brackets:
-                        last_square_bracket = match.start()
+                    for match in square_brackets:
+                        last_square_bracket = match
                     if last_square_bracket is not None:
-                        query_string = query_string[:last_square_bracket] + query_string[last_square_bracket + 1:]
+                        # Remove the last closing square bracket.
+                        query_string = query_string[:last_square_bracket.start()] + query_string[last_square_bracket.end():]
+                    # Recalculate the number of closing and opening brackets.
                     num_closing_brackets = query_string.count(']')
                     num_opening_brackets = query_string.count('[')
+
             # Replace [df] placeholder with df_to_query
             query_string_fixed = query_string.replace("[df]", "df_to_query")
             # Apply the query to the DataFrame. We always query the original DataFrame, which is stored in result_mapping with index 0.

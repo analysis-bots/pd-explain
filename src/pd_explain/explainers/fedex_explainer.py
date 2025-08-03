@@ -204,7 +204,8 @@ class FedexExplainer(ExplainerInterface):
                 influence_vals=influence_vals,
                 source_name=source_name,
                 show_scores=show_scores,
-                added_text=added_explanations
+                added_text=added_explanations,
+                added_text_name="LLM Reasoning" if self._add_llm_context_explanations else None
             )
             if self._beautify:
                 plt.close(fig)  # Close the figure to avoid displaying it immediately
@@ -278,6 +279,7 @@ class FedexExplainer(ExplainerInterface):
                         source_name=source_name,
                         show_scores=show_scores,
                         added_text=added_explanations,
+                        added_text_name="LLM Reasoning" if self._add_llm_context_explanations else None
                     )
                     plt.close(fig)  # Close the figure to avoid displaying it immediately
                     adapter.capture_output(fig)  # Capture the output for the carousel

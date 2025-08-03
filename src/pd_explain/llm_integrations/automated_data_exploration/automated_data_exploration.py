@@ -73,7 +73,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "as well as the findings derived from those queries. You will not be given the actual DataFrame or query results. "
                 "If there was an error executing a query, it will be provided in the history as well. Make absolutely sure you do not repeat errors. "
                 "Your available operators are: filtering using boolean conditions and groupby with aggregation functions [mean, sum, count, nunique, min, max, median, std, sem, var, size, prod]."
-                "All other operators and functions, such as describe, apply, join, quantile, query, reset_index, etc. are illegal and will result in an error. "
+                "All other operators and functions, such as describe, apply, join, quantile, query, reset_index, sort_values, crosstab, etc. are illegal and will result in an error. "
                 "You can freely combine these operators or use lambda functions, but you must always return a DataFrame. "
                 "Do not ever select only a single column after performing an operation. If you perform column selection, it must always be multiple columns."
                 "Your queries must never create a Series object, they must always return a DataFrame. "
@@ -147,16 +147,19 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "findings are the most significant patterns detected in the data after the query was applied.\n")
 
     def _describe_output_format(self) -> str:
-        return (f"You are expected to generate a variable number of queries in each turn. "
-                f"Start with one or two queries at most. You can generate more queries in a single turn if you "
+        return (f"You are expected to generate a variable number of queries in each iteration. "
+                f"Start with one or two queries at most. You can generate more queries in a single iteration if you "
                 f"believe it is necessary to explore multiple paths based on the previous findings.\n "
-                f"Each query must be in the format index: query, where index is the index of the row in the history "
-                f"that you want to apply the query to. Use index 0 for the original DataFrame. "
-                "Example for a query on index i -  i: [x > 5], i: .groupby('column_name').mean(), etc. Never use a groupby within or as a filter query."
-                "Make sure you use the correct index for the query you want to apply, and never select an index above the current max index in the history. "
+                "Never use a groupby within or as a filter query."
                 "The query must be a valid Pandas query applicable using eval(f'df_to_query{query}'), where df_to_query is an the name of some "
                 "arbitrary dataframe (not given to you), and query is your own output. You should be aware of this syntax, and not add, for example,"
                 "round brackets to the beginning, or [df] to the beginning of the query, as that will result in an error. "
+                "The query name will be added by the system, so you should not add it yourself. For example, if you supply the query "
+                "[[df]['column_name'] > 5], it will be transformed to df_to_query[df_to_query['column_name'] > 5]. Trying to add this "
+                "yourself will result in an error. For example, [[df][df]['column_name'] == 5] is not a valid query, as it will result in an error, "
+                "while [[df]['column_name'] == 5] is a valid query. "
+                "This is for the case of filter queries. In the case of groupby queries, you need to add a . before the groupby, "
+                "i.e. .groupby('column_name') is a valid query, while groupby('column_name') and [df].groupby('column_name') are not. "
                 "Do not add round brackets anywhere unless you intend to call a function. Using round brackets for groupby(...), mean(), etc. is fine,"
                 "using round brackets for filtering is not fine, as it will result in an error. "
                 "If you need to use the DataFrame's name (for example to filter it), use the placeholder [df] in your query, and the system will replace it with the actual DataFrame name. "
@@ -164,11 +167,12 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "never be done outside of a filter query or column selection, and the inside of a filter query must never be any operation but simple comparisons. "
                 "For example, [[df].groupby('column_name').mean() > 5] is not a valid query, but [[df]['column_name'] > 5] is. "
                 f"The output must be a list of queries, where each row in the list starts with a * symbol and ends with a new line (provide it in list format even if you only have one query). "
+                f"There must never be multiple queries in a single row, even if separated by commas. "
                 f"The list should be surrounded by <queries> and </queries> tags. so it can be easily extracted programmatically. "
                 f"Avoid repeating queries that have already been applied in the history. "
                 f"If you use the std function, make sure to also specify the ddof parameters, otherwise std throws an error."
                 f"If you use the agg function, make sure to provide the aggregations as a dictionary, i.e. {{column_name: 'agg_func'}}, "
-                f"and not as any other type of format. Any other format except a valid Python dictionary will cause an error.\n"
+                f"and not as any other type of format. Any other format except a valid Python dictionary (such as a list) will cause an error.\n"
                 f"Make sure you always apply brackets correctly - every bracket of any kind must have an opening and closing bracket. "
                 f"The program will not be fix your bracket mistakes, and will throw an error if you do not apply brackets correctly. "
                 f"If you get unmatched bracket errors in the history, take a great amount of care to not repeat those mistakes.\n"
@@ -185,6 +189,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "These explanations should be stand-alone, and should not reference the history or previous queries.\n"
                 "Queries that require these explanations will have the words 'This query requires a summary of its findings, which will also be provided in the next iteration.' "
                 "explicitly stated. Only those queries need an explanation, and the rest of the queries do not need an explanation.\n"
+                "The format of each entry in this explanations list should be: query number: explanation, where the query number is the number of the query in the history. "
+                "Some example entries in the list may be: 4: ... \n 5: ... \n 6: ...\n"
                 "These two lists should not include query numbers, as those are not relevant and are already present in the history DataFrame.\n"
                 "Both of these lists must likewise be un-numbered lists, starting with a * character and separated by new-line characters.\n"
                 "The description list should be in order of the generated queries.\n"
@@ -275,11 +281,10 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     if row['need_explanation']:
                         summary_string += "This query requires a summary of its findings, which will also be provided in the next iteration.\n"
             else:
-                summary_string += f"This query failed with the following error: {error}\n"
+                summary_string += (f"This query failed with the following syntax error, which you must take great care "
+                                   f"to understand and not repeat: {error}\n")
 
         return summary_string
-
-
 
 
     def _apply(self, response: pd.Series, result_mapping: dict) -> List[apply_result]:
@@ -295,42 +300,75 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         new_results = []
         # Apply the queries from the response to the DataFrame and update the history.
         for query in response:
-            # Extract the index from the query, which is in the format index[query]
-            if not isinstance(query, str) or ':' not in query:
-                continue
-            index, query_string = query.split(':', 1)
-            try:
-                index = int(index.strip())
-            except ValueError:
-                # If the index is not an integer, we just default to 0
-                index = 0
-            query_string = query_string.strip()
+            query_string = query.strip()
             # Sometimes, the LLM puts decides that writing [[df].groupby...] is a good idea. It is not.
             if query_string.startswith("[[df].groupby("):
                 query_string = query_string[len("[[df]"):]
                 query_string = query_string[:-1]  # Remove the last character, which is the closing bracket
             # Likewise, the LLM can sometimes just decide to put [df] at the start of the query, which is not valid.
             # What is valid is [[df]... which is a filter query. [df] at the start just makes it end up getting replaced
-            # with df_to_query, resulting in an error.
+            # with df_to_querydf_to_query, resulting in an error.
             if query_string.startswith("[df]"):
                 query_string = query_string[len("[df]"):]
+            # Yet another mistake the LLM can make is to put df at the start of the query, which is not valid.
+            # It just ends up as df_to_querydf, which is not recognized as a variable.
+            if query_string.startswith("df"):
+                # If this df is followed by a dot, it is a groupby or similar operation, so we just remove it.
+                if len(query_string) > 2 and query_string[2] == '.':
+                    query_string = query_string[2:]
+                # If this df is followed by a square bracket, it is a filter query, so we actually want to add the
+                # missing square brackets.
+                elif len(query_string) > 2 and query_string[2] == '[':
+                    query_string = query_string[2:]
+                    query_string = f"[[df]{query_string}"
+                    # In this case, there is also a non-zero chance the bracket is not closed, so we check
+                    num_opening_brackets = query_string.count('[')
+                    num_closing_brackets = query_string.count(']')
+                    if num_opening_brackets > num_closing_brackets:
+                        # If there are more opening brackets than closing brackets, we find the first . in the query,
+                        # and add the closing bracket before it. If there is no . in the query, we just add the closing bracket at the end.
+                        dot_index = query_string.find('.')
+                        if dot_index != -1:
+                            query_string = query_string[:dot_index] + ']' + query_string[dot_index:]
+                        else:
+                            query_string += ']'
+            # Another fun error and common - [[df][df[... is a common mistake the LLM makes. Despite
+            # explicit instructions to not do that, it still does it.
+            if query_string.startswith("[[df][df["):
+                # The first [df] is the one we want to keep, so we remove the second one.
+                query_string = query_string[len("[[df][df["):]
+                query_string = "[[df]" + query_string  # Add the first [df] back
+            # Yet another common error - too many closing square brackets.
+            num_closing_brackets = query_string.count('[')
+            num_opening_brackets = query_string.count(']')
+            if num_closing_brackets > num_opening_brackets:
+                # If there are more closing brackets than opening brackets, we iteratively remove the last closing bracket
+                # until the number of closing brackets is equal to the number of opening brackets.
+                while num_closing_brackets > num_opening_brackets:
+                    all_square_brackets = re.finditer(r']', query_string)
+                    last_square_bracket = None
+                    for match in all_square_brackets:
+                        last_square_bracket = match.start()
+                    if last_square_bracket is not None:
+                        query_string = query_string[:last_square_bracket] + query_string[last_square_bracket + 1:]
+                    num_closing_brackets = query_string.count(']')
+                    num_opening_brackets = query_string.count('[')
             # Replace [df] placeholder with df_to_query
             query_string_fixed = query_string.replace("[df]", "df_to_query")
-            # Apply the query to the DataFrame
-            df_to_query = result_mapping.get(index, None)
-            if df_to_query is None:
-                index = 0
-                df_to_query = self.dataframe  # Default to the original DataFrame if index is not found
+            # Apply the query to the DataFrame. We always query the original DataFrame, which is stored in result_mapping with index 0.
+            df_to_query = result_mapping.get(0, None)
             try:
                 # Use eval to apply the query to the DataFrame
                 result = eval(f"df_to_query{query_string_fixed}")
                 # Store the result along with the index in the new results list
+                # The index parameter used to be for the originating query to allow for follow ups on the same query,
+                # but we have since decided to not allow that, so we always use index 0.
                 new_results.append(
-                    apply_result(index=index, result=result, generating_query=query_string, error_occurred=False)
+                    apply_result(index=0, result=result, generating_query=query_string, error_occurred=False)
                 )
             except Exception as e:
                 new_results.append(
-                    apply_result(index=index, result=e, generating_query=query_string, error_occurred=True)
+                    apply_result(index=0, result=e, generating_query=query_string, error_occurred=True)
                 )
 
         return new_results
@@ -386,6 +424,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                                       f"brackets and with the word query before the exact query number. This format will be used to "
                                       f"programmatically find these specified queries and create links for the user to click to get more "
                                       f"info about the query, so it is very important you use this exact format.\n"
+                                      f"Any attempt to use other formats, such as (Queries x, y, z) or Queries (x, y, z) will result in an error, "
+                                      f"as the system will not be able to extract the queries from the report. It is very important you use the exact format. \n"
                                       f"Provide the report surrounded by <report> and </report> tags, so it can be easily extracted programmatically.")
         return final_report_system_message, final_report_user_message
 
@@ -434,7 +474,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
     def _analyze_queries(self, query_results: List[apply_result],
                          fedex_top_k, metainsight_max_filter_cols,
                          metainsight_max_agg_cols,
-                         verbose: bool = False) -> List[QueryResultObject]:
+                         verbose: bool = False) -> tuple[List[QueryResultObject], List[int]]:
         """
         Use fedex and metainsight to analyze the queries and their results.
         :param query_results: A list of DataFrames containing the results of the queries.
@@ -444,6 +484,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         :param verbose: If True, print additional information during the analysis.
         """
         results: List[QueryResultObject] = []
+        total_findings = []
         for idx, result in enumerate(query_results):
             if result.error_occurred:
                 error_str = str(result.result)
@@ -452,7 +493,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 # repeated some 30000 times, which bricked the process.
                 if len(error_str) > 100:
                     error_str = error_str[:100] + "..."
-                log_str = f"\t - Error occurred while applying query: {result.generating_query} - {error_str}"
+                log_str = f"\t - Error occurred while applying query {self.current_query_num}: {result.generating_query} - {error_str}"
                 if verbose:
                     print(log_str)
                 self.log.append(log_str.replace("\t", "&emsp;"))
@@ -463,6 +504,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                         error=error_str,
                     )
                 )
+                total_findings.append(0)
             else:
                 res = QueryResultObject()
                 result_df = result.result
@@ -487,10 +529,12 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     fedex_findings = [finding.replace("(in green)", "").replace("\n", " ").replace("\\", "") for
                                       finding in fedex_findings]
                     res.fedex_findings = fedex_findings
+                    n_fedex_findings = len(fedex_findings)
                     fedex_finding_str = f"{len(fedex_findings)} FEDEx findings"
                 except Exception as e:
                     res.fedex_findings = f"Error"
                     res.fedex = None
+                    n_fedex_findings = 0
                 try:
                     metainsight_findings = result_df.explain(
                         explainer="metainsight",
@@ -504,21 +548,24 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     # Store the MetaInsight objects in the query and results mapping
                     res.metainsight = result_df.last_used_explainer
                     res.metainsight_findings = metainsight_findings
+                    n_metainsight_findings = len(metainsight_findings)
                     metainsight_finding_str = f"{len(metainsight_findings)} MetaInsight findings"
                 except Exception as e:
                     res.metainsight_findings = "Error"
                     res.metainsight = None
+                    n_metainsight_findings = 0
                 results.append(res)
-                if metainsight_finding_str or fedex_finding_str:
+                if n_fedex_findings > 0 or n_metainsight_findings > 0:
                     log_str =  f"\t - Query {self.current_query_num}: {result.generating_query} produced {fedex_finding_str if fedex_finding_str else ''} {'and ' if fedex_finding_str and metainsight_finding_str else ''}{metainsight_finding_str}"
                 else:
                     log_str = f"\t - Query {self.current_query_num}: {result.generating_query} produced no findings."
                 if verbose:
                     print(log_str)
                 self.log.append(log_str.replace("\t", "&emsp;"))
-                self.current_query_num += 1
+                total_findings.append(n_fedex_findings + n_metainsight_findings)
+            self.current_query_num += 1
 
-        return results
+        return results, total_findings
 
     def do_llm_action(self, user_query: str = None, num_iterations: int = 10, fedex_top_k: int = 4, metainsight_top_k: int = 2,
                       metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
@@ -677,20 +724,21 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     findings = findings.split("\n")
                     findings = [finding.replace("*", "").strip() for finding in findings if
                                 finding.strip() and finding.startswith('*')]
-                    # Add the findings to the history DataFrame, by adding them in order to the queries in the
-                    # history where need_explanation is True.
-                    history_index = 0
-                    if len(findings) > 0:
-                        for i, finding in enumerate(findings):
-                            # Find the first row in the history where need_explanation is True
-                            while history_index < history.shape[0] and not history.iloc[history_index][
-                                'need_explanation']:
-                                history_index += 1
-                            if history_index >= history.shape[0]:
-                                break
-                            # Add the finding to the history DataFrame
-                            history.at[history_index, 'query_findings'] = finding
-                            history.at[history_index, 'need_explanation'] = False
+                    # Add the findings to the history DataFrame
+                    for finding in findings:
+                        split = finding.split(":", 1)
+                        if len(split) < 2:
+                            continue
+                        query_num = split[0].strip()
+                        finding = split[1].strip()
+                        try:
+                            query_num = int(query_num.strip())
+                        except ValueError:
+                            continue
+                        query_num_row = history.iloc[query_num]
+                        if query_num_row['need_explanation']:
+                            history.at[query_num, 'query_findings'] = finding
+                            history.at[query_num, 'need_explanation'] = False
                 if verbose:
                     print(f"\t - Generated {len(queries_series)} queries for iteration {iteration_num + 1}")
                 self.log.append(f"&emsp; - Generated {len(queries_series)} queries")
@@ -701,7 +749,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     continue
 
                 # Update the history DataFrame with new results
-                analysis_results = self._analyze_queries(
+                analysis_results, findings_count = self._analyze_queries(
                     query_results=new_results,
                     fedex_top_k=fedex_top_k,
                     metainsight_max_filter_cols=metainsight_max_filter_cols,
@@ -722,7 +770,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             "query_findings": None
                         }, ignore_index=True)
                     else:
-                        all_errors = False
+                        if findings_count[idx] > 0:
+                            all_errors = False
                         history = history._append({
                             "query": f"{apply_res.index}: {apply_res.generating_query}",
                             "fedex_explainer_findings": analysis_res.fedex_findings,
@@ -850,7 +899,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         :return: The visualized deep dive results as a ipywidgets tab.
         """
         all_params_provided = history is not None and final_report is not None and query_and_results is not None \
-                              and query_tree is not None
+                              and query_tree is not None and log is not None
         if all_params_provided:
             visualizer = AutomatedExplorationVisualizer(
                 history=history,
@@ -861,7 +910,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 beautify_fedex=beautify_fedex,
                 beautify_metainsight=beautify_metainsight,
                 beautify_query_tree=beautify_query_tree,
-                log=self.log
+                log=log
             )
             visualizer.fedex_beautify_code = fedex_beautify_code
             visualizer.metainsight_beautify_code = metainsight_beautify_code

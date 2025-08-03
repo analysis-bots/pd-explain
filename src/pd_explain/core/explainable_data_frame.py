@@ -265,7 +265,7 @@ class ExpDataFrame(pd.DataFrame):
                                                  final_report=data_explorer_attributes['final_report'],
                                                  source_name=data_explorer_attributes['source_name'],
                                                  beautify_fedex=data_explorer_attributes['beautify_fedex'],
-                                                 # log=data_explorer_attributes['log'],
+                                                 log=data_explorer_attributes['log'],
                                                  beautify_metainsight=data_explorer_attributes['beautify_metainsight'],
                                                  beautify_query_tree=data_explorer_attributes['beautify_query_tree'],
                                                  fedex_beautify_code=data_explorer_attributes['fedex_beautify_code'],

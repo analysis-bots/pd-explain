@@ -12,7 +12,7 @@ env_path = os.path.join(package_dir, ".env")
 if not os.path.exists(env_path):
     with open(env_path, "w") as f:
         f.write(f"{consts.DOT_ENV_PD_EXPLAIN_REASONiNG_LLM_KEY}={consts.DEFAULT_KEY}\n")
-        f.write(f"{consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER}={consts.DEFAULT_REASONING_LLM_PROVIDER}n")
+        f.write(f"{consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER}={consts.DEFAULT_REASONING_LLM_PROVIDER}\n")
         f.write(f"{consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_MODEL}={consts.DEFAULT_REASONING_LLM_MODEL}\n")
         f.write(f"{consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER_URL}={consts.DEFAULT_REASONING_LLM_PROVIDER_URL}\n")
         f.write(f"{consts.DOT_ENV_PD_EXPLAIN_BEAUTIFICATION_LLM_VISION_MODEL}={consts.DEFAULT_BEAUTIFICATION_LLM_VISION_MODEL}\n")

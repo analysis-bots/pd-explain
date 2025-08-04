@@ -142,8 +142,6 @@ class ExpDataFrame(pd.DataFrame):
                                    max_iterations_to_add: int = 3,
                                    beautify_fedex_visualizations: bool = False,
                                    beautify_metainsight_visualizations: bool = False,
-                                   beautify_query_tree_visualizations: bool = False,
-                                   beautify_all_visualizations: bool = False,
                                    ):
         """
         Use LLMs to perform automated exploration and analysis on the DataFrame based on the user's request.
@@ -171,10 +169,6 @@ class ExpDataFrame(pd.DataFrame):
         Default is False.
         :param beautify_metainsight_visualizations: If True, will use the LLM beautify feature to try and beautify the MetaInsight visualizations.
         Default is False.
-        :param beautify_query_tree_visualizations: If True, will use the LLM beautify feature to try and beautify the query tree visualizations.
-        Default is False.
-        :param beautify_all_visualizations: If True, will use the LLM beautify feature to try and beautify all visualizations.
-        Default is False.
 
         :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
 
@@ -199,8 +193,6 @@ class ExpDataFrame(pd.DataFrame):
             source_name=get_calling_params_name(self),
             beautify_fedex=beautify_fedex_visualizations,
             beautify_metainsight=beautify_metainsight_visualizations,
-            beautify_query_tree=beautify_query_tree_visualizations,
-            beautify_all=beautify_all_visualizations,
         )
         # Run the automated exploration with the user query and the parameters.
         self.data_explorer.do_llm_action(
@@ -235,10 +227,8 @@ class ExpDataFrame(pd.DataFrame):
             'source_name': self.data_explorer.source_name,
             'beautify_fedex': self.data_explorer.beautify_fedex,
             'beautify_metainsight': self.data_explorer.beautify_metainsight,
-            'beautify_query_tree': self.data_explorer.beautify_query_tree,
             'fedex_beautify_code': self.data_explorer.visualizer.fedex_beautify_code,
             'metainsight_beautify_code': self.data_explorer.visualizer.metainsight_beautify_code,
-            'query_tree_beautify_code': self.data_explorer.visualizer.query_tree_beautify_code,
             'log': self.data_explorer.log,
         }
 
@@ -267,12 +257,8 @@ class ExpDataFrame(pd.DataFrame):
                                                  beautify_fedex=data_explorer_attributes['beautify_fedex'],
                                                  log=data_explorer_attributes['log'],
                                                  beautify_metainsight=data_explorer_attributes['beautify_metainsight'],
-                                                 beautify_query_tree=data_explorer_attributes['beautify_query_tree'],
                                                  fedex_beautify_code=data_explorer_attributes['fedex_beautify_code'],
-                                                 metainsight_beautify_code=data_explorer_attributes[
-                                                     'metainsight_beautify_code'],
-                                                 query_tree_beautify_code=data_explorer_attributes[
-                                                     'query_tree_beautify_code'])
+                                                 metainsight_beautify_code=data_explorer_attributes['metainsight_beautify_code'])
 
     def follow_up_with_automated_data_exploration(self, explanation_index: int = None,
                                                   num_iterations: int = 10, fedex_top_k: int = 3,
@@ -283,8 +269,6 @@ class ExpDataFrame(pd.DataFrame):
                                                   max_iterations_to_add: int = 3,
                                                   beautify_fedex_visualizations: bool = False,
                                                   beautify_metainsight_visualizations: bool = False,
-                                                  beautify_query_tree_visualizations: bool = False,
-                                                  beautify_all_visualizations: bool = False,
                                                   ):
         """
         Use the automated data exploration feature to follow up on specific explanations received from the last called explain() method.
@@ -313,10 +297,6 @@ class ExpDataFrame(pd.DataFrame):
         :param beautify_fedex_visualizations: If True, will use the LLM beautify feature to try and beautify the FEDEx visualizations.
         Default is False.
         :param beautify_metainsight_visualizations: If True, will use the LLM beautify feature to try and beautify the MetaInsight visualizations.
-        Default is False.
-        :param beautify_query_tree_visualizations: If True, will use the LLM beautify feature to try and beautify the query tree visualizations.
-        Default is False.
-        :param beautify_all_visualizations: If True, will use the LLM beautify feature to try and beautify all visualizations.
         Default is False.
 
         :return: A widget containing the automated exploration's analysis results, including a report and visualizations.
@@ -355,8 +335,6 @@ class ExpDataFrame(pd.DataFrame):
             max_iterations_to_add=max_iterations_to_add,
             beautify_fedex_visualizations=beautify_fedex_visualizations,
             beautify_metainsight_visualizations=beautify_metainsight_visualizations,
-            beautify_query_tree_visualizations=beautify_query_tree_visualizations,
-            beautify_all_visualizations=beautify_all_visualizations,
         )
 
     @property

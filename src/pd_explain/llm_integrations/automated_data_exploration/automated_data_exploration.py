@@ -29,8 +29,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
     """
 
     def __init__(self, dataframe: pd.DataFrame, source_name: str = None,
-                 beautify_fedex: bool = False, beautify_metainsight: bool = False,
-                 beautify_query_tree: bool = False, beautify_all: bool = False):
+                 beautify_fedex: bool = False, beautify_metainsight: bool = False):
         """
         Initialize the AutomatedDataExploration class with a DataFrame and optional parameters.
 
@@ -39,7 +38,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         :param beautify_fedex: If True, beautify the FedEx explainer findings.
         :param beautify_metainsight: If True, beautify the MetaInsight explainer findings.
         :param beautify_query_tree: If True, beautify the query tree visualization.
-        :param beautify_all: If True, beautify all explainers and the query tree. Overrides the other beautify parameters.
         """
         self.dataframe = dataframe.copy()
         # Change all column names to lowercase, to avoid issues with case sensitivity
@@ -51,11 +49,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         self.query_tree = None
         self.beautify_fedex = beautify_fedex
         self.beautify_metainsight = beautify_metainsight
-        self.beautify_query_tree = beautify_query_tree
-        if beautify_all:
-            self.beautify_fedex = True
-            self.beautify_metainsight = True
-            self.beautify_query_tree = True
         self.visualizer = None
         self.verbose = False
         self.log = []  # A list to store logs of the process, for debugging and analysis purposes.
@@ -893,9 +886,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             source_name: str = None,
                             log: list[str] = None,
                             beautify_fedex: bool = False, beautify_metainsight: bool = False,
-                            beautify_query_tree: bool = False,
                             fedex_beautify_code: str = None, metainsight_beautify_code: str = None,
-                            query_tree_beautify_code: str = None
                             ):
         """
         Visualize the results of the deep dive analysis.
@@ -926,12 +917,10 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 source_name=source_name if source_name else self.source_name,
                 beautify_fedex=beautify_fedex,
                 beautify_metainsight=beautify_metainsight,
-                beautify_query_tree=beautify_query_tree,
                 log=log
             )
             visualizer.fedex_beautify_code = fedex_beautify_code
             visualizer.metainsight_beautify_code = metainsight_beautify_code
-            visualizer.query_tree_beautify_code = query_tree_beautify_code
             return visualizer.visualize_data_exploration()
         all_self_params_exist = self.history is not None and self.final_report is not None \
                                 and self.query_and_results is not None \
@@ -947,7 +936,6 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 source_name=source_name if source_name else self.source_name,
                 beautify_fedex=self.beautify_fedex,
                 beautify_metainsight=self.beautify_metainsight,
-                beautify_query_tree=self.beautify_query_tree,
                 verbose=self.verbose,
                 log=self.log
             )

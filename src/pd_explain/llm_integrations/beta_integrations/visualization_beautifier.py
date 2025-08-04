@@ -9,9 +9,6 @@ import json
 import os
 from typing import Optional, Any, Dict, Tuple
 import traceback
-import networkx as nx
-import matplotlib.patches as mpatches
-import ipycytoscape
 
 import ipywidgets as widgets
 import pandas as pd
@@ -118,11 +115,6 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                 "in the data.\n"
                 "You will only be provided with the __init__ function of our custom objects, you must come up with the visualization code yourself.\n"
             )
-        if self.requester_name.lower().startswith("graph_visualizer"):
-            task_str += (
-                "\n The visualization you are improving is that of a query graph, created using the ipycytoscape library, "
-                "after a process of automated query generation and execution.\n"
-            )
         if not self.must_generalize:
             task_str += (
                 "The code you create will be for one-time use and executed immediately. The user will only see the visualization, not the code. "
@@ -209,113 +201,7 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             visualization_object.savefig(buf, format='png')
             buf.seek(0)
             encoded_image = base64.b64encode(buf.read()).decode('utf-8')
-        # Case 3: The visualization object is an ipycytoscape.CytoscapeWidget (graph visualization).
-        elif isinstance(visualization_object, ipycytoscape.CytoscapeWidget):
-            try:
-                # Extract the graph data
-                graph_nodes = visualization_object.graph.nodes
-                graph_edges = visualization_object.graph.edges
-                graph_data = {
-                    'nodes': graph_nodes,
-                    'edges': graph_edges
-                }
-
-                # Create a matplotlib representation of the graph
-                G = nx.DiGraph()
-
-                # Track node types for coloring
-                node_types = {}
-                node_labels = {}
-
-                # Add nodes with their attributes
-                for node in graph_data.get('nodes', []):
-                    node_id = node.data.get('id')
-                    if node_id:
-                        G.add_node(node_id)
-                        # Store attributes for visualization
-                        is_error = node.data.get('is_error') == 'True'
-                        has_findings = node.data.get('has_findings') == 'True'
-                        is_original = node_id == '0'
-
-                        if is_error:
-                            node_types[node_id] = 'error'
-                        elif is_original:
-                            node_types[node_id] = 'original'
-                        elif has_findings:
-                            node_types[node_id] = 'findings'
-                        else:
-                            node_types[node_id] = 'normal'
-
-                        # Store node label
-                        node_labels[node_id] = node.data.get('name', f"Node {node_id}")
-
-                # Add edges
-                for edge in graph_data.get('edges', []):
-                    source = edge.data.get('source')
-                    target = edge.data.get('target')
-                    if source and target:
-                        G.add_edge(source, target)
-
-                # Color mapping similar to the original styling
-                color_map = {
-                    'error': '#dc3545',  # red
-                    'original': '#007bff',  # blue
-                    'findings': '#17a2b8',  # teal
-                    'normal': '#6c757d'  # gray
-                }
-
-                # Create a Figure and draw the graph
-                fig = Figure(figsize=(12, 8))
-                ax = fig.add_subplot(111)
-
-                # Try to use hierarchical layout similar to the original
-                try:
-                    # Try to use pygraphviz for a hierarchical layout
-                    pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
-                except:
-                    try:
-                        # Fall back to pydot
-                        pos = nx.nx_pydot.pydot_layout(G, prog='dot')
-                    except:
-                        # Fall back to spring layout if neither is available
-                        pos = nx.spring_layout(G)
-
-                # Draw nodes with different colors based on type
-                for node_type, color in color_map.items():
-                    node_list = [node for node, ntype in node_types.items() if ntype == node_type]
-                    if node_list:
-                        nx.draw_networkx_nodes(G, pos, nodelist=node_list, node_color=color,
-                                               node_size=1500, ax=ax)
-
-                # Draw edges
-                nx.draw_networkx_edges(G, pos, arrows=True, arrowsize=20, edge_color='#ccc', ax=ax)
-
-                # Draw labels
-                nx.draw_networkx_labels(G, pos, labels=node_labels, font_color='white', ax=ax)
-
-                # Add a legend
-                legend_elements = [
-                    mpatches.Patch(color=color_map['original'], label='Original DataFrame'),
-                    mpatches.Patch(color=color_map['findings'], label='Has Findings'),
-                    mpatches.Patch(color=color_map['normal'], label='Normal Query'),
-                    mpatches.Patch(color=color_map['error'], label='Error')
-                ]
-                ax.legend(handles=legend_elements)
-
-                # Remove axis
-                ax.axis('off')
-                ax.set_title('Query Tree Visualization', fontsize=16)
-
-                # Save to buffer and encode
-                buf = io.BytesIO()
-                fig.savefig(buf, format='png', bbox_inches='tight')
-                buf.seek(0)
-                encoded_image = base64.b64encode(buf.read()).decode('utf-8')
-
-            except Exception as e:
-                print(f"Error creating graph visualization: {str(e)}")
-                encoded_image = None
-        # Case 4: The visualization object may be an ipywidget (e.g., a plotly widget or other interactive widget).
+        # Case 3: The visualization object may be an ipywidget (e.g., a plotly widget or other interactive widget).
         # or something else unexpected.
         else:
             encoded_image = None
@@ -334,16 +220,12 @@ class VisualizationBeautifier(LLMIntegrationInterface):
             else:
                 print("No valid beautified figure was generated.")
 
-        # For ipycytoscape widgets, don't wrap them in an Output widget, as it breaks the visualization entirely.
-        if isinstance(self.visualization_object, ipycytoscape.CytoscapeWidget):
-            original_output = self.visualization_object
-        else:
-            original_output = widgets.Output()
-            with original_output:
-                if isinstance(self.visualization_object, str) and os.path.exists(self.visualization_object):
-                    display(Image(filename=self.visualization_object))
-                else:
-                    display(self.visualization_object)
+        original_output = widgets.Output()
+        with original_output:
+            if isinstance(self.visualization_object, str) and os.path.exists(self.visualization_object):
+                display(Image(filename=self.visualization_object))
+            else:
+                display(self.visualization_object)
 
         # Create and return the tab widget.
         tab = widgets.Tab()
@@ -446,16 +328,6 @@ class VisualizationBeautifier(LLMIntegrationInterface):
                 "The original visualization is not provided as an image. "
                 f"Instead, create a new visualization based on the following descriptions of the insights you need to visualize:"
                 f"\n{self.visualization_description}\n\n"
-            )
-        if self.requester_name == 'graph_visualizer':
-            user_message += (
-                "Note: The visualization is a graph visualization created using the ipycytoscape library. "
-                "Meanwhile, the image you see is a static, matplotlib representation of the graph, extracted using the "
-                "_encode_visualization method. "
-                "This is a very rough approximation of the actual visualization, so while it may be helpful, you should put "
-                "the most emphasis on the code itself, which is what will be executed.\n"
-                "The base code mostly suffers from issues of the graph being too big and cluttered, difficult, interpret and interact with. "
-                "Your task is to solve all of these issues, while also preserving the important information and functionality from the original visualization.\n"
             )
 
         user_messages = [

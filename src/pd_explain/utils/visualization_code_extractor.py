@@ -218,32 +218,6 @@ class VisualizationCodeExtractor:
                 'function': 'draw_bar'
             }
         ],
-        'graph_visualizer': [
-            {
-                'package': 'pd_explain',
-                'file': 'graph_visualizer.py',
-                'class': 'GraphAutomatedExplorationVisualizer',
-                'function': '_create_query_tree_tab'
-            },
-            {
-                'package': 'pd_explain',
-                'file': 'graph_visualizer.py',
-                'class': 'GraphAutomatedExplorationVisualizer',
-                'function': '_create_tree_node_data_and_click_handler'
-            },
-            {
-                'package': 'pd_explain',
-                'file': 'data_structures.py',
-                'class': None,
-                'function': None
-            },
-            {
-                'package': 'pd_explain',
-                'file': 'visualization_beautifier.py',
-                'class': 'VisualizationBeautifier',
-                'function': '_encode_visualization'
-            }
-        ],
     }
 
     def __init__(self):

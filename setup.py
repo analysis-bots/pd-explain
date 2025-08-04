@@ -67,7 +67,7 @@ setup(
         'openai~=1.66.0',
         'ipywidgets>=8.1.0',
         'together>=1.4.6',
-        'openai>=1.66.5'
+        'openai>=1.66.5',
         'dill>=0.3.8',
     ],
     cmdclass = {

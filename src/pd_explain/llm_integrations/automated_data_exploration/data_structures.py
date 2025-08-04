@@ -2,7 +2,7 @@ from collections import namedtuple, defaultdict
 from dataclasses import dataclass
 
 from pd_explain.explainers.fedex_explainer import FedexExplainer
-from pd_explain.explainers.metainsight_explainer import MetaInsightExplainer
+from pd_explain.explainers.beta_explainers.metainsight_explainer import MetaInsightExplainer
 
 apply_result = namedtuple("apply_result", ["index",
                                            "result",

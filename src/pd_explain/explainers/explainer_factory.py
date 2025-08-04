@@ -1,7 +1,7 @@
 from pd_explain.explainers.fedex_explainer import FedexExplainer
 from pd_explain.explainers.many_to_one_explainer import ManyToOneExplainer
 from pd_explain.explainers.outlier_explainer import OutlierExplainerInterface as OutlierExplainer
-from pd_explain.explainers.metainsight_explainer import MetaInsightExplainer
+from pd_explain.explainers.beta_explainers.metainsight_explainer import MetaInsightExplainer
 
 from singleton_decorator import singleton
 

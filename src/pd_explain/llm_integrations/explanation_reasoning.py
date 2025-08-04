@@ -241,7 +241,7 @@ class ExplanationReasoning(LLMIntegrationInterface):
         explanations = re.split(pattern, explanation)
         explanations = [explanation.strip() for explanation in explanations]
         # General cleanup of the explanations by assuming that any explanation with less than 5 characters is noise mistakenly extracted.
-        explanations = ["LLM: " + explanation for explanation in explanations if len(explanation) > 5]
+        explanations = [explanation for explanation in explanations if len(explanation) > 5]
         # Explanations that are visualized in a plot are wrapped to fit the plot width. Otherwise, they are not wrapped.
         if self._query_type != "many_to_one":
             explanations = ["\n".join(textwrap.wrap(explanation, width=50)) for explanation in explanations]

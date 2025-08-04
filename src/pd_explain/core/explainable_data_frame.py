@@ -137,7 +137,6 @@ class ExpDataFrame(pd.DataFrame):
 
     def automated_data_exploration(self, user_query: str, num_iterations: int = 10, fedex_top_k: int = 3, metainsight_top_k: int = 2,
                                    metainsight_max_filter_cols: int = 3, metainsight_max_agg_cols: int = 3,
-                                   visualization_type: Literal['graph', 'simple'] = 'graph',
                                    verbose: bool = False,
                                    input_df: 'ExpDataFrame' = None,
                                    max_iterations_to_add: int = 3,
@@ -158,15 +157,11 @@ class ExpDataFrame(pd.DataFrame):
         column A and column B".
         :param num_iterations: Number of iterations to run the automated exploration for. Default is 10. Note that each iteration
         will call the LLM once.
-        :param queries_per_iteration: Number of queries to generate per iteration. Default is 5. This number is not set in
-        stone, and may go up during the process if the LLM's queries fail too often.
         :param fedex_top_k: Number of top findings to return from the FEDEx explainer. Default is 3.
         :param metainsight_top_k: Number of top findings to return from the MetaInsight explainer. Default is 2.
         :param metainsight_max_filter_cols: Maximum number of columns to analyze distribution of in the MetaInsight
         explainer. Default is 3.
         :param metainsight_max_agg_cols: Maximum number of columns to aggregate by in the MetaInsight explainer. Default is 3.
-        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
-        visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
         :param verbose: If True, will print additional information about the process. Default is False.
         :param input_df: Optional parameter to pass an input DataFrame to replace the self DataFrame.
         :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
@@ -219,7 +214,7 @@ class ExpDataFrame(pd.DataFrame):
             max_iterations_to_add=max_iterations_to_add
         )
         # Visualize and save the results in the exploration_visualization property.
-        exploration_visualization = self.data_explorer.do_follow_up_action(visualization_type=visualization_type)
+        exploration_visualization = self.data_explorer.do_follow_up_action()
         return exploration_visualization
 
     def save_data_exploration(self, file_path: str):
@@ -235,7 +230,6 @@ class ExpDataFrame(pd.DataFrame):
         attributes = {
             'history': self.data_explorer.history,
             'query_and_results': self.data_explorer.query_and_results,
-            'visualization_queries': self.data_explorer.visualization_queries,
             'query_tree': self.data_explorer.query_tree,
             'final_report': self.data_explorer.final_report,
             'source_name': self.data_explorer.source_name,
@@ -245,6 +239,7 @@ class ExpDataFrame(pd.DataFrame):
             'fedex_beautify_code': self.data_explorer.visualizer.fedex_beautify_code,
             'metainsight_beautify_code': self.data_explorer.visualizer.metainsight_beautify_code,
             'query_tree_beautify_code': self.data_explorer.visualizer.query_tree_beautify_code,
+            'log': self.data_explorer.log,
         }
 
         with open(file_path, 'wb') as file:
@@ -264,15 +259,13 @@ class ExpDataFrame(pd.DataFrame):
             data_explorer_attributes = dill.load(file)
         # Don't actually need the dataframe here, as we are only visualizing the results.
         data_explorer = AutomatedDataExploration(pd.DataFrame())
-        return data_explorer.do_follow_up_action(visualization_type=visualization_type,
-                                                 history=data_explorer_attributes['history'],
+        return data_explorer.do_follow_up_action(history=data_explorer_attributes['history'],
                                                  query_and_results=data_explorer_attributes['query_and_results'],
-                                                 visualization_queries=data_explorer_attributes[
-                                                     'visualization_queries'],
                                                  query_tree=data_explorer_attributes['query_tree'],
                                                  final_report=data_explorer_attributes['final_report'],
                                                  source_name=data_explorer_attributes['source_name'],
                                                  beautify_fedex=data_explorer_attributes['beautify_fedex'],
+                                                 log=data_explorer_attributes['log'],
                                                  beautify_metainsight=data_explorer_attributes['beautify_metainsight'],
                                                  beautify_query_tree=data_explorer_attributes['beautify_query_tree'],
                                                  fedex_beautify_code=data_explorer_attributes['fedex_beautify_code'],
@@ -286,7 +279,6 @@ class ExpDataFrame(pd.DataFrame):
                                                   metainsight_top_k: int = 2,
                                                   metainsight_max_filter_cols: int = 3,
                                                   metainsight_max_agg_cols: int = 3,
-                                                  visualization_type: Literal['graph', 'simple'] = 'graph',
                                                   verbose=False,
                                                   max_iterations_to_add: int = 3,
                                                   beautify_fedex_visualizations: bool = False,
@@ -310,14 +302,11 @@ class ExpDataFrame(pd.DataFrame):
                                     - Outlier explainer: Irrelevant, as it only has one explanation.
                                     All explainers but the Outlier explainer require at least one explanation index to be provided.
         :param num_iterations: Number of iterations to run the automated exploration for. Default is 10.
-        :param queries_per_iteration: Number of queries to generate per iteration. Default is 5.
         :param fedex_top_k: Number of top findings to return from the FEDEx explainer. Default is 3.
         :param metainsight_top_k: Number of top findings to return from the MetaInsight explainer. Default is 2.
         :param metainsight_max_filter_cols: Maximum number of columns to analyze distribution of in the MetaInsight
                                             explainer. Default is 3.
         :param metainsight_max_agg_cols: Maximum number of columns to aggregate by in the MetaInsight explainer. Default is 3.
-        :param visualization_type: The type of visualization for the query tree. Can be 'graph' for an interactive graph
-                                   visualization, or 'simple' for a simpler, static HTML visualization. Default is 'graph'.
         :param verbose: If True, will print additional information about the process. Default is False.
         :param max_iterations_to_add: The maximum number of iterations to add in case the LLM fails during some iterations.
         Default is 3.
@@ -361,7 +350,6 @@ class ExpDataFrame(pd.DataFrame):
             metainsight_top_k=metainsight_top_k,
             metainsight_max_filter_cols=metainsight_max_filter_cols,
             metainsight_max_agg_cols=metainsight_max_agg_cols,
-            visualization_type=visualization_type,
             verbose=verbose,
             input_df=input_df,
             max_iterations_to_add=max_iterations_to_add,
@@ -1149,7 +1137,8 @@ class ExpDataFrame(pd.DataFrame):
         Generate an explanation for the dataframe, using the selected explainer and based on the last operation performed.
 
         :param explainer: The explainer to use. Currently supported: 'fedex', 'many to one', 'shapley', 'outlier', 'metainsight'. Note
-        that 'outlier' is only supported for series, not for dataframes.
+        that 'outlier' is only supported for series, not for dataframes. Please note that the metainsight explainer is still
+        in beta, and may not work as expected. Defaults to 'fedex'.
         :param attributes: All explainers. Which columns to consider in the explanation.
         :param use_sampling: All explainers. Whether or not to use sampling when generating an explanation. This can massively speed up
         the explanation generation process, but may result in less accurate explanations. We use sampling methods that
@@ -1239,6 +1228,7 @@ class ExpDataFrame(pd.DataFrame):
         a more visually appealing explanation for this specific case. Defaults to False. Please note that:
         1. This will increase the computation time by a potentially large amount, entirely dependent on the LLM API response time.
         2. The output of the LLM is not guaranteed to be accurate, and may contain errors, so use with caution.
+        Please also note that this feature is still in beta, and may not work as expected.
         :param beautify_max_fix_attempts: MetaInsight and Fedex explainers. The maximum number of attempts to fix the
         returned code from the LLM to make it work or improve the visualization,, if the beautify parameter is set to True. Defaults to 10.
         :param silent_beautify: MetaInsight and Fedex explainers. If True, the beautify process will not print any information
@@ -1259,6 +1249,14 @@ class ExpDataFrame(pd.DataFrame):
             raise ValueError("Outlier explainer is not supported for multi-attribute dataframes, only for series.")
 
         use_sampling = use_sampling if use_sampling is not None else get_use_sampling_value()
+
+        if str.lower(explainer) == "metainsight":
+            warnings.warn("The MetaInsight explainer is still in beta, and may not work as expected. "
+                          "Please use with caution. ")
+        if beautify:
+            warnings.warn("The beautify feature is still in beta, and may not work as expected. "
+                          "It may also take a long time to run, depending on the LLM API response time. "
+                          "Please use with caution.")
 
         factory = ExplainerFactory()
         explainer = factory.create_explainer(explainer=explainer, operation=self.operation,

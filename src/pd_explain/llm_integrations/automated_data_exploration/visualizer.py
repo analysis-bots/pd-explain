@@ -94,6 +94,9 @@ class AutomatedExplorationVisualizer:
         if query_row is not None:
             query_description = query_row['query_description'] if 'query_description' in query_row else None
             findings_description = query_row['query_findings'] if 'query_findings' in query_row else None
+            # Default to None if the findings description is the placeholder text
+            if findings_description is not None and findings_description.startswith("This query requires a summary of its findings"):
+                findings_description = None
         else:
             query_description = None
             findings_description = None

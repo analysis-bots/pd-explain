@@ -150,22 +150,25 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         return (f"You are expected to generate a variable number of queries in each iteration. "
                 f"Start with one or two queries at most. You can generate more queries in a single iteration if you "
                 f"believe it is necessary to explore multiple paths based on the previous findings.\n "
-                "Never use a groupby within or as a filter query."
-                "The query must be a valid Pandas query applicable using eval(f'df_to_query{query}'), where df_to_query is an the name of some "
+                "The query must be a valid Pandas query applicable using eval(f'df{query}'), where df is an the name of some "
                 "arbitrary dataframe (not given to you), and query is your own output. You should be aware of this syntax, and not add, for example,"
-                "round brackets to the beginning, or [df] to the beginning of the query, as that will result in an error. "
+                "round brackets to the beginning, or df to the beginning of the query, as that will result in an error. "
+                "If you need to use the DataFrame's name (for example to filter it), use the placeholder df in your query, and the system will replace it with the actual DataFrame name. "
+                "For example, if you want to filter by a column, write [df['column_name'] > 5]. The usage of square brackets must "
+                "never be done outside of a filter query or column selection, and the inside of a filter query must never be any operation but simple comparisons. "
+                "For example, [df.groupby('column_name').mean() > 5] is not a valid query, but [df['column_name'] > 5] is. "
                 "The query name will be added by the system, so you should not add it yourself. For example, if you supply the query "
-                "[[df]['column_name'] > 5], it will be transformed to df_to_query[df_to_query['column_name'] > 5]. Trying to add this "
-                "yourself will result in an error. For example, [[df][df]['column_name'] == 5] is not a valid query, as it will result in an error, "
-                "while [[df]['column_name'] == 5] is a valid query. "
+                "[df['column_name'] > 5], it will be transformed to df[df['column_name'] > 5]. Trying to add this "
+                "yourself will result in an error. For example, [df[df['column_name'] == 5]] is not a valid query, as it will result in an error, "
+                "while [df['column_name'] == 5] is a valid query. "
                 "This is for the case of filter queries. In the case of groupby queries, you need to add a . before the groupby, "
-                "i.e. .groupby('column_name') is a valid query, while groupby('column_name') and [df].groupby('column_name') are not. "
+                "i.e. .groupby('column_name') is a valid query, while groupby('column_name') and df.groupby('column_name') are not. "
+                "Additional examples of valid filter queries: [df['column_name'] < 2], [df['column_name'] == 'value'].groupby('column_name').mean(). "
+                "Additional examples of invalid filter queries: [df.groupby('column_name')], df[df['column_name'] > 5]. "
+                "Additional examples of valid groupby queries: df.groupby('column_name').mean(), df.groupby(['column_name1', 'column_name2']).agg({'column_name3': 'mean', 'column_name4': 'sum'}). "
+                "Additional examples of invalid groupby queries: [df.groupby('column_name')], df.groupby('column_name').filter(lambda x: x['column_name'] > 5), df.groupby('column_name').agg(['mean', 'sum']). "
                 "Do not add round brackets anywhere unless you intend to call a function. Using round brackets for groupby(...), mean(), etc. is fine,"
                 "using round brackets for filtering is not fine, as it will result in an error. "
-                "If you need to use the DataFrame's name (for example to filter it), use the placeholder [df] in your query, and the system will replace it with the actual DataFrame name. "
-                "For example, if you want to filter by a column, write [[df]['column_name'] > 5]. The usage of square brackets must "
-                "never be done outside of a filter query or column selection, and the inside of a filter query must never be any operation but simple comparisons. "
-                "For example, [[df].groupby('column_name').mean() > 5] is not a valid query, but [[df]['column_name'] > 5] is. "
                 f"The output must be a list of queries, where each row in the list starts with a * symbol and ends with a new line (provide it in list format even if you only have one query). "
                 f"There must never be multiple queries in a single row, even if separated by commas. "
                 f"The list should be surrounded by <queries> and </queries> tags. so it can be easily extracted programmatically. "
@@ -189,8 +192,11 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 "These explanations should be stand-alone, and should not reference the history or previous queries.\n"
                 "Queries that require these explanations will have the words 'This query requires a summary of its findings, which will also be provided in the next iteration.' "
                 "explicitly stated. Only those queries need an explanation, and the rest of the queries do not need an explanation.\n"
-                "The format of each entry in this explanations list should be: query number: explanation, where the query number is the number of the query in the history. "
-                "Some example entries in the list may be: 4: ... \n 5: ... \n 6: ...\n"
+                "The format of each entry in this explanations list should be query number: explanation, where the query number is the number of the query in the history. "
+                "Some example entries in the list may be: 4: ... \n 5: ... \n 6: ...\n "
+                "It is very important the the beginning of the explanations list is the query number, and nothing but the query number followed by "
+                "a colon and then the explanation, as the system will use this number to match the explanation to the query in the history.\n"
+                "Writing query 4: ..., Query 4: ..., etc. will result in an error, as the system will not be able to match the explanation to the query.\n"
                 "These two lists should not include query numbers, as those are not relevant and are already present in the history DataFrame.\n"
                 "Both of these lists must likewise be un-numbered lists, starting with a * character and separated by new-line characters.\n"
                 "The description list should be in order of the generated queries.\n"
@@ -301,17 +307,12 @@ class AutomatedDataExploration(LLMIntegrationInterface):
         # Apply the queries from the response to the DataFrame and update the history.
         for query in response:
             query_string = query.strip()
-            # Sometimes, the LLM puts decides that writing [[df].groupby...] is a good idea. It is not.
-            if query_string.startswith("[[df].groupby("):
-                query_string = query_string[len("[[df]"):]
+            # Sometimes, the LLM just decides that writing [df.groupby...] is a good idea. It is not.
+            if query_string.startswith("[df.groupby("):
+                query_string = query_string[len("[df"):]
                 query_string = query_string[:-1]  # Remove the last character, which is the closing bracket
-            # Likewise, the LLM can sometimes just decide to put [df] at the start of the query, which is not valid.
-            # What is valid is [[df]... which is a filter query. [df] at the start just makes it end up getting replaced
-            # with df_to_querydf_to_query, resulting in an error.
-            if query_string.startswith("[df]"):
-                query_string = query_string[len("[df]"):]
             # Yet another mistake the LLM can make is to put df at the start of the query, which is not valid.
-            # It just ends up as df_to_querydf, which is not recognized as a variable.
+            # It just ends up as dfdf, which is not recognized as a variable.
             if query_string.startswith("df"):
                 # If this df is followed by a dot, it is a groupby or similar operation, so we just remove it.
                 if len(query_string) > 2 and query_string[2] == '.':
@@ -320,7 +321,7 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                 # missing square brackets.
                 elif len(query_string) > 2 and query_string[2] == '[':
                     query_string = query_string[2:]
-                    query_string = f"[[df]{query_string}"
+                    query_string = f"[df{query_string}"
                     # In this case, there is also a non-zero chance the bracket is not closed, so we check
                     num_opening_brackets = query_string.count('[')
                     num_closing_brackets = query_string.count(']')
@@ -332,50 +333,34 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                             query_string = query_string[:dot_index] + ']' + query_string[dot_index:]
                         else:
                             query_string += ']'
-            # Another fun error and common - [[df][df[... is a common mistake the LLM makes. Despite
+            # Another fun and common error  - [df[df[... is a common mistake the LLM makes. Despite
             # explicit instructions to not do that, it still does it.
-            if query_string.startswith("[[df][df["):
+            if query_string.startswith("[df[df["):
                 # The first [df] is the one we want to keep, so we remove the second one.
-                query_string = query_string[len("[[df][df["):]
-                query_string = "[[df]" + query_string  # Add the first [df] back
+                query_string = query_string[len("[df[df["):]
+                query_string = "[df[" + query_string  # Add the first [df] back
             # Yet another common error - too many closing square brackets.
             num_closing_brackets = query_string.count('[')
             num_opening_brackets = query_string.count(']')
             if num_closing_brackets > num_opening_brackets:
                 # If there are more closing brackets than opening brackets, this usually happens where the LLM
-                # puts double square brackets somewhere in the queyr when it should not, for example: [[df]['column_name'] > 5]].
+                # puts double square brackets somewhere in the query when it should not, for example: [df['column_name'] > 5]].
                 # We need to remove the extra closing brackets until the number of closing brackets matches the number
                 # of opening brackets.
-                query_string = re.sub(r'\[\[', '[', query_string)  # Replace [[ with [
-                query_string = re.sub(r']]', ']', query_string)  # Replace ]] with ]
-                # Recalculate the number of closing and opening brackets.
-                num_closing_brackets = query_string.count(']')
-                num_opening_brackets = query_string.count('[')
-                # If there are still more closing brackets than opening brackets, we remove closing brackets
-                # from the end of the query until they match.
-                # This is really just a guess that the extra closing brackets are at the end of the query,
-                # but the query won't work anyways if the number doesn't match, so we remove them and hope
-                # that was the issue.
-                while num_closing_brackets > num_opening_brackets:
-                    square_brackets = re.finditer(r']', query_string)
-                    # Find the last closing square bracket in the query.
-                    last_square_bracket = None
-                    for match in square_brackets:
-                        last_square_bracket = match
-                    if last_square_bracket is not None:
-                        # Remove the last closing square bracket.
-                        query_string = query_string[:last_square_bracket.start()] + query_string[last_square_bracket.end():]
-                    # Recalculate the number of closing and opening brackets.
-                    num_closing_brackets = query_string.count(']')
-                    num_opening_brackets = query_string.count('[')
+                # This rarely happens more than once, so we just remove the last double closing brackets.
+                all_double_closing_brackets = re.finditer(r']]', query_string)
+                last_double_closing_brackets = None
+                for match in all_double_closing_brackets:
+                    last_double_closing_brackets = match.start()
+                if last_double_closing_brackets is not None:
+                    # Remove the last double closing brackets
+                    query_string = query_string[:last_double_closing_brackets] + query_string[last_double_closing_brackets + 1:]
 
-            # Replace [df] placeholder with df_to_query
-            query_string_fixed = query_string.replace("[df]", "df_to_query")
             # Apply the query to the DataFrame. We always query the original DataFrame, which is stored in result_mapping with index 0.
-            df_to_query = result_mapping.get(0, None)
+            df = result_mapping.get(0, None)
             try:
                 # Use eval to apply the query to the DataFrame
-                result = eval(f"df_to_query{query_string_fixed}")
+                result = eval(f"df{query_string}")
                 # Store the result along with the index in the new results list
                 # The index parameter used to be for the originating query to allow for follow ups on the same query,
                 # but we have since decided to not allow that, so we always use index 0.
@@ -743,15 +728,31 @@ class AutomatedDataExploration(LLMIntegrationInterface):
                     # Add the findings to the history DataFrame
                     for finding in findings:
                         split = finding.split(":", 1)
-                        if len(split) < 2:
-                            continue
-                        query_num = split[0].strip()
-                        finding = split[1].strip()
+                        if len(split) < 2 or not split[0].strip().isdigit():
+                            # The LLM gets specific instructions to use the format "query_num: finding".
+                            # However, the LLM can be stupid and not follow the instructions, instead writing Query 1
+                            # or query 1 or similar. In that case, use this backup regex.
+                            pattern = re.compile(r"^(query|Query)\s*(\d+)\s*(.*)$")
+                            match = pattern.match(finding)
+                            if match:
+                                query_num = match.group(2).strip()
+                                finding = match.group(3).strip()
+                            # If even this fails, we just skip the finding because there is no way to extract the query number.
+                            else:
+                                continue
+                        else:
+                            query_num = split[0].strip()
+                            finding = split[1].strip()
                         try:
                             query_num = int(query_num.strip())
                         except ValueError:
                             continue
-                        query_num_row = history.iloc[query_num]
+                        # The LLM can sometimes hallucinate and generate query numbers of future queries,
+                        # which ends up being out of bounds for the history DataFrame.
+                        try:
+                            query_num_row = history.iloc[query_num]
+                        except IndexError:
+                            continue
                         if query_num_row['need_explanation']:
                             history.at[query_num, 'query_findings'] = finding
                             history.at[query_num, 'need_explanation'] = False

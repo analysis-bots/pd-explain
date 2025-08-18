@@ -5,7 +5,6 @@ from copy import copy as cpy
 
 import numpy as np
 import pandas as pd
-from matplotlib.axis import Axis
 from pandas import DataFrame
 from pandas._libs.lib import no_default
 import dill
@@ -32,7 +31,7 @@ from typing import (
     List, Callable, Literal, Tuple, )
 from pd_explain.explainers import ExplainerFactory
 from pd_explain.utils.global_values import get_use_sampling_value
-from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype, DropKeep
+from pandas._typing import Level, Renamer, IndexLabel, Axes, Dtype, DropKeep, Axis
 
 sys.path.insert(0, 'C:/Users/itaye/Desktop/pdexplain/pd-explain/src/')
 sys.path.insert(0, "C:\\Users\\Yuval\\PycharmProjects\\pd-explain\\src")

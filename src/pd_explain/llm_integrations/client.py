@@ -1,5 +1,4 @@
 import os
-import openai
 import together
 import warnings
 from typing import List
@@ -29,17 +28,10 @@ class Client:
                     self._provider_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
                 case _:
                     self._provider_url = os.getenv(consts.DOT_ENV_PD_EXPLAIN_REASONING_LLM_PROVIDER_URL)
-        if (self._provider == "openai" or "openai.com" in self._provider_url)\
-                or (self._provider in ["google", "gemini"] or "generativelanguage.googleapis.com" in self._provider_url):
-            self.client = openai.OpenAI(
-                api_key=self.api_key,
-                base_url=self._provider_url,
-            )
-        else:
-            self.client = together.Together(
-                api_key=self.api_key,
-                base_url=self._provider_url,
-            )
+        self.client = together.Together(
+            api_key=self.api_key,
+            base_url=self._provider_url,
+        )
 
     @property
     def provider(self):
@@ -60,15 +52,10 @@ class Client:
         self._set_client()
 
     def _set_client(self):
-        if self._provider != "together" or "together.xyz" not in self._provider_url:
-            self.client = openai.OpenAI(
-                api_key=self.api_key,
-                base_url=self._provider_url,
-            )
-        else:
-            self.client = together.Together(
-                api_key=self.api_key
-            )
+        self.client = together.Together(
+            api_key=self.api_key,
+            base_url=self._provider_url
+        )
 
     def __call__(self, system_messages: List[str], user_messages: List[str] | list[dict],
                  assistant_messages: List[str] = None, override_user_messages_formatting: bool = False,

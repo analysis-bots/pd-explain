@@ -396,7 +396,9 @@ class FedexExplainer(ExplainerInterface):
                               f"on dataframe {source_name}, we found (using automated analysis):\n"
                               f"{explanation_to_return_formatted}.\n")
         if added_explanation is not None:
+            added_explanations = added_explanation.replace('\n', ' ')
             explanation_string += (
                 f"Additionally, a LLM with limited context and no ability to query the data suggested "
-                f"that the cause of this change may be: {added_explanation.replace('\n', ' ')}.\n")
+                f"that the cause of this change may be: {added_explanations}.\n"
+            )
         return explanation_string

@@ -66,8 +66,7 @@ class ExplainerInterface(ABC):
             query = f"{operation.source_name}[{operation.attribute} {operation.operation_str} {operation.value}]"
             query_type = "filter"
         elif isinstance(operation, GroupBy):
-            query = (f"{operation.source_name}.groupby({', '.join(operation.group_attributes)
-            if isinstance(operation.group_attributes, list) else operation.group_attributes})"
+            query = (f"{operation.source_name}.groupby({', '.join(operation.group_attributes) if isinstance(operation.group_attributes, list) else operation.group_attributes})"
                            f".agg({operation.agg_dict})")
             query_type = "groupby"
         elif isinstance(operation, Join):

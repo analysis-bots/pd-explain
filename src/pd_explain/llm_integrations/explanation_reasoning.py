@@ -3,8 +3,6 @@ import re
 import textwrap
 import os
 
-from numba.scripts.generate_lower_listing import description
-
 from pd_explain.llm_integrations.llm_integration_interface import LLMIntegrationInterface
 from pd_explain.llm_integrations.client import Client
 from pd_explain.llm_integrations import consts

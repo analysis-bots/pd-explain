@@ -632,7 +632,8 @@ class AutomatedDataExploration(LLMIntegrationInterface):
             client=client, user_query=user_query, num_iterations=max_iterations,
             data_description_str=data_description
         )
-        self.log.append(f"Initial plan generated: {plan.replace('\t', '&emsp;')}")
+        logged_plan = plan.replace("\t", "&emsp;") if plan else "No initial plan generated."
+        self.log.append(f"Initial plan generated: {logged_plan}")
         try:
             while iteration_num < max_iterations:
                 if verbose:

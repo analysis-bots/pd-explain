@@ -139,10 +139,12 @@ class OutlierExplainerInterface(ExplainerInterface):
                                f"the value {self._target} was suspected to be a a {'high' if self._dir == 1 else 'low'} outlier. "
                                f"Using automated analysis, we found that: ")
         pattern = re.compile(r"\$\\bf(.*?)\$")
-        textual_description += f"{pattern.sub(r'\1', self._explanations).replace("\n", " ")}. \n"
+        subbed = pattern.sub(r'\1', self._explanations).replace("\n", " ")
+        textual_description += f"{subbed}.\n"
         if self._added_text is not None:
+            added_text = self._added_text['text'].replace('\n', ' ')
             textual_description += (f"Using a LLM to reason about this explanation, without access to the data or ability to "
                                     f"query it, it suggested that the following may provide additional context to the findings: "
-                                    f"{self._added_text['text'].replace('\n', ' ')}. \n")
+                                    f"{added_text}. \n")
 
         return textual_description

@@ -721,8 +721,10 @@ class MetaInsightExplainer(ExplainerInterface):
 
         metainsight = self.metainsights[index]
 
+        metainsight = metainsight.__str__().replace("\n", "")
+
         textual_description = (f"Using automated analysis on the dataframe {self._source_name}, we have found "
-                               f"the common pattern in the data: {metainsight.__str__().replace("\n", "")}\n")
+                               f"the common pattern in the data: {metainsight}\n")
         if len(metainsight.exceptions) > 0:
             textual_description += f"Exceptions to this pattern were found:\n"
         textual_description += metainsight.get_exceptions_string()
